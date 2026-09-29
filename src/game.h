@@ -275,6 +275,10 @@ inline void refresh() {
     }
     DWORD t0 = GetTickCount();
     auto found = scan(vts);
+    for (auto& s : sections(g.base))
+        if (s.name == ".data" && g.vt_manager && !IsBadReadPtr((const void*)s.start, s.end - s.start))
+            for (uintptr_t p = s.start; p + 8 <= s.end; p += 8)
+                if (*(const uintptr_t*)p == g.vt_manager) found[1].push_back(p);
     DWORD t_scan = GetTickCount() - t0;
 
     std::vector<uintptr_t> wallets;
