@@ -2,9 +2,9 @@
 
 # FaTrainer | Dying Light
 
-**In-game trainer for Dying Light 1 on Linux (Steam + Proton)**
+**In-game trainer for Dying Light 1 on Windows and Linux**
 
-![platform](https://img.shields.io/badge/platform-Linux%20%7C%20Proton-orange)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-orange)
 ![game](https://img.shields.io/badge/game-Dying%20Light%201-red)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
@@ -21,12 +21,10 @@
 
 ### Install
 
-```sh
-./build.sh
-./install.sh
-```
+Build `xinput1_3.dll` with `./build.sh` (needs mingw-w64 through nix) and copy it next to `DyingLightGame.exe`.
 
-Add this to the Steam launch options:
+- **Windows**: nothing else to do.
+- **Linux (Proton)**: run `./install.sh` and add this to the Steam launch options:
 
 ```
 WINEDLLOVERRIDES="xinput1_3=n,b" %command%
