@@ -180,7 +180,9 @@ struct StatField { int off = -1; bool is_float = true; int votes = 0, samples = 
 
 struct State {
     uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {};
-    std::vector<uintptr_t> wallets;
+    uintptr_t vt_player = 0, vt_human = 0, vt_health[3] = {};
+    std::vector<uintptr_t> wallets, players;
+    std::map<std::pair<uintptr_t, int>, float> stat_overrides;
     std::vector<Inventory> invs;
     std::map<std::string, uintptr_t> descs;
     StatField stats[ST_COUNT];
@@ -203,10 +205,19 @@ inline float get_stat(uintptr_t desc, int s) {
     if (f.off < 0) return NAN;
     return f.is_float ? rdv<float>(desc + f.off, NAN) : (float)rdv<int>(desc + f.off);
 }
-inline bool set_stat(uintptr_t desc, int s, float v) {
+inline bool write_stat(uintptr_t desc, int s, float v) {
     auto& f = g.stats[s];
     if (f.off < 0 || !desc) return false;
     return f.is_float ? wr<float>(desc + f.off, v) : wr<int>(desc + f.off, (int)std::lround(v));
+}
+inline bool set_stat(uintptr_t desc, int s, float v) {
+    if (!write_stat(desc, s, v)) return false;
+    g.stat_overrides[{desc, s}] = v;
+    return true;
+}
+inline void reapply_stats() {
+    for (auto& [key, v] : g.stat_overrides)
+        if (get_stat(key.first, key.second) != v) write_stat(key.first, key.second, v);
 }
 
 inline void calibrate_stats(const std::vector<std::pair<uintptr_t, const ItemInfo*>>& descs, StatField out[ST_COUNT]) {
@@ -259,6 +270,10 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_money = find_vtable(base, "InventoryMoney");
     g.vt_manager = find_vtable(base, "ItemManager");
     for (int i = 0; i < N_INV_CLASSES; i++) g.vt_inv[i] = find_vtable(base, INV_CLASSES[i]);
+    g.vt_player = find_vtable(base, "PlayerDI");
+    g.vt_human = find_vtable(base, "HumanAI");
+    const char* health_classes[] = {"HealthModule", "ArmorHealthModule", "BodyPartsHealthModule"};
+    for (int i = 0; i < 3; i++) g.vt_health[i] = find_vtable(base, health_classes[i]);
     bool ok = g.vt_money && g.vt_inv[0];
     g.status = ok ? "ready" : "game classes not found (game updated?)";
     return ok;
@@ -272,6 +287,7 @@ inline void refresh() {
         g.scanning = true;
         vts = {g.vt_money, g.vt_manager};
         for (auto v : g.vt_inv) vts.push_back(v);
+        vts.push_back(g.vt_player);
     }
     DWORD t0 = GetTickCount();
     auto found = scan(vts);
@@ -338,6 +354,7 @@ inline void refresh() {
     for (auto& s : stats) calibrated += s.off >= 0;
 
     std::lock_guard<std::mutex> l(mx);
+    g.players = found[2 + N_INV_CLASSES];
     g.wallets = wallets;
     g.invs = std::move(invs);
     g.descs = std::move(descs);

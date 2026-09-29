@@ -9,7 +9,7 @@ const int DAMAGE_OFF = 0x120, CONDITION_OFF = 0x140, COLOR_OFF = 0x150;
 struct World {
     uint8_t* mem;
     size_t used = 0;
-    uintptr_t wallet, backpack, stash, materials, manager;
+    uintptr_t wallet, backpack, stash, materials, manager, player, stamina, enemy, enemy_health;
     std::map<std::string, uintptr_t> desc;
 
     uintptr_t alloc(size_t n) {
@@ -59,6 +59,20 @@ struct World {
                                                      {"Throwable_ThrowingAxeAGen", 30}, {"Throwable_Molotov", 7},
                                                      {"Melee_MacheteAGen", 1}, {"Special_Hook", 1}});
         stash = inventory(game::g.vt_inv[0], -1, {{"Melee_WrenchARusty", 1}, {"Melee_KnifeDGen", 1}, {"Throwable_Btz_Flare", 8}});
+        player = alloc(0x3000);
+        put<uintptr_t>(player, game::g.vt_player);
+        put<uintptr_t>(player + 0x8f8, game::g.vt_human);
+        put<float>(player + 0x125c, 87);
+        stamina = alloc(0x40);
+        put<float>(stamina + 0x10, 40);
+        put<float>(stamina + 0x14, 100);
+        put<uintptr_t>(player + 0x1340, stamina);
+        enemy = alloc(0x100);
+        put<uintptr_t>(enemy, game::g.vt_human);
+        enemy_health = alloc(0x100);
+        put<uintptr_t>(enemy_health, game::g.vt_health[0]);
+        put<uintptr_t>(enemy_health + 0x40, enemy);
+        put<float>(enemy_health + 0x78, 250);
         materials = inventory(game::g.vt_inv[1], -1, {{"Craft_Gauze", 48}, {"Craft_Alcohol", 21}, {"Craft_MetalScrap", 81},
                                                       {"Medkit_HealthPackLarge", 20}, {"LockpickItem", 28}});
     }

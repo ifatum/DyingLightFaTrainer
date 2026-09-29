@@ -18,6 +18,7 @@
 - **Backpack / Stash / Materials**: change any stack count
 - **Give items**: spawn any weapon, consumable, material or blueprint
 - **Weapon editor**: damage, durability, crits, knockback, stamina, reach, upgrades, repairs, rarity
+- **Cheats**: god mode, infinite stamina, one hit kill, infinite ammo & consumables, instant refill
 
 ### Install
 

@@ -1,4 +1,5 @@
 #include <cstdio>
+#include "cheats.h"
 #include "fake.h"
 
 static int fails = 0;
@@ -66,6 +67,28 @@ int main(int argc, char** argv) {
     uintptr_t added = game::rdv<uintptr_t>(arr);
     CHECK(game::rdv<int>(added + 0x40) == 5 && game::rdv<uintptr_t>(added + 0x60) == medkit);
     CHECK(game::default_target("Craft_Gauze") == game::K_MATERIALS && game::default_target("Melee_MacheteAGen") == game::K_BACKPACK);
+
+    CHECK(game::g.vt_player && game::g.vt_human && game::g.vt_health[0]);
+    CHECK(game::g.players.size() == 1);
+    game::set_stat(machete, ST_Damage, 1234);
+    game::write_stat(machete, ST_Damage, 5);
+    cheats::on.god = cheats::on.stamina = cheats::on.supplies = cheats::on.one_hit = true;
+    cheats::scan_enemies();
+    game::set_count(mat->items[0], 999);
+    cheats::tick();
+    game::set_count(mat->items[0], 3);
+    cheats::tick();
+    CHECK(game::get_stat(machete, ST_Damage) == 1234);
+    CHECK(cheats::player == w.player && cheats::health() == 87);
+    CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == (uintptr_t)&cheats::immortal_vtable[1]);
+    CHECK(((bool(__fastcall*)(uintptr_t))cheats::slot(w.player + 0x8f8, cheats::SLOT_IS_IMMORTAL))(0));
+    CHECK(game::rdv<float>(w.stamina + 0x10) == 100);
+    CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
+    CHECK(game::count(mat->items[0]) == 999);
+    cheats::on.god = false;
+    cheats::tick();
+    CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == game::g.vt_human);
+    printf("cheats: %s\n", cheats::describe().c_str());
 
     printf(fails ? "SELFTEST FAILED (%d)\n" : "SELFTEST OK\n", fails);
     return fails != 0;

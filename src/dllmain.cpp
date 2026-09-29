@@ -7,6 +7,7 @@
 #include <functional>
 #include <string>
 #include <thread>
+#include "cheats.h"
 #include "game.h"
 #include "font.h"
 #include "imgui.h"
@@ -104,6 +105,8 @@ static void request_refresh() {
         std::lock_guard<std::mutex> l(game::mx);
         logf("refresh: %s", game::g.status.c_str());
         logf("stats: %s", game::stat_report().c_str());
+        cheats::player = cheats::find_player();
+        logf("cheats: %s", cheats::describe().c_str());
     }).detach();
 }
 
@@ -532,6 +535,38 @@ static void give_tab() {
     ImGui::EndChild();
 }
 
+static void cheat_row(const char* label, const char* hint, std::atomic<bool>& flag) {
+    bool v = flag;
+    if (ImGui::Checkbox(label, &v)) flag = v;
+    ImGui::PushFont(f_small);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x);
+    ImGui::TextDisabled("%s", hint);
+    ImGui::PopFont();
+    ImGui::Spacing();
+}
+
+static void cheats_tab() {
+    ImGui::Spacing();
+    if (!cheats::player) {
+        ImGui::TextDisabled("Player not found yet. Load into your save, then press Refresh.");
+        ImGui::Spacing();
+    } else {
+        section("PLAYER");
+        ImGui::Text("Health  %.0f      Stamina  %.0f", cheats::health(), cheats::stamina());
+        ImGui::Spacing();
+        if (accent_button("Refill health & stamina")) on_game_thread(cheats::refill);
+        ImGui::Spacing();
+    }
+    section("CHEATS");
+    cheat_row("God mode", "You take no damage.", cheats::on.god);
+    cheat_row("Infinite stamina", "Sprint, climb and swing without getting tired.", cheats::on.stamina);
+    cheat_row("One hit kill", "Zombies and humans drop to 1 health. New enemies are picked up every few seconds.", cheats::on.one_hit);
+    cheat_row("Infinite ammo & consumables", "Ammo, medkits, throwables and materials never run out. Press Refresh after picking up new kinds.", cheats::on.supplies);
+    ImGui::PushFont(f_small);
+    ImGui::TextDisabled("Weapon edits stay applied while the trainer is running.");
+    ImGui::PopFont();
+}
+
 static void draw_menu() {
     ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowSize({820, 760}, ImGuiCond_FirstUseEver);
@@ -550,7 +585,8 @@ static void draw_menu() {
         if (tab("  STASH  ", 2)) { inventory_tab(game::K_STASH); ImGui::EndTabItem(); }
         if (tab("  MATERIALS  ", 3)) { inventory_tab(game::K_MATERIALS); ImGui::EndTabItem(); }
         if (tab("  GIVE ITEMS  ", 4)) { give_tab(); ImGui::EndTabItem(); }
-        if (game::find_inventory(game::K_TOOLS) && tab("  TOOLS  ", 5)) { inventory_tab(game::K_TOOLS); ImGui::EndTabItem(); }
+        if (tab("  CHEATS  ", 5)) { cheats_tab(); ImGui::EndTabItem(); }
+        if (game::find_inventory(game::K_TOOLS) && tab("  TOOLS  ", 6)) { inventory_tab(game::K_TOOLS); ImGui::EndTabItem(); }
         ImGui::EndTabBar();
     }
     first_tab = -1;
@@ -673,9 +709,14 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (key && !prev) g_open = !g_open;
     prev = key;
     if (!g_ready) init_imgui(sc);
+    static DWORD last_tick = 0;
+    if (g_ready && GetTickCount() - last_tick > 100) {
+        last_tick = GetTickCount();
+        on_game_thread(cheats::tick);
+    }
     if (g_open && GetTickCount() - g_last_scan > 3000) {
         std::lock_guard<std::mutex> l(game::mx);
-        if (!game::g.scanning && (game::g.wallets.empty() || game::g.invs.empty() || game::g.descs.empty())) request_refresh();
+        if (!game::g.scanning && (game::g.wallets.empty() || game::g.invs.empty() || game::g.descs.empty() || !cheats::player)) request_refresh();
     }
     if (g_ready && g_open) {
         ImGui::GetIO().MouseDrawCursor = true;
@@ -774,6 +815,12 @@ static void main_thread() {
     else
         logf("ERROR: %s", game::g.status.c_str());
     if (getenv("DLT_OPEN")) g_open = true;
+    std::thread([] {
+        for (;;) {
+            if (cheats::on.one_hit) cheats::scan_enemies();
+            Sleep(3000);
+        }
+    }).detach();
     Sleep(4000);
     hook_d3d();
 }
