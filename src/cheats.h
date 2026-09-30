@@ -21,7 +21,7 @@ const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
 const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
 const int UV_CHARGE = 0x50, UV_EXHAUSTED = 0x55;
 const int PRISON_START_TIME = 0x44, PRISON_END_TIME = 0x48, PRISON_REWARD_TIER = 0x4c, PRISON_STATE = 0x54;
-const int CONTROL_OBJECT = 0x18, SLOT_FLOAT_FIELD_EDITOR = 34;
+const int SLOT_FLOAT_FIELD_EDITOR = 34;
 const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, VAR_SLOTS = 1024;
 const float ONE_HIT_HEALTH = 1.0f;
 inline const uint8_t SPOT_DISTANCE_CLAMP[4] = {0xF3, 0x0F, 0x5F, 0xD3}, SPOT_DISTANCE_ZERO[4] = {0x0F, 0x57, 0xD2, 0x90};
@@ -687,14 +687,16 @@ inline void read_sections() {
     for (uintptr_t s : g.prison_sensors) {
         if (!get_position || rdv<uintptr_t>(s) != g.vt_prison_sensor) continue;
         Section sec{s, 0, -1, false, {NAN, NAN, NAN}};
-        get_position(s + CONTROL_OBJECT, &sec.pos);
-        if (reflected(s) && field_int && field_bool && field_enum) {
+        if (g.sensor_control < 0) continue;
+        get_position(s + g.sensor_control, &sec.pos);
+        uintptr_t r = g.sensor_rtti < 0 ? 0 : s + g.sensor_rtti;
+        if (r && reflected(r) && field_int && field_bool && field_enum) {
             int v = 0;
             bool b = false;
-            if (field_int(s, "m_Stage", &v)) sec.stage = v;
-            if (field_bool(s, "m_IsLastStage", &b)) sec.last = b;
+            if (field_int(r, "m_Stage", &v)) sec.stage = v;
+            if (field_bool(r, "m_IsLastStage", &b)) sec.last = b;
             for (const char* name : {"m_Type", "m_SensorType", "m_PrisonSensorType"})
-                if (field_enum(s, name, &v)) { sec.type = v; break; }
+                if (field_enum(r, name, &v)) { sec.type = v; break; }
         }
         if (std::isfinite(sec.pos.x)) out.push_back(sec);
     }
@@ -704,14 +706,14 @@ inline void read_sections() {
 
 inline Vec3 player_position() {
     Vec3 p{NAN, NAN, NAN};
-    if (alive(player) && get_position) get_position(player + CONTROL_OBJECT, &p);
+    if (alive(player) && get_position && g.player_control >= 0) get_position(player + g.player_control, &p);
     return p;
 }
 
 inline void teleport(Vec3 to) {
-    if (!alive(player) || !set_position || !std::isfinite(to.x)) return;
+    if (!alive(player) || !set_position || g.player_control < 0 || !std::isfinite(to.x)) return;
     Vec3 from = player_position();
-    set_position(player + CONTROL_OBJECT, &to);
+    set_position(player + g.player_control, &to);
     Vec3 now = player_position();
     logf_hook("teleport: from %.1f %.1f %.1f to %.1f %.1f %.1f, now %.1f %.1f %.1f", from.x, from.y, from.z, to.x, to.y, to.z, now.x, now.y,
               now.z);
@@ -793,14 +795,14 @@ inline std::string describe() {
     snprintf(b, sizeof b,
              "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
              "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
-             "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s",
+             "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s (player +%x, sensor +%x/+%x)",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
              level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", !lockpick_patch ? "missing" : lockpick_patched() ? "on" : "ready", enemy_modules.size(), saved_bytes.size(),
              g.equipment.size(), g.ropes.size(), g.prison_data.size(), g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_START_TIME, NAN),
              g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_END_TIME, NAN), g.prison_sensors.size(),
-             get_position && set_position ? "ok" : "missing");
+             get_position && set_position ? "ok" : "missing", game::g.player_control, game::g.sensor_control, game::g.sensor_rtti);
     return b;
 }
 

@@ -65,6 +65,21 @@ inline uintptr_t find_vtable(uintptr_t base, const char* cls) {
     return 0;
 }
 
+inline int base_offset(uintptr_t base, uintptr_t vtable, const char* base_class) {
+    std::string wanted = std::string(".?AV") + base_class + "@@";
+    uintptr_t col = rdv<uintptr_t>(vtable - 8);
+    uint32_t hierarchy = rdv<uint32_t>(col + 0x10);
+    uint32_t count = rdv<uint32_t>(base + hierarchy + 8), list = rdv<uint32_t>(base + hierarchy + 0xc);
+    for (uint32_t i = 0; col && hierarchy && i < count && i < 64; i++) {
+        uint32_t descriptor = rdv<uint32_t>(base + list + i * 4);
+        uint32_t type = rdv<uint32_t>(base + descriptor);
+        char name[96] = {};
+        if (!rd(base + type + 0x10, name, sizeof name - 1)) continue;
+        if (wanted == name) return rdv<int>(base + descriptor + 8, -1);
+    }
+    return -1;
+}
+
 inline const Section* section_named(const std::vector<Section>& secs, const char* name) {
     for (auto& s : secs)
         if (s.name == name) return &s;
@@ -217,6 +232,7 @@ struct State {
     uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {};
     uintptr_t vt_player = 0, vt_human = 0, vt_health[3] = {};
     uintptr_t vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_rope = 0;
+    int player_control = -1, sensor_control = -1, sensor_rtti = -1;
     std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors, ropes;
     std::map<std::pair<uintptr_t, int>, float> stat_overrides;
     std::vector<Inventory> invs;
@@ -315,6 +331,9 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_prison_data = find_vtable(base, "ReplData@Prison");
     g.vt_prison_sensor = find_vtable(base, "SensorPrisonRush");
     g.vt_rope = find_vtable(base, "RopeLocomotionController");
+    g.player_control = g.vt_player ? base_offset(base, g.vt_player, "IControlObject") : -1;
+    g.sensor_control = g.vt_prison_sensor ? base_offset(base, g.vt_prison_sensor, "IControlObject") : -1;
+    g.sensor_rtti = g.vt_prison_sensor ? base_offset(base, g.vt_prison_sensor, "CRTTIObject") : -1;
     bool ok = g.vt_money && g.vt_inv[0];
     g.status = ok ? "ready" : "game classes not found (game updated?)";
     return ok;

@@ -232,6 +232,7 @@ int main(int argc, char** argv) {
         game::g.equipment = {equipment};
         game::g.prison_data = {prison};
         CHECK(game::g.vt_equipment && game::g.vt_prison_data && game::g.vt_prison_sensor);
+        CHECK(game::g.player_control == 0x18 && game::g.sensor_control == 0 && game::g.sensor_rtti == 0x10);
         cheats::find("uv")->on = true;
         cheats::find("prison_pause")->on = true;
         cheats::tick();
