@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <tlhelp32.h>
 #include <d3d11.h>
 #include <dxgi.h>
 #include <atomic>
@@ -56,6 +57,7 @@ static ID3D11DeviceContext* g_ctx;
 static WNDPROC oWndProc;
 static bool g_ready;
 static std::atomic<long> g_dx{0}, g_dy{0}, g_wheel{0};
+static std::atomic<long> g_frames{0};
 
 static void on_raw_input(LPARAM l) {
     RAWINPUT ri;
@@ -153,25 +155,29 @@ static void feed_keyboard() {
 }
 
 static void init_imgui(IDXGISwapChain* sc) {
-    if (FAILED(sc->GetDevice(__uuidof(ID3D11Device), (void**)&g_dev))) return;
+    if (FAILED(sc->GetDevice(__uuidof(ID3D11Device), (void**)&g_dev))) return logf("overlay: swap chain has no d3d11 device");
     g_dev->GetImmediateContext(&g_ctx);
     DXGI_SWAP_CHAIN_DESC d;
     sc->GetDesc(&d);
     g_hwnd = d.OutputWindow;
+    logf("overlay: device ok, window %p, %ux%u, windowed %d", (void*)g_hwnd, d.BufferDesc.Width, d.BufferDesc.Height, (int)d.Windowed);
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NoMouseCursorChange;
     menu::load_fonts(FONT_TTF, sizeof FONT_TTF);
     menu::apply_style();
+    logf("overlay: imgui ok");
     ImGui_ImplWin32_Init(g_hwnd);
     ImGui_ImplDX11_Init(g_dev, g_ctx);
+    logf("overlay: backends ok");
     oWndProc = (WNDPROC)SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC, (LONG_PTR)hkWndProc);
     g_ready = true;
     logf("overlay ready (window %p, render thread %lu)", (void*)g_hwnd, (unsigned long)GetCurrentThreadId());
 }
 
 static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
+    if (g_frames++ == 0) logf("first frame (thread %lu)", (unsigned long)GetCurrentThreadId());
     static bool prev = false;
     bool key = (GetAsyncKeyState(config::cfg.menu_key) | GetAsyncKeyState(VK_F8)) & 0x8000;
     if (key && !prev) g_open = !g_open;
@@ -275,8 +281,48 @@ static LONG CALLBACK crash_logger(EXCEPTION_POINTERS* e) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+static void log_environment() {
+    using WineVersionFn = const char*(__cdecl*)();
+    auto wine = (WineVersionFn)GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version");
+    using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOW*);
+    OSVERSIONINFOW v{sizeof v};
+    if (auto get = (RtlGetVersionFn)GetProcAddress(GetModuleHandleA("ntdll.dll"), "RtlGetVersion")) get(&v);
+    logf("system: %s, Windows %lu.%lu build %lu", wine ? (std::string("Wine ") + wine()).c_str() : "Windows", v.dwMajorVersion,
+         v.dwMinorVersion, v.dwBuildNumber);
+    char windir[MAX_PATH];
+    GetWindowsDirectoryA(windir, MAX_PATH);
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
+    if (snap == INVALID_HANDLE_VALUE) return;
+    MODULEENTRY32 m{sizeof m};
+    std::string extra;
+    for (BOOL ok = Module32First(snap, &m); ok; ok = Module32Next(snap, &m))
+        if (_strnicmp(m.szExePath, windir, strlen(windir))) extra += std::string(" ") + m.szModule;
+    CloseHandle(snap);
+    logf("modules outside Windows:%s", extra.c_str());
+}
+
+static void watch_first_frame() {
+    for (int seconds = 10; seconds <= 60 && !g_frames; seconds += 10) {
+        Sleep(10000);
+        if (g_frames) break;
+        std::string windows;
+        EnumWindows([](HWND w, LPARAM out) -> BOOL {
+            DWORD pid;
+            GetWindowThreadProcessId(w, &pid);
+            if (pid != GetCurrentProcessId() || !IsWindowVisible(w)) return TRUE;
+            char title[64] = "";
+            GetWindowTextA(w, title, sizeof title);
+            *(std::string*)out += std::string(" [") + title + (IsHungAppWindow(w) ? ", not responding]" : ", responding]");
+            return TRUE;
+        }, (LPARAM)&windows);
+        logf("no frame yet after %d s, game windows:%s", seconds, windows.empty() ? " none" : windows.c_str());
+        if (seconds == 30) log_environment();
+    }
+}
+
 static void main_thread() {
     logf("--- %s loaded", TITLE);
+    log_environment();
     HMODULE gamedll = nullptr;
     while (!(gamedll = GetModuleHandleA("gamedll_x64_rwdi.dll"))) Sleep(200);
     if (game::resolve_classes((uintptr_t)gamedll))
@@ -299,6 +345,7 @@ static void main_thread() {
     }).detach();
     Sleep(4000);
     hook_d3d();
+    watch_first_frame();
 }
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
