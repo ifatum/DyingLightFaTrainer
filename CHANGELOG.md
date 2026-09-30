@@ -4,8 +4,8 @@
 
 - Fixed a crash that could happen after turning a cheat off. The trainer wrote to game memory that the game had already freed, for example after a level load.
 - Infinite UV flashlight: fixed. The trainer was filling the normal flashlight's battery instead of the UV charge.
-- Instant lockpicking: fixed. The sweet spot now follows your pick, so any position opens the lock.
-- Cheats that need game objects (UV flashlight, lockpicking, prison timers) find them again on their own after a level load, even when the menu stays closed.
+- Instant lockpicking: fixed. The game now treats every pick position as the sweet spot, so the lock always turns all the way.
+- Cheats that need game objects (UV flashlight, prison timers) find them again on their own after a level load, even when the menu stays closed.
 - Turning a cheat off restores a value only if the game has not changed it since.
 - Ignores stray stash objects with garbage capacity.
 

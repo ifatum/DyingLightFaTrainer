@@ -109,6 +109,8 @@ int main(int argc, char** argv) {
     CHECK(cheats::local_player_root && cheats::params_root && cheats::unlimited_ammo_flag && cheats::var_root);
     CHECK(cheats::var_root > (uintptr_t)m && cheats::var_root < (uintptr_t)m + 0x4000000);
     CHECK(cheats::level_from_xp_fn && cheats::cache_get_fn);
+    uintptr_t lockpick_code = cheats::lockpick_patch;
+    CHECK(lockpick_code == (uintptr_t)m + 0x7817ae);
     CHECK(!memcmp((const void*)cheats::cache_get_fn, "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18", 15));
     fake_cache_base = w.cache;
     cheats::cache_get_original = fake_cache_get;
@@ -219,30 +221,16 @@ int main(int argc, char** argv) {
     }
 
     {
-        CHECK(game::g.vt_lockpick[0] && game::g.vt_lockpick[1] && game::g.vt_lockpick[2]);
-        uintptr_t minigame = w.alloc(0x100), stray = w.alloc(0x200), parts[3];
-        for (int i = 0; i < 3; i++) {
-            parts[i] = w.alloc(0x200);
-            w.put<uintptr_t>(parts[i], game::g.vt_lockpick[i]);
-            w.put<uintptr_t>(parts[i] + 0xe0, minigame);
-            w.put<uintptr_t>(minigame + 0x28 + i * 8, parts[i]);
-        }
-        w.put<uintptr_t>(stray, game::g.vt_lockpick[1]);
-        w.put<uintptr_t>(stray + 0xe0, stray);
-        w.put<float>(parts[0] + 0x118, 33.0f);
-        w.put<float>(minigame + 0x50, 10.0f);
-        w.put<float>(minigame + 0x54, 1.9f);
+        CHECK(lockpick_code);
+        static uint8_t fake_check[4];
+        memcpy(fake_check, cheats::SPOT_DISTANCE_CLAMP, 4);
+        cheats::lockpick_patch = (uintptr_t)fake_check;
         cheats::find("lockpick")->on = true;
-        game::g.lockpick_parts.clear();
         cheats::tick();
-        CHECK(cheats::objects_missing);
-        game::g.lockpick_parts = {parts[1], stray};
-        cheats::tick();
-        CHECK(!cheats::objects_missing && game::rdv<float>(minigame + 0x50) == 33.0f && game::rdv<float>(minigame + 0x54) == 1000.0f);
-        CHECK(game::rdv<uintptr_t>(stray + 0x50) == 0);
+        CHECK(!memcmp(fake_check, cheats::SPOT_DISTANCE_ZERO, 4) && cheats::lockpick_patched());
         cheats::find("lockpick")->on = false;
         cheats::tick();
-        CHECK(!cheats::objects_missing);
+        CHECK(!memcmp(fake_check, cheats::SPOT_DISTANCE_CLAMP, 4) && !cheats::lockpick_patched());
     }
 
     {

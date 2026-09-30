@@ -18,12 +18,11 @@ const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_XP = 8, TREE_LEVEL_START 
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
 const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
 const int UV_CHARGE = 0x50, UV_EXHAUSTED = 0x55;
-const int MINIGAME = 0xe0, MINIGAME_PARTS[] = {0x28, 0x30, 0x38}, SWEET_SPOT = 0x50, SWEET_SPOT_WIDTH = 0x54, PICK_ANGLE = 0x118;
-const float ANY_SPOT_WIDTH = 1000.0f;
 const int PRISON_START_TIME = 0x44, PRISON_END_TIME = 0x48, PRISON_REWARD_TIER = 0x4c, PRISON_STATE = 0x54;
 const int CONTROL_OBJECT = 0x18, SLOT_FLOAT_FIELD_EDITOR = 34;
 const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, VAR_SLOTS = 1024;
 const float ONE_HIT_HEALTH = 1.0f;
+inline const uint8_t SPOT_DISTANCE_CLAMP[4] = {0xF3, 0x0F, 0x5F, 0xD3}, SPOT_DISTANCE_ZERO[4] = {0x0F, 0x57, 0xD2, 0x90};
 
 struct Cheat {
     const char* key;
@@ -123,7 +122,7 @@ inline Cheat* find(const std::string& key) {
 inline bool is_on(const char* key) { return find(key) && find(key)->on; }
 
 inline uintptr_t player = 0;
-inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0;
+inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0;
 inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 inline VarFloatFn original_var_float = nullptr;
@@ -219,6 +218,9 @@ inline void locate(uintptr_t base) {
         !hits.empty())
         level_from_xp_fn = hits[0];
     if (auto hits = game::find_code(base, "8B ? C0 09 00 00 BA ? ? ? ? E8"); !hits.empty()) cache_get_fn = game::rip_target(hits[0] + 11, 1, 5);
+    const int CLAMP_AT = 0x2e;
+    auto spot = game::find_code(base, "F3 0F 10 56 50 B1 01 F3 0F 5C 90 18 01 00 00 F3 0F 10 4E 54 F3 0F 59 0D ? ? ? ? 0F 54 15 ? ? ? ? 0F 54 0D ? ? ? ? F3 0F 5C D1");
+    if (!spot.empty() && !memcmp((const void*)(spot[0] + CLAMP_AT), SPOT_DISTANCE_CLAMP, 4)) lockpick_patch = spot[0] + CLAMP_AT;
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 8B 0D ? ? ? ? 48 8B 18 48 8B 01 FF 90 90 01 00 00 48 8B 0D ? ? ? ? 48 8D 55 ? 4C 8B C0 FF 93 90 03 00 00");
         !hits.empty())
         var_root = game::rip_target(hits[0], 3, 7);
@@ -440,34 +442,15 @@ inline bool install_cache_hook() {
     return true;
 }
 
-inline bool is_lockpick_part(uintptr_t object) {
-    uintptr_t vt = rdv<uintptr_t>(object);
-    return vt && std::find(std::begin(g.vt_lockpick), std::end(g.vt_lockpick), vt) != std::end(g.vt_lockpick);
-}
+inline bool lockpick_patched() { return lockpick_patch && !memcmp((const void*)lockpick_patch, SPOT_DISTANCE_ZERO, 4); }
 
-inline uintptr_t minigame_of(uintptr_t part) {
-    uintptr_t m = is_lockpick_part(part) ? rdv<uintptr_t>(part + MINIGAME) : 0;
-    if (!m) return 0;
-    for (int off : MINIGAME_PARTS) {
-        uintptr_t p = rdv<uintptr_t>(m + off);
-        if (!is_lockpick_part(p) || rdv<uintptr_t>(p + MINIGAME) != m) return 0;
-    }
-    return m;
-}
-
-inline int open_locks() {
-    std::set<uintptr_t> games;
-    int parts = 0;
-    for (uintptr_t part : g.lockpick_parts) {
-        parts += is_lockpick_part(part);
-        if (uintptr_t m = minigame_of(part)) games.insert(m);
-    }
-    for (uintptr_t m : games) {
-        float angle = rdv<float>(rdv<uintptr_t>(m + MINIGAME_PARTS[0]) + PICK_ANGLE, NAN);
-        if (std::isfinite(angle)) wr<float>(m + SWEET_SPOT, angle);
-        wr<float>(m + SWEET_SPOT_WIDTH, ANY_SPOT_WIDTH);
-    }
-    return parts;
+inline void patch_lockpick(bool on) {
+    if (!lockpick_patch || lockpick_patched() == on) return;
+    DWORD old;
+    VirtualProtect((void*)lockpick_patch, 4, PAGE_EXECUTE_READWRITE, &old);
+    memcpy((void*)lockpick_patch, on ? SPOT_DISTANCE_ZERO : SPOT_DISTANCE_CLAMP, 4);
+    VirtualProtect((void*)lockpick_patch, 4, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)lockpick_patch, 4);
 }
 
 inline void apply_overrides() {
@@ -753,8 +736,8 @@ inline void tick() {
     std::lock_guard<std::mutex> l(game::mx);
     bool prison_missing = !pause_prison() && is_on("prison_pause");
     bool uv_missing = is_on("uv") && !keep_uv_charge();
-    bool locks_missing = is_on("lockpick") && !open_locks();
-    objects_missing = prison_missing || uv_missing || locks_missing;
+    patch_lockpick(is_on("lockpick"));
+    objects_missing = prison_missing || uv_missing;
     game::reapply_stats();
     keep_stacks(is_on("ammo"), is_on("supplies"));
     if (is_on("one_hit")) weaken_enemies();
@@ -776,12 +759,12 @@ inline std::string describe() {
     char b[700];
     snprintf(b, sizeof b,
              "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
-             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick parts %zu, enemies %zu, overrides %zu, equipment %zu, "
+             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, enemies %zu, overrides %zu, equipment %zu, "
              "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
-             level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", g.lockpick_parts.size(), enemy_modules.size(), saved_bytes.size(),
+             level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", !lockpick_patch ? "missing" : lockpick_patched() ? "on" : "ready", enemy_modules.size(), saved_bytes.size(),
              g.equipment.size(), g.prison_data.size(), g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_START_TIME, NAN),
              g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_END_TIME, NAN), g.prison_sensors.size(),
              get_position && set_position ? "ok" : "missing");

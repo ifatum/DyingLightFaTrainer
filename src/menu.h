@@ -154,7 +154,6 @@ inline void cheat_switch(const char* key, const char* override_label = nullptr) 
     if (switch_row(override_label ? override_label : c->label, c->hint, v)) {
         c->on = v;
         save_config();
-        if (v && !strcmp(key, "lockpick")) request_refresh();
     }
 }
 
