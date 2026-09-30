@@ -26,7 +26,6 @@ struct Cheat {
     const char* hint;
     std::vector<std::pair<const char*, float>> numbers;
     std::vector<const char*> switches;
-    std::vector<std::pair<const char*, float>> vars = {};
     std::atomic<bool> on{false};
 };
 
@@ -57,17 +56,13 @@ inline Cheat CHEATS[] = {
       {"FastGrabBreakCooldown", 0}},
      {}},
     {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}},
-    {"dfa_assist", "Death from above assist", "Start a death from above from far away and at any angle. The attack pulls you onto the hunter.",
-     {{"JumpAttackRange", 30}}, {},
-     {{"f_btz_jump_attack_range", 12}, {"f_btz_jump_attack_range_velocity_factor", 0.5f}, {"f_btz_jump_attack_angle_max", 180},
-      {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
 };
 
 enum Group { G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN };
 
-struct ScriptVar { const char* name; float limit; };
+struct ScriptVar { const char* name; float at_max; };
 
 struct Tweak {
     const char* key;
@@ -85,24 +80,23 @@ inline Tweak TWEAKS[] = {
      {"MoveSprintSpeed", "MoveForwardMaxSpeed", "MoveStrafeMaxSpeed", "MoveBackwardMaxSpeed", "WallrunSpeed"}, {}, 3.0f},
     {"jump", "Jump height", "Jump higher.", G_MOVEMENT, {"JumpMaxHeight", "JumpMinHeight"}, {}, 4.0f},
     {"xp", "XP gain", "Agility, Power and Driver experience.", G_PROGRESS, {"RunnerXPFactor", "FighterXPFactor", "DriverXPFactor"}},
-    {"z_pounce", "Pounce range", "How far away you can pounce a survivor from. Also grows the pounce slam blast.", G_ZOMBIE,
-     {"ZombiePounceHighRageExplosionRange"}, {{"f_btz_zombie_grab_range", 0}, {"f_btz_zombie_grab_range_velocity_factor", 0}}},
-    {"z_aim", "Pounce aim angle", "How far from your crosshair a survivor can be. At Max you pounce targets that are not in front of you.",
-     G_ZOMBIE, {}, {{"f_btz_zombie_grab_angle_max", 180}, {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", 90}}},
-    {"z_pound", "Ground pound range", "Reach of the ground pound and the aerial ground pound.", G_ZOMBIE, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}},
-    {"z_tackle", "Tackle range", "How far away the charge tackle still connects.", G_ZOMBIE, {"ZombieChargeAttackRange"}},
-    {"z_claws", "Claws range", "Reach of your claw swipes.", G_ZOMBIE, {"RangeMeleeMul", "BestTargetMeleeRange"}},
-    {"z_spit", "Spit range", "Spits fly faster and further.", G_ZOMBIE, {"ZombieSpitControlTheHordeVelocityMul", "ZombieSpitLightDisableVelocityMul"}},
-    {"h_dfa", "Death from above range", "How far away the hunter can be when you drop on him, and the size of the landing shockwave.", G_HUMAN,
-     {"JumpAttackRange", "JumpAttackShockwaveRadius"}, {{"f_btz_jump_attack_range", 0}, {"f_btz_jump_attack_range_velocity_factor", 0}}},
-    {"h_dropkick", "Dropkick range", "How far away the dropkick still grabs the hunter.", G_HUMAN, {"AirKickRangeMul"},
-     {{"f_btz_wrestling_kick_range", 0}, {"f_btz_wrestling_kick_range_velocity_factor", 0}}},
-    {"h_kicks", "Other kicks & ground pound range", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
-    {"h_melee", "Melee range", "Reach of melee attacks and how far the game looks for a target.", G_HUMAN, {"RangeMeleeMul", "BestTargetMeleeRange"}},
-    {"h_angle", "Attack aim angle", "How far from your crosshair the hunter can be for dropkicks and death from above. At Max you hit him without facing him.",
-     G_HUMAN, {"MaxVerticalAngleForRangeMeleeCorrection"},
-     {{"f_btz_wrestling_kick_angle_max", 180}, {"f_btz_jump_attack_angle_max", 180}, {"f_btz_pvp_grab_above_angle_threshold", 90},
-      {"f_btz_pvp_grab_below_angle_threshold", 90}}},
+    {"z_pounce", "Pounce", "At Max you pounce survivors 40 m away, even when they are not in front of you. Also grows the pounce slam blast.",
+     G_ZOMBIE, {"ZombiePounceHighRageExplosionRange"},
+     {{"f_btz_zombie_grab_range", 40}, {"f_btz_zombie_grab_range_velocity_factor", 1}, {"f_btz_zombie_grab_angle_max", 180},
+      {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
+    {"z_pound", "Ground pound", "Reach of the ground pound and the aerial ground pound.", G_ZOMBIE, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}},
+    {"z_tackle", "Tackle", "How far away the charge tackle still connects.", G_ZOMBIE, {"ZombieChargeAttackRange"}},
+    {"z_claws", "Claws", "Reach of your claw swipes.", G_ZOMBIE, {"RangeMeleeMul", "BestTargetMeleeRange"}},
+    {"z_spit", "Spit", "Spits fly faster and further.", G_ZOMBIE, {"ZombieSpitControlTheHordeVelocityMul", "ZombieSpitLightDisableVelocityMul"}},
+    {"h_dfa", "Death from above", "At Max you start it 12 m away and at any angle, and it pulls you onto the hunter. Also grows the landing shockwave.",
+     G_HUMAN, {"JumpAttackRange", "JumpAttackShockwaveRadius"},
+     {{"f_btz_jump_attack_range", 12}, {"f_btz_jump_attack_range_velocity_factor", 0.5f}, {"f_btz_jump_attack_angle_max", 180},
+      {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
+    {"h_dropkick", "Dropkick", "At Max you dropkick the hunter from 12 m away, even when he is not in front of you.", G_HUMAN,
+     {"AirKickRangeMul"}, {{"f_btz_wrestling_kick_range", 12}, {"f_btz_wrestling_kick_range_velocity_factor", 0.5f}, {"f_btz_wrestling_kick_angle_max", 180}}},
+    {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
+    {"h_melee", "Melee", "Reach of melee attacks, how far the game looks for a target and how far above or below your aim it still locks on.",
+     G_HUMAN, {"RangeMeleeMul", "BestTargetMeleeRange", "MaxVerticalAngleForRangeMeleeCorrection"}},
 };
 
 inline Tweak* find_tweak(const std::string& key) {
@@ -396,23 +390,20 @@ inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, u
     float v = original_var_float(self, name, scope, extra);
     const char* s = name ? *(const char**)name : nullptr;
     if (!s || strncmp(s, "f_btz_", 6)) return v;
-    for (auto& c : CHEATS)
-        if (c.on)
-            for (auto& [var, value] : c.vars)
-                if (!strcmp(s, var)) return value;
-    float factor = 1.0f, limit = 0;
+    float best = v;
     for (auto& t : TWEAKS)
         for (auto& var : t.vars)
-            if (!strcmp(s, var.name) && t.factor > factor) factor = t.factor, limit = var.limit;
-    float scaled = v * factor;
-    return limit > 0 ? std::clamp(scaled, -limit, limit) : scaled;
+            if (!strcmp(s, var.name) && t.factor != 1.0f) {
+                float strength = std::clamp((t.factor - 1.0f) / (t.max - 1.0f), 0.0f, 1.0f);
+                float moved = v + (var.at_max - v) * strength;
+                if (std::fabs(moved) > std::fabs(best)) best = moved;
+            }
+    return best;
 }
 
 inline bool var_hook_needed() {
     for (auto& t : TWEAKS)
         if (!t.vars.empty() && t.factor != 1.0f) return true;
-    for (auto& c : CHEATS)
-        if (!c.vars.empty() && c.on) return true;
     return false;
 }
 

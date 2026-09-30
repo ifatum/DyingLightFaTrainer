@@ -466,4 +466,26 @@ inline bool give(uintptr_t inv, uintptr_t tmpl_item, uintptr_t desc, int amount)
     return count_of(inv, desc) != before;
 }
 
+inline std::vector<Kind> give_order(Kind first) {
+    std::vector<Kind> order = {first};
+    for (Kind k : {K_MATERIALS, K_BACKPACK, K_AMMO, K_TOOLS, K_COLLECTABLES, K_STASH})
+        if (k != first) order.push_back(k);
+    return order;
+}
+
+inline int give_anywhere(Kind first, uintptr_t desc, int amount) {
+    for (Kind k : give_order(first)) {
+        uintptr_t inv, tmpl;
+        {
+            std::lock_guard<std::mutex> l(mx);
+            auto* i = find_inventory(k);
+            if (!i) continue;
+            inv = i->obj;
+            tmpl = pick_template(i);
+        }
+        if (tmpl && give(inv, tmpl, desc, amount)) return k;
+    }
+    return -1;
+}
+
 }

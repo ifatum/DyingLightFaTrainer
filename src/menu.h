@@ -379,7 +379,7 @@ inline void inventory_page(game::Kind kind) {
             }
             if (editable(it)) {
                 if (ImGui::Button("Edit", {S(64), 0})) open_editor(game::item_desc(it), it.name, id);
-            } else if (ImGui::Button("99", {S(64), 0})) {
+            } else if (ImGui::Button("Set 99", {S(64), 0})) {
                 game::set_count(it, 99);
             }
             ImGui::PopID();
@@ -398,22 +398,10 @@ inline void give_item(const ItemInfo* info, int amount, int target) {
     if (!desc) return toast("Not available in this game session: " + name);
     game::Kind k = target < 0 ? game::default_target(info->id) : (game::Kind)target;
     on_game_thread([=] {
-        uintptr_t inv, tmpl;
-        {
-            std::lock_guard<std::mutex> l(game::mx);
-            auto* i = game::find_inventory(k);
-            if (!i && k == game::K_AMMO) i = game::find_inventory(game::K_MATERIALS);
-            if (!i) i = game::find_inventory(game::K_BACKPACK);
-            inv = i ? i->obj : 0;
-            tmpl = game::pick_template(i);
-        }
-        if (!inv || !tmpl) {
-            logf("give %s: no inventory (%s) or template", info->id, game::KIND_NAMES[k]);
-            return toast("No inventory found yet: load your save and press Refresh");
-        }
-        bool ok = game::give(inv, tmpl, desc, amount);
-        logf("give %s x%d -> %s: %s", info->id, amount, game::KIND_NAMES[k], ok ? "ok" : "refused");
-        toast(ok ? "Added " + std::to_string(amount) + " x " + name : "The game refused " + name + " (inventory full?)");
+        int into = game::give_anywhere(k, desc, amount);
+        logf("give %s x%d -> %s", info->id, amount, into < 0 ? "refused by every inventory" : game::KIND_NAMES[into]);
+        toast(into < 0 ? "The game refused " + name + ". Load your save, press Refresh and try again."
+                       : "Added " + std::to_string(amount) + " x " + name + " to " + game::KIND_NAMES[into]);
         request_refresh();
     });
 }
@@ -432,6 +420,8 @@ inline void give_page() {
     static char filter[64] = "";
     static int cat = C_ALL, amount = 1, target = -1;
     static bool show_test = false;
+    note("Choose an amount and press Give. Each item goes where the game keeps it (backpack, materials, ammo...), so it shows up in your inventory right away.");
+    ImGui::Dummy({0, S(2)});
     search_box("##gf", "Search every item in the game...", filter, sizeof filter);
     for (int c = 0; c < C_COUNT; c++) {
         if (chip(CAT_NAMES[c], cat == c)) cat = c;
@@ -445,9 +435,9 @@ inline void give_page() {
     const char* targets[] = {"Auto", "Backpack", "Stash", "Materials"};
     int ti = target < 0 ? 0 : target == game::K_BACKPACK ? 1 : target == game::K_STASH ? 2 : 3;
     ImGui::SetNextItemWidth(S(150));
-    if (ImGui::Combo("Into", &ti, targets, 4)) target = ti == 0 ? -1 : ti == 1 ? game::K_BACKPACK : ti == 2 ? game::K_STASH : game::K_MATERIALS;
+    if (ImGui::Combo("Put in", &ti, targets, 4)) target = ti == 0 ? -1 : ti == 1 ? game::K_BACKPACK : ti == 2 ? game::K_STASH : game::K_MATERIALS;
     ImGui::SameLine(0, S(24));
-    ImGui::Checkbox("Internal items", &show_test);
+    ImGui::Checkbox("Show unused items", &show_test);
     std::string f = lower(filter);
     std::vector<const ItemInfo*> list;
     for (int i = 0; i < ITEM_COUNT; i++) {
@@ -519,8 +509,12 @@ inline void tweak_slider(cheats::Tweak& t) {
     }
     note(t.hint);
     ImGui::SetNextItemWidth(-1);
-    const char* fmt = v == 1.0f ? "Normal" : v >= t.max ? "Max" : "x%.1f";
-    if (ImGui::SliderFloat("##f", &v, 1.0f, t.max, fmt)) t.factor = v;
+    char text[32];
+    if (v == 1.0f) snprintf(text, sizeof text, "Normal");
+    else if (v >= t.max) snprintf(text, sizeof text, "Max");
+    else if (!t.vars.empty()) snprintf(text, sizeof text, "%.0f%%%%", (v - 1.0f) / (t.max - 1.0f) * 100);
+    else snprintf(text, sizeof text, "x%.1f", v);
+    if (ImGui::SliderFloat("##f", &v, 1.0f, t.max, text, ImGuiSliderFlags_NoInput)) t.factor = v;
     if (ImGui::IsItemDeactivatedAfterEdit()) save_config();
     ImGui::Dummy({0, S(6)});
     ImGui::PopID();
@@ -641,14 +635,12 @@ inline void skills_page() {
 
 inline void pvp_page() {
     begin_card("about");
-    note("Slide right to multiply the game's own values. Set a range and its aim angle to Max to reach targets that are far away and not in front of you. Each side of the match decides its own attacks.");
+    note("Slide right to reach further. At Max the pounce, dropkick and death from above also hit targets that are not in front of you. Each player's game decides its own attacks.");
     end_card();
     begin_card("zombie", "AS THE NIGHT HUNTER");
     tweak_sliders(cheats::G_ZOMBIE);
     end_card();
     begin_card("human", "AS A SURVIVOR");
-    cheat_switch("dfa_assist");
-    ImGui::Dummy({0, S(4)});
     tweak_sliders(cheats::G_HUMAN);
     end_card();
 }
@@ -676,8 +668,8 @@ inline const Page PAGES[] = {
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "BE THE ZOMBIE", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
-    {"pvp", "PvP", "Attack ranges and aim angles", pvp_page, always, "BE THE ZOMBIE",
-     {"dfa_assist", "z_pounce", "z_aim", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dropkick", "h_kicks", "h_melee", "h_angle"}},
+    {"pvp", "PvP", "How far your attacks reach", pvp_page, always, "BE THE ZOMBIE",
+     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dropkick", "h_kicks", "h_melee"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},
     {"stash", "Stash", "Items stored in your stash. Press Edit to change a weapon", [] { inventory_page(game::K_STASH); }, always, "ITEMS", {}},

@@ -18,9 +18,9 @@
 - **Combat**: one hit kill, infinite ammo, no reload, infinite consumables, unbreakable weapons
 - **Skills**: XP multiplier, raise or lower any skill tree level (+1, +10, max, -1, -10)
 - **Night Hunter**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, long camouflage
-- **PvP**: death from above assist, range and aim angle sliders for pounce, ground pound, tackle, claws, spit, death from above, dropkick, kicks and melee
+- **PvP**: one reach slider per attack (pounce, ground pound, tackle, claws, spit, death from above, dropkick, kicks, melee). At Max the pounce, dropkick and death from above also hit targets that are not in front of you
 - **Cash / Backpack / Stash / Materials**: set money and any stack count
-- **Give items**: spawn any weapon, consumable, material or blueprint
+- **Give items**: spawn any weapon, upgrade, consumable, material or blueprint; each item goes into the inventory the game accepts it in
 - **Weapon editor**: damage, durability, crits, knockback, stamina, reach, magazine, reload time, upgrades, repairs, rarity
 - **Settings**: accent color, interface size, background dim, menu key, sidebar order and visibility, saved to `fatrainer.ini`
 

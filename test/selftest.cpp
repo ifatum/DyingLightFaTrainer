@@ -38,6 +38,8 @@ static float read_var(const char* name) {
     return fn((uintptr_t)&fake_var_object, (uintptr_t)&name, 0, 0);
 }
 
+static void __fastcall refuse_add(uintptr_t, void*, int, bool) {}
+
 int main(int argc, char** argv) {
     HMODULE m = LoadLibraryExA(argv[1], nullptr, DONT_RESOLVE_DLL_REFERENCES);
     CHECK(m);
@@ -107,7 +109,7 @@ int main(int argc, char** argv) {
     uintptr_t flag = cheats::unlimited_ammo_flag;
     static uint8_t fake_rules[4];
     cheats::unlimited_ammo_flag = (uintptr_t)fake_rules;
-    for (auto* k : {"god", "stamina", "supplies", "one_hit", "hook", "uv", "ammo", "z_spits", "no_fall", "durability", "dfa_assist"}) cheats::find(k)->on = true;
+    for (auto* k : {"god", "stamina", "supplies", "one_hit", "hook", "uv", "ammo", "z_spits", "no_fall", "durability"}) cheats::find(k)->on = true;
     for (auto& t : cheats::TWEAKS)
         for (auto* n : t.params) CHECK(cheats::param_ids.count(n));
     game::wr<float>(w.params + cheats::param_ids["GrapplingHookCooldown"] * 16 + 8, 12.5f);
@@ -155,19 +157,40 @@ int main(int argc, char** argv) {
     printf("cheats: %s\n", cheats::describe().c_str());
 
     CHECK(read_var("f_btz_zombie_grab_range") == 10);
-    cheats::find_tweak("z_pounce")->factor = 3.0f;
-    cheats::find_tweak("h_angle")->factor = 10.0f;
+    cheats::find_tweak("z_pounce")->factor = 5.5f;
+    cheats::find_tweak("h_dropkick")->factor = 10.0f;
     cheats::tick();
     CHECK(fake_var_object == (uintptr_t)&cheats::var_vtable[1]);
-    CHECK(read_var("f_btz_zombie_grab_range") == 30 && read_var("f_btz_wrestling_kick_angle_max") == 180);
-    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_other") == 7 && read_var("i_other") == 7);
+    CHECK(read_var("f_btz_zombie_grab_range") == 25 && read_var("f_btz_wrestling_kick_angle_max") == 180);
+    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -70 && read_var("f_btz_other") == 7 && read_var("i_other") == 7);
     CHECK(cheats::active_count() == 2);
-    cheats::find("dfa_assist")->on = true;
+    cheats::find_tweak("h_dfa")->factor = 10.0f;
     CHECK(read_var("f_btz_jump_attack_range") == 12 && read_var("f_btz_jump_attack_angle_max") == 180);
-    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_zombie_grab_range") == 30);
+    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_zombie_grab_range") == 25);
     cheats::all_off();
     CHECK(read_var("f_btz_jump_attack_range") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
+
+    {
+        static uintptr_t refusing_vt[8] = {}, accepting_vt[8] = {};
+        refusing_vt[6] = (uintptr_t)&refuse_add;
+        accepting_vt[6] = (uintptr_t)&fake_add;
+        uintptr_t refusing = w.alloc(0x80), accepting = w.alloc(0x80);
+        w.put<uintptr_t>(refusing, (uintptr_t)refusing_vt);
+        w.put<uintptr_t>(accepting, (uintptr_t)accepting_vt);
+        w.put<uintptr_t>(refusing + 0x40, w.alloc(8 * 16));
+        w.put<uintptr_t>(accepting + 0x40, w.alloc(8 * 16));
+        auto saved = game::g.invs;
+        game::Item gauze = mat->items[0], alcohol = mat->items[1];
+        game::g.invs = {{refusing, game::K_MATERIALS, -1, {gauze}}, {accepting, game::K_TOOLS, -1, {alcohol}}};
+        uintptr_t king = game::g.descs["Craft_Upgrade_DamL2DurL2BalL2"];
+        CHECK(king && game::give_anywhere(game::K_MATERIALS, king, 3) == game::K_TOOLS);
+        uintptr_t given = game::rdv<uintptr_t>(game::rdv<uintptr_t>(accepting + 0x40));
+        CHECK(game::rdv<uintptr_t>(given + 0x60) == king && game::rdv<int>(given + 0x40) == 3);
+        game::g.invs = {{refusing, game::K_MATERIALS, -1, {gauze}}};
+        CHECK(game::give_anywhere(game::K_MATERIALS, king, 3) == -1);
+        game::g.invs = saved;
+    }
 
     config::cfg.accent[0] = 0.25f;
     config::cfg.pages = {{"combat", false}, {"player", true}};
