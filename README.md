@@ -14,11 +14,13 @@
 
 ### Features
 
-- **Cash**: set your money live
-- **Backpack / Stash / Materials**: change any stack count
+- **Player**: god mode, infinite stamina, infinite grappling hook, infinite UV flashlight, instant refill
+- **Combat**: one hit kill, infinite ammo, infinite consumables
+- **Be The Zombie**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, all abilities unlocked, long camouflage
+- **Cash / Backpack / Stash / Materials**: set money and any stack count
 - **Give items**: spawn any weapon, consumable, material or blueprint
 - **Weapon editor**: damage, durability, crits, knockback, stamina, reach, upgrades, repairs, rarity
-- **Cheats**: god mode, infinite stamina, one hit kill, infinite ammo & consumables, instant refill
+- **Settings**: accent color, interface size, background dim, menu key, sidebar order and visibility, saved to `fatrainer.ini`
 
 ### Install
 
@@ -31,7 +33,7 @@ Build `xinput1_3.dll` with `./build.sh` (needs mingw-w64 through nix) and copy i
 WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 ```
 
-Press **Insert** or **F8** in game to open the menu.
+Press **Insert** or **F8** in game to open the menu. While it is open the game ignores your mouse and keyboard.
 
 ### Notes
 

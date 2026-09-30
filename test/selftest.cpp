@@ -1,5 +1,6 @@
 #include <cstdio>
 #include "cheats.h"
+#include "config.h"
 #include "fake.h"
 
 static int fails = 0;
@@ -72,7 +73,22 @@ int main(int argc, char** argv) {
     CHECK(game::g.players.size() == 1);
     game::set_stat(machete, ST_Damage, 1234);
     game::write_stat(machete, ST_Damage, 5);
-    cheats::on.god = cheats::on.stamina = cheats::on.supplies = cheats::on.one_hit = true;
+    cheats::locate((uintptr_t)m);
+    printf("params: %zu names\n", cheats::param_ids.size());
+    CHECK(cheats::param_ids["MaxStamina"] == 495 && cheats::param_ids["InfiniteStamina"] == 969);
+    CHECK(cheats::param_ids["GrapplingHookCooldown"] == 541 && cheats::param_ids["TDCooldown"] == 20);
+    CHECK(cheats::param_ids.count("FlashlightDrainMul") && cheats::param_ids.count("ZombieSpitToxicEnabled"));
+    for (auto& c : cheats::CHEATS) {
+        for (auto& n : c.numbers) CHECK(cheats::param_ids.count(n.first));
+        for (auto* n : c.switches) CHECK(cheats::param_ids.count(n));
+    }
+    CHECK(cheats::local_player_root && cheats::params_root && cheats::unlimited_ammo_flag);
+    cheats::local_player_root = cheats::params_root = 0;
+    uintptr_t flag = cheats::unlimited_ammo_flag;
+    static uint8_t fake_rules[4];
+    cheats::unlimited_ammo_flag = (uintptr_t)fake_rules;
+    for (auto* k : {"god", "stamina", "supplies", "one_hit", "hook", "uv", "ammo", "z_spits"}) cheats::find(k)->on = true;
+    game::wr<float>(w.params + cheats::param_ids["GrapplingHookCooldown"] * 16 + 8, 12.5f);
     cheats::scan_enemies();
     game::set_count(mat->items[0], 999);
     cheats::tick();
@@ -85,10 +101,32 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<float>(w.stamina + 0x10) == 100);
     CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
     CHECK(game::count(mat->items[0]) == 999);
-    cheats::on.god = false;
+    auto param = [&](const char* n) { return w.params + cheats::param_ids[n] * 16 + 8; };
+    CHECK(game::rdv<float>(param("GrapplingHookCooldown")) == 0 && game::rdv<uint8_t>(param("CanUseHook")) == 1);
+    CHECK(game::rdv<uint8_t>(param("InfiniteStamina")) == 1 && game::rdv<float>(param("FlashlightRechargeSpeed")) == 1000);
+    CHECK(game::rdv<uint8_t>(param("CanUseHook")) == 1 && game::rdv<float>(param("ZombieSpitLightDisableAmmoRegenTime3v1")) == 0.05f);
+    CHECK(fake_rules[0] == 1);
+    for (auto& c : cheats::CHEATS) c.on = false;
     cheats::tick();
+    CHECK(game::rdv<float>(param("GrapplingHookCooldown")) == 12.5f && game::rdv<uint8_t>(param("CanUseHook")) == 0 && fake_rules[0] == 0);
+    (void)flag;
     CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == game::g.vt_human);
     printf("cheats: %s\n", cheats::describe().c_str());
+
+    config::cfg.accent[0] = 0.25f;
+    config::cfg.pages = {{"combat", false}, {"player", true}};
+    config::cfg.cheats_on = {"god", "uv"};
+    char tmp[MAX_PATH];
+    GetTempPathA(MAX_PATH, tmp);
+    std::string path = std::string(tmp) + "fatrainer_selftest.ini";
+    CHECK(config::save(path));
+    config::cfg = config::Config();
+    config::load(path);
+    config::normalize({"player", "combat", "settings"});
+    CHECK(config::cfg.accent[0] == 0.25f && config::cfg.cheats_on.size() == 2 && config::cfg.cheats_on[1] == "uv");
+    CHECK(config::cfg.pages.size() == 3 && config::cfg.pages[0].id == "combat" && !config::cfg.pages[0].visible);
+    CHECK(config::cfg.pages[2].id == "settings" && config::cfg.pages[2].visible);
+    DeleteFileA(path.c_str());
 
     printf(fails ? "SELFTEST FAILED (%d)\n" : "SELFTEST OK\n", fails);
     return fails != 0;

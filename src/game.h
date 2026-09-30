@@ -65,6 +65,35 @@ inline uintptr_t find_vtable(uintptr_t base, const char* cls) {
     return 0;
 }
 
+inline const Section* section_named(const std::vector<Section>& secs, const char* name) {
+    for (auto& s : secs)
+        if (s.name == name) return &s;
+    return nullptr;
+}
+
+inline std::vector<uintptr_t> find_code(uintptr_t base, const char* pattern, size_t limit = 1) {
+    std::vector<int> bytes;
+    for (const char* p = pattern; *p;) {
+        if (*p == ' ') { p++; continue; }
+        if (*p == '?') { bytes.push_back(-1); p++; continue; }
+        bytes.push_back((int)strtol(p, (char**)&p, 16));
+    }
+    std::vector<uintptr_t> out;
+    auto secs = sections(base);
+    auto* text = section_named(secs, ".text");
+    if (!text || bytes.empty()) return out;
+    const uint8_t* b = (const uint8_t*)text->start;
+    size_t n = text->end - text->start;
+    for (size_t i = 0; i + bytes.size() <= n && out.size() < limit; i++) {
+        size_t k = 0;
+        while (k < bytes.size() && (bytes[k] < 0 || b[i + k] == bytes[k])) k++;
+        if (k == bytes.size()) out.push_back(text->start + i);
+    }
+    return out;
+}
+
+inline uintptr_t rip_target(uintptr_t at, int disp_at, int length) { return at + length + rdv<int32_t>(at + disp_at); }
+
 inline std::vector<std::vector<uintptr_t>> scan(const std::vector<uintptr_t>& vts) {
     std::vector<std::vector<uintptr_t>> out(vts.size());
     const size_t CH = 1 << 20;

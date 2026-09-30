@@ -1,0 +1,817 @@
+#pragma once
+#include <algorithm>
+#include <cmath>
+#include "app.h"
+#include "imgui.h"
+
+namespace menu {
+
+inline ImFont *f_body, *f_small, *f_head, *f_big, *f_brand;
+
+struct Theme { ImVec4 accent, accent_soft, bg, side, card, hover, line, text, dim, ok, bad; };
+inline Theme T;
+
+inline float S(float v) { return v * config::cfg.scale; }
+inline ImU32 col(ImVec4 c, float alpha = -1) {
+    if (alpha >= 0) c.w = alpha;
+    return ImGui::GetColorU32(c);
+}
+
+inline void apply_style() {
+    auto& a = config::cfg.accent;
+    T.accent = {a[0], a[1], a[2], 1};
+    T.accent_soft = {a[0], a[1], a[2], 0.14f};
+    T.bg = {0.043f, 0.047f, 0.058f, 0.985f};
+    T.side = {0.058f, 0.063f, 0.077f, 1};
+    T.card = {0.080f, 0.087f, 0.104f, 1};
+    T.hover = {0.102f, 0.110f, 0.130f, 1};
+    T.line = {1, 1, 1, 0.06f};
+    T.text = {0.93f, 0.94f, 0.96f, 1};
+    T.dim = {0.54f, 0.58f, 0.65f, 1};
+    T.ok = {0.35f, 0.82f, 0.55f, 1};
+    T.bad = {0.93f, 0.37f, 0.37f, 1};
+    ImGuiStyle& s = ImGui::GetStyle();
+    s.WindowRounding = S(16), s.ChildRounding = S(12), s.FrameRounding = S(8), s.PopupRounding = S(12);
+    s.GrabRounding = S(8), s.ScrollbarRounding = S(8), s.TabRounding = S(8);
+    s.WindowBorderSize = 1, s.ChildBorderSize = 0, s.FrameBorderSize = 0, s.PopupBorderSize = 1;
+    s.WindowPadding = {0, 0}, s.FramePadding = {S(12), S(8)}, s.ItemSpacing = {S(10), S(10)};
+    s.ItemInnerSpacing = {S(8), S(6)}, s.CellPadding = {S(10), S(8)}, s.ScrollbarSize = S(8), s.GrabMinSize = S(12);
+    ImVec4* c = s.Colors;
+    ImVec4 accent_mid = {a[0], a[1], a[2], 0.55f};
+    c[ImGuiCol_WindowBg] = T.bg;
+    c[ImGuiCol_ChildBg] = {0, 0, 0, 0};
+    c[ImGuiCol_PopupBg] = {0.06f, 0.065f, 0.08f, 0.99f};
+    c[ImGuiCol_Border] = T.line;
+    c[ImGuiCol_ModalWindowDimBg] = {0, 0, 0, 0.5f};
+    c[ImGuiCol_Text] = T.text;
+    c[ImGuiCol_TextDisabled] = T.dim;
+    c[ImGuiCol_FrameBg] = {0.12f, 0.13f, 0.155f, 1};
+    c[ImGuiCol_FrameBgHovered] = {0.15f, 0.16f, 0.19f, 1};
+    c[ImGuiCol_FrameBgActive] = {0.17f, 0.18f, 0.21f, 1};
+    c[ImGuiCol_Button] = {0.13f, 0.14f, 0.165f, 1};
+    c[ImGuiCol_ButtonHovered] = {0.17f, 0.18f, 0.215f, 1};
+    c[ImGuiCol_ButtonActive] = accent_mid;
+    c[ImGuiCol_Header] = T.accent_soft;
+    c[ImGuiCol_HeaderHovered] = {1, 1, 1, 0.05f};
+    c[ImGuiCol_HeaderActive] = accent_mid;
+    c[ImGuiCol_Separator] = T.line;
+    c[ImGuiCol_ScrollbarBg] = {0, 0, 0, 0};
+    c[ImGuiCol_ScrollbarGrab] = {1, 1, 1, 0.10f};
+    c[ImGuiCol_ScrollbarGrabHovered] = {1, 1, 1, 0.18f};
+    c[ImGuiCol_ScrollbarGrabActive] = accent_mid;
+    c[ImGuiCol_CheckMark] = c[ImGuiCol_SliderGrab] = c[ImGuiCol_SliderGrabActive] = T.accent;
+    c[ImGuiCol_TableRowBg] = {0, 0, 0, 0};
+    c[ImGuiCol_TableRowBgAlt] = {1, 1, 1, 0.02f};
+    c[ImGuiCol_TableBorderLight] = T.line;
+    c[ImGuiCol_NavCursor] = T.accent;
+    c[ImGuiCol_TextSelectedBg] = {a[0], a[1], a[2], 0.35f};
+    c[ImGuiCol_ResizeGrip] = {0, 0, 0, 0};
+    c[ImGuiCol_ResizeGripHovered] = accent_mid;
+    c[ImGuiCol_ResizeGripActive] = T.accent;
+    ImGui::GetIO().FontGlobalScale = config::cfg.scale;
+}
+
+inline std::string lower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    return s;
+}
+
+inline std::string thousands(long long v) {
+    std::string s = std::to_string(v < 0 ? -v : v);
+    for (int i = (int)s.size() - 3; i > 0; i -= 3) s.insert(i, ",");
+    return (v < 0 ? "-" : "") + s;
+}
+
+inline float animate(ImGuiID id, float target, float speed = 14) {
+    float& v = *ImGui::GetStateStorage()->GetFloatRef(id, target);
+    v += (target - v) * std::min(1.0f, ImGui::GetIO().DeltaTime * speed);
+    return v;
+}
+
+inline ImVec4 mix(ImVec4 a, ImVec4 b, float t) { return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t}; }
+
+inline void label(const char* text) {
+    ImGui::PushFont(f_small);
+    ImGui::PushStyleColor(ImGuiCol_Text, T.dim);
+    ImGui::TextUnformatted(text);
+    ImGui::PopStyleColor();
+    ImGui::PopFont();
+}
+
+inline bool accent_button(const char* text, ImVec2 size = {0, 0}) {
+    ImGui::PushStyleColor(ImGuiCol_Button, T.accent);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, mix(T.accent, {1, 1, 1, 1}, 0.15f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, mix(T.accent, {0, 0, 0, 1}, 0.15f));
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(15, 15, 18, 255));
+    bool r = ImGui::Button(text, size);
+    ImGui::PopStyleColor(4);
+    return r;
+}
+
+inline void begin_card(const char* id, const char* title = nullptr) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, T.card);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(16), S(14)});
+    ImGui::BeginChild(id, {0, 0}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding);
+    if (title) {
+        label(title);
+        ImGui::Dummy({0, S(2)});
+    }
+}
+
+inline void end_card() {
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+    ImGui::Dummy({0, S(4)});
+}
+
+inline bool switch_row(const char* text, const char* hint, bool& value) {
+    ImGui::PushID(text);
+    float w = ImGui::GetContentRegionAvail().x, h = S(hint && *hint ? 58 : 42);
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    bool clicked = ImGui::InvisibleButton("row", {w, h});
+    if (clicked) value = !value;
+    bool hovered = ImGui::IsItemHovered();
+    auto* dl = ImGui::GetWindowDrawList();
+    float hover = animate(ImGui::GetID("hover"), hovered ? 1.0f : 0.0f);
+    if (hover > 0.01f) dl->AddRectFilled({p.x - S(8), p.y}, {p.x + w + S(8), p.y + h}, col({1, 1, 1, 0.035f * hover}), S(10));
+    float body = ImGui::GetFontSize(), small = f_small->FontSize * config::cfg.scale;
+    float text_y = p.y + (hint && *hint ? S(9) : (h - body) / 2);
+    dl->AddText(f_body, body, {p.x + S(4), text_y}, col(T.text), text);
+    if (hint && *hint) dl->AddText(f_small, small, {p.x + S(4), text_y + body + S(3)}, col(T.dim), hint);
+    float sw = S(44), sh = S(24), t = animate(ImGui::GetID("knob"), value ? 1.0f : 0.0f);
+    ImVec2 s0 = {p.x + w - sw - S(4), p.y + (h - sh) / 2};
+    dl->AddRectFilled(s0, {s0.x + sw, s0.y + sh}, col(mix({0.2f, 0.215f, 0.25f, 1}, T.accent, t)), sh / 2);
+    dl->AddCircleFilled({s0.x + sh / 2 + t * (sw - sh), s0.y + sh / 2}, sh / 2 - S(3), col(mix({0.75f, 0.77f, 0.8f, 1}, {1, 1, 1, 1}, t)));
+    ImGui::PopID();
+    return clicked;
+}
+
+inline void cheat_switch(const char* key, const char* override_label = nullptr) {
+    auto* c = cheats::find(key);
+    if (!c) return;
+    bool v = c->on;
+    if (switch_row(override_label ? override_label : c->label, c->hint, v)) {
+        c->on = v;
+        save_config();
+    }
+}
+
+inline void stat_tile(const char* id, const char* name, float value, float full, ImVec4 color, float width) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, T.card);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(16), S(14)});
+    ImGui::BeginChild(id, {width, S(104)}, ImGuiChildFlags_AlwaysUseWindowPadding);
+    label(name);
+    ImGui::PushFont(f_head);
+    if (std::isnan(value)) ImGui::TextDisabled("--");
+    else ImGui::Text("%.0f", value);
+    ImGui::PopFont();
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x, frac = full > 0 && !std::isnan(value) ? std::clamp(value / full, 0.0f, 1.0f) : 0;
+    auto* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled({p.x, p.y + S(4)}, {p.x + w, p.y + S(10)}, col({1, 1, 1, 0.07f}), S(3));
+    dl->AddRectFilled({p.x, p.y + S(4)}, {p.x + w * animate(ImGui::GetID("bar"), frac, 6), p.y + S(10)}, col(color), S(3));
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
+
+inline void note(const char* text) {
+    ImGui::PushFont(f_small);
+    ImGui::PushStyleColor(ImGuiCol_Text, T.dim);
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextUnformatted(text);
+    ImGui::PopTextWrapPos();
+    ImGui::PopStyleColor();
+    ImGui::PopFont();
+}
+
+inline void empty_state(const char* text) {
+    ImGui::Dummy({0, S(24)});
+    note(text);
+}
+
+struct Cat { const char* label; ImU32 color; };
+enum { C_ALL, C_WEAPONS, C_THROWABLE, C_HEALING, C_CRAFTING, C_UPGRADES, C_BLUEPRINTS, C_OTHER, C_COUNT };
+inline const char* CAT_NAMES[C_COUNT] = {"All", "Weapons", "Throwables", "Healing", "Crafting", "Upgrades", "Blueprints", "Other"};
+
+inline int cat_of(const char* id) {
+    std::string s = id;
+    auto has = [&](const char* p) { return s.find(p) != std::string::npos; };
+    if (!strncmp(id, "Craftplan_", 10)) return C_BLUEPRINTS;
+    if (has("Upgrade") || !strncmp(id, "CWU_", 4)) return C_UPGRADES;
+    if (has("Firearm") || has("Bow") || has("Ammo") || has("Melee")) return C_WEAPONS;
+    if (has("Throwable")) return C_THROWABLE;
+    if (has("Medkit") || has("Potion") || has("Booster")) return C_HEALING;
+    if (has("Craft")) return C_CRAFTING;
+    return C_OTHER;
+}
+
+inline Cat category(const char* id) {
+    switch (cat_of(id)) {
+        case C_WEAPONS: return {strstr(id, "Melee") ? "Melee" : "Firearm", strstr(id, "Melee") ? IM_COL32(243, 154, 30, 255) : IM_COL32(80, 160, 245, 255)};
+        case C_THROWABLE: return {"Throwable", IM_COL32(170, 110, 245, 255)};
+        case C_HEALING: return {"Healing", IM_COL32(235, 90, 90, 255)};
+        case C_CRAFTING: return {"Crafting", IM_COL32(95, 200, 120, 255)};
+        case C_UPGRADES: return {"Upgrade", IM_COL32(60, 205, 200, 255)};
+        case C_BLUEPRINTS: return {"Blueprint", IM_COL32(235, 205, 90, 255)};
+    }
+    return {"Gear", IM_COL32(150, 155, 165, 255)};
+}
+
+inline bool is_test_item(const char* id) {
+    for (const char* p : {"AAA", "TEST", "Test_", "_test", "zzz", "ZZZZ", "Dev", "DEBUG", "Debug"})
+        if (strstr(id, p)) return true;
+    return false;
+}
+
+inline void item_label(const char* name, const char* id) {
+    Cat c = category(id);
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float row = S(44);
+    ImGui::GetWindowDrawList()->AddRectFilled({p.x, p.y + S(6)}, {p.x + S(3), p.y + row - S(2)}, c.color, S(2));
+    ImGui::SetCursorScreenPos({p.x + S(14), p.y + S(3)});
+    ImGui::TextUnformatted(name);
+    ImGui::SetCursorScreenPos({p.x + S(14), p.y + S(26)});
+    ImGui::PushFont(f_small);
+    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(c.color), "%s", c.label);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", id);
+    ImGui::PopFont();
+}
+
+inline uintptr_t g_edit_desc = 0;
+inline std::string g_edit_name, g_edit_id;
+inline bool g_edit_request = false;
+inline const char* RARITY[] = {"Common (white)", "Uncommon (green)", "Rare (blue)", "Unique (violet)", "Legendary (orange)", "Gold tier (platinum)"};
+
+inline bool editable(const game::Item& it) {
+    if (!it.info) return false;
+    int c = cat_of(it.info->id);
+    return c == C_WEAPONS || c == C_THROWABLE;
+}
+
+inline void open_editor(uintptr_t desc, const std::string& name, const std::string& id) {
+    g_edit_desc = desc, g_edit_name = name, g_edit_id = id;
+    g_edit_request = true;
+}
+
+inline void editor_popup() {
+    if (g_edit_request) {
+        ImGui::OpenPopup("Edit weapon");
+        g_edit_request = false;
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_Appearing, {0.5f, 0.5f});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(24), S(20)});
+    if (!ImGui::BeginPopupModal("Edit weapon", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::PopStyleVar();
+        return;
+    }
+    ImGui::PushFont(f_head);
+    ImGui::TextUnformatted(g_edit_name.c_str());
+    ImGui::PopFont();
+    label((g_edit_id + "  -  applies to every item of this type and stays while the trainer runs").c_str());
+    ImGui::Dummy({0, S(4)});
+    struct Row { int stat; const char* name; const char* fmt; float mul; };
+    const Row rows[] = {{ST_Damage, "Damage", "%.1f", 2},          {ST_Condition, "Durability", "%.0f", 10},
+                        {ST_CriticalProb, "Critical chance", "%.2f", 2}, {ST_CriticalDamage, "Critical damage", "%.2f", 2},
+                        {ST_Force, "Knockback force", "%.1f", 2},  {ST_StaminaUsage, "Stamina per swing", "%.3f", 0.5f},
+                        {ST_DamageRange, "Reach", "%.2f", 1.5f},   {ST_UpgradeLevel, "Upgrade level", "%.0f", 0},
+                        {ST_AllowedRepairs, "Repairs left", "%.0f", 0}, {ST_MaxStackCount, "Max stack", "%.0f", 0},
+                        {ST_Price, "Price", "%.0f", 0}};
+    int shown = 0;
+    if (ImGui::BeginTable("stats", 3, ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(190));
+        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthFixed, S(180));
+        ImGui::TableSetupColumn("quick", ImGuiTableColumnFlags_WidthFixed, S(70));
+        for (auto& r : rows) {
+            if (!game::has_stat(r.stat)) continue;
+            float v = game::get_stat(g_edit_desc, r.stat);
+            if (std::isnan(v)) continue;
+            shown++;
+            ImGui::PushID(r.stat);
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(r.name);
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(S(170));
+            float e = v;
+            ImGui::InputFloat("##v", &e, 0, 0, r.fmt);
+            if (ImGui::IsItemDeactivatedAfterEdit()) game::set_stat(g_edit_desc, r.stat, e);
+            ImGui::TableNextColumn();
+            char b[16];
+            snprintf(b, sizeof b, r.mul > 0 ? "x%g" : "+1", r.mul);
+            if (ImGui::Button(b, {S(64), 0})) game::set_stat(g_edit_desc, r.stat, r.mul > 0 ? v * r.mul : v + 1);
+            ImGui::PopID();
+        }
+        if (game::has_stat(ST_Color)) {
+            int cur = (int)game::get_stat(g_edit_desc, ST_Color);
+            if (cur >= 0 && cur < 6) {
+                shown++;
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted("Rarity");
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(S(170));
+                if (ImGui::Combo("##rarity", &cur, RARITY, 6)) game::set_stat(g_edit_desc, ST_Color, (float)cur);
+            }
+        }
+        ImGui::EndTable();
+    }
+    if (!shown) note("No editable stats found for this item. Press Refresh after loading your save and check fatrainer.log.");
+    ImGui::Dummy({0, S(6)});
+    if (accent_button("Done", {S(120), 0})) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+    ImGui::PopStyleVar();
+}
+
+inline void search_box(const char* id, const char* hint, char* buf, size_t size) {
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint(id, hint, buf, size);
+}
+
+inline void inventory_page(game::Kind kind) {
+    static char filter[64] = "";
+    search_box("##f", "Search items...", filter, sizeof filter);
+    std::string f = lower(filter);
+    int shown_inv = 0;
+    ImGui::BeginChild("list", {0, 0});
+    for (size_t i = 0; i < game::g.invs.size(); i++) {
+        auto& inv = game::g.invs[i];
+        if (inv.kind != kind) continue;
+        shown_inv++;
+        std::string title = std::to_string(inv.items.size()) + " ITEMS";
+        if (inv.capacity > 0) title += "   /   " + std::to_string(inv.capacity) + " SLOTS";
+        ImGui::Dummy({0, S(2)});
+        label(title.c_str());
+        if (!ImGui::BeginTable(("t" + std::to_string(i)).c_str(), 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) continue;
+        ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Amount", ImGuiTableColumnFlags_WidthFixed, S(250));
+        for (size_t j = 0; j < inv.items.size(); j++) {
+            auto& it = inv.items[j];
+            const char* id = it.info ? it.info->id : "";
+            if (!f.empty() && lower(it.name + " " + id).find(f) == std::string::npos) continue;
+            ImGui::PushID((int)(i * 10000 + j));
+            ImGui::TableNextRow(0, S(50));
+            ImGui::TableNextColumn();
+            item_label(it.name.c_str(), id);
+            ImGui::TableNextColumn();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + S(6));
+            int v = game::count(it);
+            float bw = ImGui::GetFrameHeight();
+            if (ImGui::Button("-", {bw, 0})) game::set_count(it, std::max(0, v - 1));
+            ImGui::SameLine(0, S(4));
+            ImGui::SetNextItemWidth(S(70));
+            int e = v;
+            ImGui::InputInt("##c", &e, 0, 0);
+            if (ImGui::IsItemDeactivatedAfterEdit()) game::set_count(it, e);
+            ImGui::SameLine(0, S(4));
+            if (ImGui::Button("+", {bw, 0})) game::set_count(it, v + 1);
+            ImGui::SameLine(0, S(8));
+            static bool auto_edit = getenv("DLT_EDIT") != nullptr;
+            if (auto_edit && editable(it) && strstr(id, "Machete")) {
+                open_editor(game::item_desc(it), it.name, id);
+                auto_edit = false;
+            }
+            if (editable(it)) {
+                if (ImGui::Button("Edit", {S(64), 0})) open_editor(game::item_desc(it), it.name, id);
+            } else if (ImGui::Button("99", {S(64), 0})) {
+                game::set_count(it, 99);
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    if (!shown_inv) empty_state("Nothing here yet. Load into your save, then press Refresh.");
+    editor_popup();
+    ImGui::EndChild();
+}
+
+inline void give_item(const ItemInfo* info, int amount, int target) {
+    auto d = game::g.descs.find(info->id);
+    uintptr_t desc = d == game::g.descs.end() ? 0 : d->second;
+    std::string name = game::display_name(info);
+    if (!desc) return toast("Not available in this game session: " + name);
+    game::Kind k = target < 0 ? game::default_target(info->id) : (game::Kind)target;
+    on_game_thread([=] {
+        uintptr_t inv, tmpl;
+        {
+            std::lock_guard<std::mutex> l(game::mx);
+            auto* i = game::find_inventory(k);
+            if (!i) i = game::find_inventory(game::K_BACKPACK);
+            inv = i ? i->obj : 0;
+            tmpl = game::pick_template(i);
+        }
+        if (!inv || !tmpl) return toast("No inventory found yet: load your save and press Refresh");
+        bool ok = game::give(inv, tmpl, desc, amount);
+        logf("give %s x%d -> %s: %s", info->id, amount, game::KIND_NAMES[k], ok ? "ok" : "refused");
+        toast(ok ? "Added " + std::to_string(amount) + " x " + name : "The game refused " + name + " (inventory full?)");
+        request_refresh();
+    });
+}
+
+inline bool chip(const char* text, bool active) {
+    ImGui::PushStyleColor(ImGuiCol_Button, active ? T.accent_soft : ImVec4{1, 1, 1, 0.04f});
+    ImGui::PushStyleColor(ImGuiCol_Text, active ? T.accent : T.text);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, S(20));
+    bool r = ImGui::Button(text);
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+    return r;
+}
+
+inline void give_page() {
+    static char filter[64] = "";
+    static int cat = C_ALL, amount = 1, target = -1;
+    static bool show_test = false;
+    search_box("##gf", "Search every item in the game...", filter, sizeof filter);
+    for (int c = 0; c < C_COUNT; c++) {
+        if (chip(CAT_NAMES[c], cat == c)) cat = c;
+        ImGui::SameLine(0, S(6));
+    }
+    ImGui::NewLine();
+    ImGui::SetNextItemWidth(S(130));
+    ImGui::InputInt("Amount", &amount, 1, 10);
+    amount = std::clamp(amount, 1, 9999);
+    ImGui::SameLine(0, S(24));
+    const char* targets[] = {"Auto", "Backpack", "Stash", "Materials"};
+    int ti = target < 0 ? 0 : target == game::K_BACKPACK ? 1 : target == game::K_STASH ? 2 : 3;
+    ImGui::SetNextItemWidth(S(150));
+    if (ImGui::Combo("Into", &ti, targets, 4)) target = ti == 0 ? -1 : ti == 1 ? game::K_BACKPACK : ti == 2 ? game::K_STASH : game::K_MATERIALS;
+    ImGui::SameLine(0, S(24));
+    ImGui::Checkbox("Internal items", &show_test);
+    std::string f = lower(filter);
+    std::vector<const ItemInfo*> list;
+    for (int i = 0; i < ITEM_COUNT; i++) {
+        const ItemInfo* info = &ITEMS[i];
+        if (!show_test && (!info->name[0] || is_test_item(info->id))) continue;
+        if (cat != C_ALL && cat_of(info->id) != cat) continue;
+        if (!f.empty() && lower(game::display_name(info) + " " + info->id).find(f) == std::string::npos) continue;
+        list.push_back(info);
+    }
+    if (cat == C_BLUEPRINTS && !list.empty() && accent_button(("Give all " + std::to_string(list.size()) + " blueprints").c_str()))
+        for (auto* info : list) give_item(info, 1, target);
+    ImGui::BeginChild("give", {0, 0});
+    if (ImGui::BeginTable("g", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
+        ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Give", ImGuiTableColumnFlags_WidthFixed, S(90));
+        ImGuiListClipper clip;
+        clip.Begin((int)list.size(), S(50) + ImGui::GetStyle().CellPadding.y * 2);
+        while (clip.Step())
+            for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
+                auto* info = list[i];
+                ImGui::PushID(i);
+                ImGui::TableNextRow(0, S(50));
+                ImGui::TableNextColumn();
+                item_label(game::display_name(info).c_str(), info->id);
+                ImGui::TableNextColumn();
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + S(6));
+                if (accent_button("Give", {S(80), 0})) give_item(info, amount, target);
+                ImGui::PopID();
+            }
+        ImGui::EndTable();
+    }
+    ImGui::EndChild();
+}
+
+inline void cash_page() {
+    if (game::g.wallets.empty()) return empty_state("No wallet found yet. Load into your save, then press Refresh.");
+    static int custom = 100000;
+    for (size_t i = 0; i < game::g.wallets.size(); i++) {
+        uintptr_t w = game::g.wallets[i];
+        ImGui::PushID((int)i);
+        begin_card("wallet", game::g.wallets.size() > 1 ? ("WALLET " + std::to_string(i + 1)).c_str() : "BALANCE");
+        ImGui::PushFont(f_big);
+        ImGui::TextUnformatted(("$" + thousands(game::money(w))).c_str());
+        ImGui::PopFont();
+        ImGui::Dummy({0, S(2)});
+        for (int a : {1000, 10000, 100000}) {
+            if (ImGui::Button(("+" + thousands(a)).c_str())) game::set_money(w, game::money(w) + a);
+            ImGui::SameLine();
+        }
+        if (ImGui::Button("Max")) game::set_money(w, 9999999);
+        ImGui::SameLine(0, S(24));
+        ImGui::SetNextItemWidth(S(150));
+        ImGui::InputInt("##custom", &custom, 0, 0);
+        ImGui::SameLine();
+        if (accent_button("Set")) game::set_money(w, std::max(0, custom));
+        end_card();
+        ImGui::PopID();
+    }
+    if (game::g.wallets.size() > 1) note("Several wallets found: yours shows the same amount as the game's inventory screen.");
+}
+
+inline void player_page() {
+    if (!cheats::player) {
+        begin_card("missing");
+        note("Your character was not found yet. Load into your save, then press Refresh.");
+        end_card();
+    } else {
+        static float best_health = 0;
+        if (cheats::health() > best_health) best_health = cheats::health();
+        float tile = (ImGui::GetContentRegionAvail().x - S(12)) / 2;
+        stat_tile("health", "HEALTH", cheats::health(), best_health, T.bad, tile);
+        ImGui::SameLine(0, S(12));
+        stat_tile("stamina", "STAMINA", cheats::stamina(), cheats::stamina_full(), T.ok, tile);
+        ImGui::Dummy({0, S(2)});
+        if (accent_button("Refill health & stamina", {ImGui::GetContentRegionAvail().x, S(38)})) on_game_thread(cheats::refill);
+        ImGui::Dummy({0, S(6)});
+    }
+    begin_card("survival", "SURVIVAL");
+    cheat_switch("god");
+    cheat_switch("stamina");
+    end_card();
+    begin_card("gear", "GEAR");
+    cheat_switch("hook");
+    cheat_switch("uv");
+    end_card();
+}
+
+inline void combat_page() {
+    begin_card("enemies", "ENEMIES");
+    cheat_switch("one_hit");
+    end_card();
+    begin_card("supplies", "AMMO & SUPPLIES");
+    cheat_switch("ammo");
+    cheat_switch("supplies");
+    end_card();
+    note("Weapon stat edits from the Backpack and Stash pages stay applied while the trainer runs.");
+}
+
+inline void zombie_page() {
+    begin_card("about");
+    note("For the Be The Zombie mode, where you play the Night Hunter and invade another player's game. Turn these on before or during a match. Effects on your own hunter work as the invader; effects on the humans are decided by the host.");
+    end_card();
+    begin_card("hunter", "HUNTER");
+    cheat_switch("god", "Hunter god mode");
+    cheat_switch("z_energy");
+    end_card();
+    begin_card("abilities", "ABILITIES");
+    cheat_switch("z_cooldowns");
+    cheat_switch("z_spits");
+    cheat_switch("z_unlock");
+    cheat_switch("z_camo");
+    end_card();
+}
+
+struct Key { int vk; const char* name; };
+inline const Key KEYS[] = {{VK_INSERT, "Insert"}, {VK_F8, "F8"},   {VK_HOME, "Home"}, {VK_END, "End"},   {VK_DELETE, "Delete"},
+                           {VK_PRIOR, "Page Up"}, {VK_NEXT, "Page Down"}, {VK_F1, "F1"}, {VK_F2, "F2"}, {VK_F3, "F3"},
+                           {VK_F4, "F4"},         {VK_F5, "F5"},   {VK_F6, "F6"},     {VK_F7, "F7"},     {VK_F9, "F9"},
+                           {VK_F10, "F10"},       {VK_F11, "F11"}, {VK_F12, "F12"}};
+
+struct Page { const char* id; const char* title; const char* subtitle; void (*draw)(); bool (*shown)(); };
+inline bool always() { return true; }
+inline void settings_page();
+inline const Page PAGES[] = {
+    {"player", "Player", "Health, stamina and gear", player_page, always},
+    {"combat", "Combat", "Enemies, ammo and supplies", combat_page, always},
+    {"zombie", "Be The Zombie", "Night Hunter abilities", zombie_page, always},
+    {"cash", "Cash", "Your money", cash_page, always},
+    {"backpack", "Backpack", "Items you carry", [] { inventory_page(game::K_BACKPACK); }, always},
+    {"stash", "Stash", "Items stored in your stash", [] { inventory_page(game::K_STASH); }, always},
+    {"materials", "Materials", "Crafting parts and consumables", [] { inventory_page(game::K_MATERIALS); }, always},
+    {"tools", "Tools", "Special items", [] { inventory_page(game::K_TOOLS); }, [] { return game::find_inventory(game::K_TOOLS) != nullptr; }},
+    {"give", "Give items", "Spawn any item in the game", give_page, always},
+    {"settings", "Settings", "Look, controls and sidebar", settings_page, always},
+};
+
+inline const Page* page_by_id(const std::string& id) {
+    for (auto& p : PAGES)
+        if (id == p.id) return &p;
+    return nullptr;
+}
+
+inline std::vector<std::string> page_ids() {
+    std::vector<std::string> out;
+    for (auto& p : PAGES) out.push_back(p.id);
+    return out;
+}
+
+inline void settings_page() {
+    auto& c = config::cfg;
+    bool changed = false;
+    begin_card("look", "APPEARANCE");
+    const float presets[][3] = {{0.953f, 0.604f, 0.118f}, {0.93f, 0.33f, 0.33f}, {0.35f, 0.82f, 0.55f},
+                                {0.33f, 0.62f, 0.98f}, {0.66f, 0.45f, 0.98f}, {0.95f, 0.45f, 0.70f}, {0.85f, 0.87f, 0.90f}};
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Accent");
+    ImGui::SameLine(S(170));
+    for (int i = 0; i < 7; i++) {
+        ImGui::PushID(i);
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float d = ImGui::GetFrameHeight();
+        if (ImGui::InvisibleButton("sw", {d, d})) memcpy(c.accent, presets[i], sizeof c.accent), changed = true;
+        bool sel = !memcmp(c.accent, presets[i], sizeof c.accent);
+        auto* dl = ImGui::GetWindowDrawList();
+        dl->AddCircleFilled({p.x + d / 2, p.y + d / 2}, d / 2 - S(3), col({presets[i][0], presets[i][1], presets[i][2], 1}));
+        if (sel || ImGui::IsItemHovered()) dl->AddCircle({p.x + d / 2, p.y + d / 2}, d / 2, col(T.text, sel ? 1.0f : 0.4f), 0, S(2));
+        ImGui::SameLine(0, S(6));
+        ImGui::PopID();
+    }
+    if (ImGui::ColorEdit3("##custom", c.accent, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) changed = true;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Interface size");
+    ImGui::SameLine(S(170));
+    ImGui::SetNextItemWidth(S(260));
+    if (ImGui::SliderFloat("##scale", &c.scale, 0.75f, 1.5f, "%.2fx")) changed = true;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Background dim");
+    ImGui::SameLine(S(170));
+    ImGui::SetNextItemWidth(S(260));
+    float pct = c.dim * 100;
+    if (ImGui::SliderFloat("##dim", &pct, 0, 95, "%.0f%%")) c.dim = pct / 100, changed = true;
+    end_card();
+
+    begin_card("controls", "CONTROLS");
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Menu key");
+    ImGui::SameLine(S(170));
+    ImGui::SetNextItemWidth(S(180));
+    const char* current = "Insert";
+    for (auto& k : KEYS)
+        if (k.vk == c.menu_key) current = k.name;
+    if (ImGui::BeginCombo("##key", current)) {
+        for (auto& k : KEYS)
+            if (ImGui::Selectable(k.name, k.vk == c.menu_key)) c.menu_key = k.vk, changed = true;
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    note("F8 always works too.");
+    bool remember = c.remember_cheats;
+    if (switch_row("Remember cheats", "Turn your cheats back on the next time the game starts.", remember)) c.remember_cheats = remember, changed = true;
+    end_card();
+
+    begin_card("sidebar", "SIDEBAR");
+    note("Choose which pages show up and in what order.");
+    ImGui::Dummy({0, S(2)});
+    for (size_t i = 0; i < c.pages.size(); i++) {
+        auto* p = page_by_id(c.pages[i].id);
+        if (!p) continue;
+        ImGui::PushID((int)i);
+        float right = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+        bool vis = c.pages[i].visible;
+        ImGui::BeginDisabled(c.pages[i].id == "settings");
+        if (ImGui::Checkbox("##vis", &vis)) c.pages[i].visible = vis, changed = true;
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(p->title);
+        float bw = ImGui::GetFrameHeight();
+        ImGui::SameLine(right - bw * 2 - S(6));
+        ImGui::BeginDisabled(i == 0);
+        if (ImGui::ArrowButton("up", ImGuiDir_Up)) std::swap(c.pages[i], c.pages[i - 1]), changed = true;
+        ImGui::EndDisabled();
+        ImGui::SameLine(0, S(6));
+        ImGui::BeginDisabled(i + 1 == c.pages.size());
+        if (ImGui::ArrowButton("down", ImGuiDir_Down)) std::swap(c.pages[i], c.pages[i + 1]), changed = true;
+        ImGui::EndDisabled();
+        ImGui::PopID();
+    }
+    end_card();
+
+    begin_card("reset", "CONFIG");
+    note(("Saved automatically to " + config::default_path()).c_str());
+    ImGui::Dummy({0, S(2)});
+    if (ImGui::Button("Reset to defaults")) {
+        config::cfg = config::Config();
+        config::normalize(page_ids());
+        changed = true;
+    }
+    end_card();
+
+    if (changed) {
+        config::normalize(page_ids());
+        apply_style();
+        save_config();
+    }
+}
+
+inline std::string g_page = "player";
+
+inline bool nav_item(const Page& p, bool active) {
+    ImGui::PushID(p.id);
+    float w = ImGui::GetContentRegionAvail().x, h = S(40);
+    ImVec2 at = ImGui::GetCursorScreenPos();
+    bool clicked = ImGui::InvisibleButton("nav", {w, h});
+    float hover = animate(ImGui::GetID("h"), ImGui::IsItemHovered() ? 1.0f : 0.0f);
+    float on = animate(ImGui::GetID("a"), active ? 1.0f : 0.0f);
+    auto* dl = ImGui::GetWindowDrawList();
+    if (hover > 0.01f) dl->AddRectFilled(at, {at.x + w, at.y + h}, col({1, 1, 1, 0.035f * hover}), S(10));
+    if (on > 0.01f) {
+        dl->AddRectFilled(at, {at.x + w, at.y + h}, col(T.accent, 0.13f * on), S(10));
+        dl->AddRectFilled({at.x, at.y + h * 0.28f}, {at.x + S(3), at.y + h * 0.72f}, col(T.accent, on), S(2));
+    }
+    float fs = ImGui::GetFontSize();
+    dl->AddText(f_body, fs, {at.x + S(18), at.y + (h - fs) / 2}, col(mix(T.dim, T.text, std::max(on, hover * 0.6f))), p.title);
+    ImGui::PopID();
+    return clicked;
+}
+
+inline void sidebar() {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, T.side);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(14), S(20)});
+    ImGui::BeginChild("side", {S(228), 0}, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
+    ImGui::SetCursorPosX(S(18));
+    ImGui::PushFont(f_brand);
+    ImGui::TextColored(T.accent, "FaTrainer");
+    ImGui::PopFont();
+    ImGui::SetCursorPosX(S(19));
+    label("DYING LIGHT");
+    ImGui::Dummy({0, S(14)});
+    for (auto& e : config::cfg.pages) {
+        auto* p = page_by_id(e.id);
+        if (!p || !e.visible || !p->shown()) continue;
+        if (nav_item(*p, g_page == p->id)) g_page = p->id;
+    }
+    float bottom = ImGui::GetWindowHeight() - S(20) - ImGui::GetFrameHeight() - S(34);
+    if (ImGui::GetCursorPosY() < bottom) ImGui::SetCursorPosY(bottom);
+    const char* st = game::g.scanning ? "Scanning..." : game::g.vt_money ? (cheats::player ? "Connected" : "Waiting for save") : "Game not ready";
+    ImVec4 sc = game::g.scanning ? T.accent : game::g.vt_money ? (cheats::player ? T.ok : T.accent) : T.bad;
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddCircleFilled({p.x + S(10), p.y + S(9)}, S(4), col(sc));
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + S(22));
+    ImGui::PushFont(f_small);
+    ImGui::TextColored(sc, "%s", st);
+    ImGui::PopFont();
+    ImGui::BeginDisabled(game::g.scanning);
+    if (ImGui::Button("Refresh", {-1, 0})) request_refresh();
+    ImGui::EndDisabled();
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
+
+inline void draw() {
+    ImGuiIO& io = ImGui::GetIO();
+    if (config::cfg.dim > 0) ImGui::GetBackgroundDrawList()->AddRectFilled({0, 0}, io.DisplaySize, IM_COL32(0, 0, 0, (int)(config::cfg.dim * 255)));
+    static bool first = true;
+    if (first) {
+        first = false;
+        if (const char* p = getenv("DLT_PAGE")) g_page = p;
+    }
+    ImGui::SetNextWindowSize({S(1040), S(700)}, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_FirstUseEver, {0.5f, 0.5f});
+    ImGui::SetNextWindowSizeConstraints({S(760), S(480)}, {FLT_MAX, FLT_MAX});
+    ImGui::Begin(TITLE, nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    {
+        std::lock_guard<std::mutex> l(game::mx);
+        const Page* page = page_by_id(g_page);
+        if (!page || !page->shown()) page = &PAGES[0], g_page = page->id;
+        sidebar();
+        ImGui::SameLine(0, 0);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(30), S(24)});
+        ImGui::BeginChild("content", {0, 0}, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
+        ImGui::PopStyleVar();
+        ImGui::PushFont(f_head);
+        ImGui::TextUnformatted(page->title);
+        ImGui::PopFont();
+        label(page->subtitle);
+        ImGui::Dummy({0, S(8)});
+        ImGui::BeginChild("page", {0, 0});
+        page->draw();
+        ImGui::EndChild();
+        ImGui::EndChild();
+    }
+    ImGui::End();
+
+    std::string msg;
+    {
+        std::lock_guard<std::mutex> q(g_qmx);
+        if (GetTickCount() - g_toast_at < 3500) msg = g_toast;
+    }
+    if (!msg.empty()) {
+        ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y - S(60)}, ImGuiCond_Always, {0.5f, 1});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(18), S(12)});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, S(24));
+        ImGui::Begin("##toast", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs);
+        ImGui::TextUnformatted(msg.c_str());
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+}
+
+inline void load_fonts(const void* ttf, int size) {
+    ImGuiIO& io = ImGui::GetIO();
+    ImFontConfig cfg;
+    cfg.FontDataOwnedByAtlas = false;
+    cfg.OversampleH = 3;
+    f_body = io.Fonts->AddFontFromMemoryTTF((void*)ttf, size, 20.0f, &cfg);
+    f_small = io.Fonts->AddFontFromMemoryTTF((void*)ttf, size, 15.0f, &cfg);
+    f_head = io.Fonts->AddFontFromMemoryTTF((void*)ttf, size, 30.0f, &cfg);
+    f_brand = io.Fonts->AddFontFromMemoryTTF((void*)ttf, size, 26.0f, &cfg);
+    f_big = io.Fonts->AddFontFromMemoryTTF((void*)ttf, size, 54.0f, &cfg);
+}
+
+inline void startup() {
+    config::load(config::default_path());
+    config::normalize(page_ids());
+    if (config::cfg.remember_cheats)
+        for (auto& key : config::cfg.cheats_on)
+            if (auto* c = cheats::find(key)) c->on = true;
+}
+
+}

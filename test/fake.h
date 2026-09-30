@@ -9,7 +9,7 @@ const int DAMAGE_OFF = 0x120, CONDITION_OFF = 0x140, COLOR_OFF = 0x150;
 struct World {
     uint8_t* mem;
     size_t used = 0;
-    uintptr_t wallet, backpack, stash, materials, manager, player, stamina, enemy, enemy_health;
+    uintptr_t wallet, backpack, stash, materials, manager, player, stamina, enemy, enemy_health, params;
     std::map<std::string, uintptr_t> desc;
 
     uintptr_t alloc(size_t n) {
@@ -63,6 +63,12 @@ struct World {
         put<uintptr_t>(player, game::g.vt_player);
         put<uintptr_t>(player + 0x8f8, game::g.vt_human);
         put<float>(player + 0x125c, 87);
+        uintptr_t container = alloc(0x100), holder = alloc(0x10), table = alloc(8 * 1100);
+        params = alloc(16 * 1100);
+        put<uintptr_t>(player + 0xe58, container);
+        put<uintptr_t>(container + 0xd0, holder);
+        put<uintptr_t>(holder, table);
+        for (int i = 0; i < 1100; i++) put<uintptr_t>(table + (i + 1) * 8, params + i * 16);
         stamina = alloc(0x40);
         put<float>(stamina + 0x10, 40);
         put<float>(stamina + 0x14, 100);

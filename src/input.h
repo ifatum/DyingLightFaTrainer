@@ -1,0 +1,124 @@
+#pragma once
+#define DIRECTINPUT_VERSION 0x0800
+#include <windows.h>
+#include <dinput.h>
+#include <atomic>
+#include <map>
+#include <mutex>
+
+namespace input {
+
+inline std::atomic<bool> blocked{false};
+
+using GetStateFn = HRESULT(WINAPI*)(void*, DWORD, void*);
+using GetDataFn = HRESULT(WINAPI*)(void*, DWORD, DIDEVICEOBJECTDATA*, DWORD*, DWORD);
+using AsyncKeyFn = SHORT(WINAPI*)(int);
+using KeyboardFn = BOOL(WINAPI*)(BYTE*);
+
+struct Patched { void** vtable; GetStateFn get_state; GetDataFn get_data; };
+inline Patched patched[8];
+inline int patched_count = 0;
+inline std::mutex kinds_mx;
+inline std::map<void*, bool> is_mouse;
+inline AsyncKeyFn real_async_key, real_key_state;
+inline KeyboardFn real_keyboard_state;
+
+inline Patched* patch_for(void* device) {
+    void** vt = *(void***)device;
+    for (int i = 0; i < patched_count; i++)
+        if (patched[i].vtable == vt) return &patched[i];
+    return nullptr;
+}
+
+inline bool mouse_device(void* device) {
+    std::lock_guard<std::mutex> l(kinds_mx);
+    auto it = is_mouse.find(device);
+    if (it != is_mouse.end()) return it->second;
+    DIDEVCAPS caps{sizeof caps};
+    bool mouse = SUCCEEDED(((IDirectInputDevice8W*)device)->GetCapabilities(&caps)) && GET_DIDEVICE_TYPE(caps.dwDevType) == DI8DEVTYPE_MOUSE;
+    return is_mouse[device] = mouse;
+}
+
+inline HRESULT WINAPI blocked_state(void* device, DWORD size, void* data) {
+    HRESULT r = patch_for(device)->get_state(device, size, data);
+    if (blocked && SUCCEEDED(r) && data) memset(data, 0, size);
+    return r;
+}
+
+inline HRESULT WINAPI blocked_data(void* device, DWORD size, DIDEVICEOBJECTDATA* data, DWORD* count, DWORD flags) {
+    HRESULT r = patch_for(device)->get_data(device, size, data, count, flags);
+    if (!blocked || FAILED(r) || !data || !count || (flags & DIGDD_PEEK)) return r;
+    bool mouse = mouse_device(device);
+    DWORD kept = 0;
+    for (DWORD i = 0; i < *count; i++) {
+        auto* e = (DIDEVICEOBJECTDATA*)((BYTE*)data + i * size);
+        bool release = !(e->dwData & 0x80) && (!mouse || e->dwOfs >= DIMOFS_BUTTON0);
+        if (release) memmove((BYTE*)data + kept++ * size, e, size);
+    }
+    *count = kept;
+    return r;
+}
+
+inline SHORT WINAPI blocked_async_key(int vk) { return blocked ? 0 : real_async_key(vk); }
+inline SHORT WINAPI blocked_key_state(int vk) { return blocked ? 0 : real_key_state(vk); }
+inline BOOL WINAPI blocked_keyboard_state(BYTE* keys) {
+    BOOL r = real_keyboard_state(keys);
+    if (blocked && r && keys) memset(keys, 0, 256);
+    return r;
+}
+
+inline void patch_vtable(void* device) {
+    void** vt = *(void***)device;
+    if (patch_for(device) || patched_count >= 8) return;
+    patched[patched_count++] = {vt, (GetStateFn)vt[9], (GetDataFn)vt[10]};
+    DWORD old;
+    VirtualProtect(&vt[9], 2 * sizeof(void*), PAGE_EXECUTE_READWRITE, &old);
+    vt[9] = (void*)blocked_state;
+    vt[10] = (void*)blocked_data;
+    VirtualProtect(&vt[9], 2 * sizeof(void*), old, &old);
+}
+
+inline void* hook_import(HMODULE module, const char* dll, const char* name, void* replacement) {
+    if (!module) return nullptr;
+    auto base = (BYTE*)module;
+    auto nt = (IMAGE_NT_HEADERS*)(base + ((IMAGE_DOS_HEADER*)base)->e_lfanew);
+    auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (!dir.VirtualAddress) return nullptr;
+    for (auto imp = (IMAGE_IMPORT_DESCRIPTOR*)(base + dir.VirtualAddress); imp->Name; imp++) {
+        if (_stricmp((char*)(base + imp->Name), dll)) continue;
+        auto names = (IMAGE_THUNK_DATA*)(base + imp->OriginalFirstThunk);
+        auto slots = (IMAGE_THUNK_DATA*)(base + imp->FirstThunk);
+        for (; names->u1.AddressOfData; names++, slots++) {
+            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
+            if (strcmp((char*)((IMAGE_IMPORT_BY_NAME*)(base + names->u1.AddressOfData))->Name, name)) continue;
+            void* original = (void*)slots->u1.Function;
+            DWORD old;
+            VirtualProtect(&slots->u1.Function, sizeof(void*), PAGE_READWRITE, &old);
+            slots->u1.Function = (ULONG_PTR)replacement;
+            VirtualProtect(&slots->u1.Function, sizeof(void*), old, &old);
+            return original;
+        }
+    }
+    return nullptr;
+}
+
+inline int install(HMODULE engine) {
+    for (REFIID iid : {IID_IDirectInput8W, IID_IDirectInput8A}) {
+        IDirectInput8W* di = nullptr;
+        if (FAILED(DirectInput8Create(GetModuleHandleW(nullptr), DIRECTINPUT_VERSION, iid, (void**)&di, nullptr))) continue;
+        for (REFGUID dev : {GUID_SysMouse, GUID_SysKeyboard}) {
+            IDirectInputDevice8W* d = nullptr;
+            if (SUCCEEDED(di->CreateDevice(dev, &d, nullptr))) {
+                patch_vtable(d);
+                d->Release();
+            }
+        }
+        di->Release();
+    }
+    if (auto p = hook_import(engine, "user32.dll", "GetAsyncKeyState", (void*)blocked_async_key)) real_async_key = (AsyncKeyFn)p;
+    if (auto p = hook_import(engine, "user32.dll", "GetKeyState", (void*)blocked_key_state)) real_key_state = (AsyncKeyFn)p;
+    if (auto p = hook_import(engine, "user32.dll", "GetKeyboardState", (void*)blocked_keyboard_state)) real_keyboard_state = (KeyboardFn)p;
+    return patched_count;
+}
+
+}
