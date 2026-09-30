@@ -17,7 +17,9 @@ const int PARAM_SLOTS = 1100, CACHED_VALUE = 8, CACHED_FLAGS = 0x18, CACHED_VERS
 const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_XP = 8, TREE_LEVEL_START = 0xc, TREE_SPAN = 0x10, TREE_LEVEL = 0x14, TREE_MAX = 0x16;
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
 const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
-const int EQUIPMENT_CHARGE = 0x20;
+const int UV_CHARGE = 0x50, UV_EXHAUSTED = 0x55;
+const int MINIGAME = 0xe0, MINIGAME_PARTS[] = {0x28, 0x30, 0x38}, SWEET_SPOT = 0x50, SWEET_SPOT_WIDTH = 0x54, PICK_ANGLE = 0x118;
+const float ANY_SPOT_WIDTH = 1000.0f;
 const int PRISON_START_TIME = 0x44, PRISON_END_TIME = 0x48, PRISON_REWARD_TIER = 0x4c, PRISON_STATE = 0x54;
 const int CONTROL_OBJECT = 0x18, SLOT_FLOAT_FIELD_EDITOR = 34;
 const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, VAR_SLOTS = 1024;
@@ -133,18 +135,15 @@ inline float best_stamina[2] = {};
 inline std::mutex modules_mx;
 inline std::vector<uintptr_t> enemy_modules;
 inline std::map<uintptr_t, int> stack_floor;
-inline std::map<uintptr_t, std::vector<uint8_t>> saved_bytes;
+struct Saved { std::vector<uint8_t> original, written; };
+inline std::map<uintptr_t, Saved> saved_bytes;
 using CacheGetFn = uintptr_t (*)(uintptr_t, int);
 inline CacheGetFn cache_get_original = nullptr;
-struct CachedParam { std::atomic<uint8_t> kind{0}; std::atomic<float> value{0}; std::atomic<uint32_t> reads{0}; };
+struct CachedParam { std::atomic<uint8_t> kind{0}; std::atomic<bool> stale{false}; std::atomic<float> value{0}; std::atomic<uint32_t> reads{0}; };
 enum { CACHED_NONE, CACHED_FLOAT, CACHED_SWITCH };
 inline CachedParam cached[PARAM_SLOTS];
 inline std::mutex cached_mx;
-inline std::map<int, std::set<uintptr_t>> cached_entries;
-inline std::vector<uintptr_t> lock_records;
-inline const float LOCK_DIFFICULTIES[8][5] = {{1.9f, 40, 40, 90, 0}, {1.9f, 30, 29, 90, 0}, {1.9f, 16, 15, 90, 0}, {1.9f, 10, 5, 90, 0},
-                                             {1.9f, 20, 10, 90, 0}, {1.9f, 15, 7.25f, 90, 0}, {1.9f, 8, 3.75f, 90, 0}, {1.9f, 5, 1.25f, 90, 0}};
-inline const float LOCK_OPEN[3] = {1000, 1000, 1000};
+inline std::map<int, std::set<uintptr_t>> overridden_providers;
 inline std::vector<uintptr_t> saved_containers;
 
 inline bool in_game_module(uintptr_t p) {
@@ -316,11 +315,13 @@ inline uintptr_t param_value(uintptr_t container, const std::string& name) {
 
 inline void put_bytes(uintptr_t at, const void* v, size_t n, std::set<uintptr_t>& touched) {
     if (!at || IsBadWritePtr((void*)at, n)) return;
-    if (!saved_bytes.count(at)) {
+    auto it = saved_bytes.find(at);
+    if (it == saved_bytes.end()) {
         std::vector<uint8_t> b(n);
         if (!rd(at, b.data(), n)) return;
-        saved_bytes[at] = b;
+        it = saved_bytes.emplace(at, Saved{b, {}}).first;
     }
+    it->second.written.assign((const uint8_t*)v, (const uint8_t*)v + n);
     touched.insert(at);
     memcpy((void*)at, v, n);
 }
@@ -328,8 +329,8 @@ inline void put_bytes(uintptr_t at, const void* v, size_t n, std::set<uintptr_t>
 inline float original_float(uintptr_t at) {
     auto it = saved_bytes.find(at);
     float f;
-    if (it == saved_bytes.end() || it->second.size() < 4) return rdv<float>(at, NAN);
-    memcpy(&f, it->second.data(), 4);
+    if (it == saved_bytes.end() || it->second.original.size() < 4) return rdv<float>(at, NAN);
+    memcpy(&f, it->second.original.data(), 4);
     return f;
 }
 
@@ -378,9 +379,7 @@ inline void apply_cached(const std::map<std::string, std::pair<float, bool>>& wa
     for (int id = 0; id < PARAM_SLOTS; id++) {
         if (cached[id].kind == kinds[id]) continue;
         cached[id].kind = kinds[id];
-        if (kinds[id]) continue;
-        for (uintptr_t param : cached_entries[id]) wr<uint64_t>(param + CACHED_VERSION, ~0ull);
-        cached_entries.erase(id);
+        if (!kinds[id]) cached[id].stale = !overridden_providers[id].empty();
     }
 }
 
@@ -390,7 +389,17 @@ inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
     auto& c = cached[id];
     c.reads++;
     uint8_t kind = c.kind;
-    if (!kind) return param;
+    if (!kind && !c.stale) return param;
+    if (!kind) {
+        {
+            std::lock_guard<std::mutex> l(cached_mx);
+            auto& providers = overridden_providers[id];
+            if (!providers.erase(provider)) return param;
+            if (providers.empty()) c.stale = false;
+        }
+        *(uint64_t*)(param + CACHED_VERSION) = ~0ull;
+        return cache_get_original(provider, id);
+    }
     uint8_t& flags = *(uint8_t*)(param + CACHED_FLAGS);
     if (!(flags & 1) || !*(uintptr_t*)param) {
         uintptr_t vt = kind == CACHED_SWITCH ? vt_param_bool : vt_param_float;
@@ -401,7 +410,7 @@ inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
     if (kind == CACHED_SWITCH) *(uint8_t*)(param + CACHED_VALUE) = c.value != 0;
     else *(float*)(param + CACHED_VALUE) = c.value;
     std::lock_guard<std::mutex> l(cached_mx);
-    cached_entries[id].insert(param);
+    overridden_providers[id].insert(provider);
     return param;
 }
 
@@ -431,20 +440,34 @@ inline bool install_cache_hook() {
     return true;
 }
 
-inline std::vector<std::vector<float>> lock_patterns() {
-    std::vector<std::vector<float>> out;
-    for (auto& d : LOCK_DIFFICULTIES) out.push_back(std::vector<float>(d, d + 5));
-    return out;
+inline bool is_lockpick_part(uintptr_t object) {
+    uintptr_t vt = rdv<uintptr_t>(object);
+    return vt && std::find(std::begin(g.vt_lockpick), std::end(g.vt_lockpick), vt) != std::end(g.vt_lockpick);
 }
 
-inline void open_locks(std::set<uintptr_t>& touched) {
-    for (uintptr_t r : lock_records) {
-        float head[3];
-        if (!rd(r, head, sizeof head)) continue;
-        bool original = false;
-        for (auto& d : LOCK_DIFFICULTIES) original |= !memcmp(head, d, sizeof head);
-        if (original || !memcmp(head, LOCK_OPEN, sizeof head)) put_bytes(r, LOCK_OPEN, sizeof LOCK_OPEN, touched);
+inline uintptr_t minigame_of(uintptr_t part) {
+    uintptr_t m = is_lockpick_part(part) ? rdv<uintptr_t>(part + MINIGAME) : 0;
+    if (!m) return 0;
+    for (int off : MINIGAME_PARTS) {
+        uintptr_t p = rdv<uintptr_t>(m + off);
+        if (!is_lockpick_part(p) || rdv<uintptr_t>(p + MINIGAME) != m) return 0;
     }
+    return m;
+}
+
+inline int open_locks() {
+    std::set<uintptr_t> games;
+    int parts = 0;
+    for (uintptr_t part : g.lockpick_parts) {
+        parts += is_lockpick_part(part);
+        if (uintptr_t m = minigame_of(part)) games.insert(m);
+    }
+    for (uintptr_t m : games) {
+        float angle = rdv<float>(rdv<uintptr_t>(m + MINIGAME_PARTS[0]) + PICK_ANGLE, NAN);
+        if (std::isfinite(angle)) wr<float>(m + SWEET_SPOT, angle);
+        wr<float>(m + SWEET_SPOT_WIDTH, ANY_SPOT_WIDTH);
+    }
+    return parts;
 }
 
 inline void apply_overrides() {
@@ -473,7 +496,6 @@ inline void apply_overrides() {
     std::set<uintptr_t> touched;
     for (auto& [name, w] : want) set_param(name, w.first, w.second, containers, touched);
     apply_cached(want);
-    if (is_on("lockpick")) open_locks(touched);
     if (is_on("ammo") && unlimited_ammo_flag) {
         uint8_t yes = 1;
         put_bytes(unlimited_ammo_flag, &yes, 1, touched);
@@ -481,7 +503,10 @@ inline void apply_overrides() {
     item_overrides(touched);
     for (auto it = saved_bytes.begin(); it != saved_bytes.end();) {
         if (touched.count(it->first)) { ++it; continue; }
-        if (!IsBadWritePtr((void*)it->first, it->second.size())) memcpy((void*)it->first, it->second.data(), it->second.size());
+        auto& saved = it->second;
+        std::vector<uint8_t> now(saved.written.size());
+        bool still_ours = rd(it->first, now.data(), now.size()) && now == saved.written;
+        if (still_ours && !IsBadWritePtr((void*)it->first, saved.original.size())) memcpy((void*)it->first, saved.original.data(), saved.original.size());
         it = saved_bytes.erase(it);
     }
 }
@@ -693,31 +718,43 @@ inline void teleport(Vec3 to) {
               now.z);
 }
 
-inline void pause_prison() {
+inline int pause_prison() {
     DWORD now = GetTickCount();
     float dt = last_prison_tick ? (now - last_prison_tick) / 1000.0f : 0;
     last_prison_tick = is_on("prison_pause") ? now : 0;
-    if (!last_prison_tick || dt <= 0 || dt > 1) return;
+    int live = 0;
     for (uintptr_t d : g.prison_data) {
         if (rdv<uintptr_t>(d) != g.vt_prison_data) continue;
+        live++;
+        if (!last_prison_tick || dt <= 0 || dt > 1) continue;
         float start = rdv<float>(d + PRISON_START_TIME, NAN), end = rdv<float>(d + PRISON_END_TIME, NAN);
         if (start > 0) wr<float>(d + PRISON_START_TIME, start + dt);
         if (end > 0) wr<float>(d + PRISON_END_TIME, end + dt);
     }
+    return live;
 }
 
-inline void keep_uv_charge() {
+inline int keep_uv_charge() {
+    int kept = 0;
     for (uintptr_t e : g.equipment) {
         if (rdv<uintptr_t>(e) != g.vt_equipment) continue;
-        float charge = rdv<float>(e + EQUIPMENT_CHARGE, NAN);
-        if (charge >= 0 && charge < 1) wr<float>(e + EQUIPMENT_CHARGE, 1.0f);
+        kept++;
+        float charge = rdv<float>(e + UV_CHARGE, NAN);
+        if (!(charge >= 0 && charge <= 1)) continue;
+        if (charge < 1) wr<float>(e + UV_CHARGE, 1.0f);
+        if (rdv<uint8_t>(e + UV_EXHAUSTED)) wr<uint8_t>(e + UV_EXHAUSTED, 0);
     }
+    return kept;
 }
+
+inline std::atomic<bool> objects_missing{false};
 
 inline void tick() {
     std::lock_guard<std::mutex> l(game::mx);
-    pause_prison();
-    if (is_on("uv")) keep_uv_charge();
+    bool prison_missing = !pause_prison() && is_on("prison_pause");
+    bool uv_missing = is_on("uv") && !keep_uv_charge();
+    bool locks_missing = is_on("lockpick") && !open_locks();
+    objects_missing = prison_missing || uv_missing || locks_missing;
     game::reapply_stats();
     keep_stacks(is_on("ammo"), is_on("supplies"));
     if (is_on("one_hit")) weaken_enemies();
@@ -739,12 +776,12 @@ inline std::string describe() {
     char b[700];
     snprintf(b, sizeof b,
              "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
-             "ammo flag %s, set level %s, xp level %s, script vars %s, lock records %zu, enemies %zu, overrides %zu, equipment %zu, "
+             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick parts %zu, enemies %zu, overrides %zu, equipment %zu, "
              "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
-             level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", lock_records.size(), enemy_modules.size(), saved_bytes.size(),
+             level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", g.lockpick_parts.size(), enemy_modules.size(), saved_bytes.size(),
              g.equipment.size(), g.prison_data.size(), g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_START_TIME, NAN),
              g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_END_TIME, NAN), g.prison_sensors.size(),
              get_position && set_position ? "ok" : "missing");

@@ -164,8 +164,13 @@ int main(int argc, char** argv) {
     for (auto& c : cheats::CHEATS) c.on = false;
     cheats::find_tweak("h_dropkick")->factor = 1.0f;
     cheats::tick();
-    CHECK(game::rdv<float>(param("AirKickRangeMul")) == 1.0f && game::rdv<uint64_t>(cached("AirKickRangeMul")) == ~0ull);
+    CHECK(game::rdv<float>(param("AirKickRangeMul")) == 1.0f && game::rdv<uint64_t>(cached("AirKickRangeMul")) != ~0ull);
+    for (auto* n : {"RopeEnergyRegenTime", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(0, cheats::param_ids[n] + 1);
+    CHECK(game::rdv<uint64_t>(cached("AirKickRangeMul")) == ~0ull);
     CHECK(game::rdv<uint64_t>(cached("RopeEnergyRegenTime")) == ~0ull && game::rdv<uint64_t>(cached("CanUseHook")) == ~0ull);
+    game::wr<uint64_t>(cached("CanUseHook"), 5);
+    cheats::cache_get_hook(0, cheats::param_ids["CanUseHook"] + 1);
+    CHECK(game::rdv<uint64_t>(cached("CanUseHook")) == 5 && cheats::overridden_providers[cheats::param_ids["CanUseHook"] + 1].empty());
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 8 && game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 10.0f);
     CHECK(game::rdv<float>(param("RopeEnergyRegenTime")) == 12.5f && game::rdv<uint8_t>(param("CanUseHook")) == 0 && fake_rules[0] == 0);
     (void)flag;
@@ -192,7 +197,8 @@ int main(int argc, char** argv) {
     {
         uintptr_t equipment = w.alloc(0x80), prison = w.alloc(0x80);
         w.put<uintptr_t>(equipment, game::g.vt_equipment);
-        w.put<float>(equipment + 0x20, 0.3f);
+        w.put<float>(equipment + 0x50, 0.3f);
+        w.put<uint8_t>(equipment + 0x55, 1);
         w.put<uintptr_t>(prison, game::g.vt_prison_data);
         w.put<float>(prison + 0x44, 100.0f);
         w.put<float>(prison + 0x48, 160.0f);
@@ -204,7 +210,7 @@ int main(int argc, char** argv) {
         cheats::tick();
         Sleep(300);
         cheats::tick();
-        CHECK(game::rdv<float>(equipment + 0x20) == 1.0f);
+        CHECK(game::rdv<float>(equipment + 0x50) == 1.0f && game::rdv<uint8_t>(equipment + 0x55) == 0 && !cheats::objects_missing);
         float start = game::rdv<float>(prison + 0x44), end = game::rdv<float>(prison + 0x48);
         CHECK(start > 100.2f && start < 101.0f && std::fabs(end - start - 60.0f) < 0.01f);
         cheats::find("uv")->on = false;
@@ -213,17 +219,30 @@ int main(int argc, char** argv) {
     }
 
     {
-        uintptr_t record = w.alloc(0x40);
-        memcpy((void*)(record + 12), cheats::LOCK_DIFFICULTIES[2], sizeof cheats::LOCK_DIFFICULTIES[2]);
-        auto found = game::find_float_records(cheats::lock_patterns(), game::g.base);
-        CHECK(found.size() == 1 && found[0] == record + 12);
-        cheats::lock_records = found;
+        CHECK(game::g.vt_lockpick[0] && game::g.vt_lockpick[1] && game::g.vt_lockpick[2]);
+        uintptr_t minigame = w.alloc(0x100), stray = w.alloc(0x200), parts[3];
+        for (int i = 0; i < 3; i++) {
+            parts[i] = w.alloc(0x200);
+            w.put<uintptr_t>(parts[i], game::g.vt_lockpick[i]);
+            w.put<uintptr_t>(parts[i] + 0xe0, minigame);
+            w.put<uintptr_t>(minigame + 0x28 + i * 8, parts[i]);
+        }
+        w.put<uintptr_t>(stray, game::g.vt_lockpick[1]);
+        w.put<uintptr_t>(stray + 0xe0, stray);
+        w.put<float>(parts[0] + 0x118, 33.0f);
+        w.put<float>(minigame + 0x50, 10.0f);
+        w.put<float>(minigame + 0x54, 1.9f);
         cheats::find("lockpick")->on = true;
+        game::g.lockpick_parts.clear();
         cheats::tick();
-        CHECK(game::rdv<float>(record + 12) == 1000 && game::rdv<float>(record + 20) == 1000 && game::rdv<float>(record + 24) == 90);
+        CHECK(cheats::objects_missing);
+        game::g.lockpick_parts = {parts[1], stray};
+        cheats::tick();
+        CHECK(!cheats::objects_missing && game::rdv<float>(minigame + 0x50) == 33.0f && game::rdv<float>(minigame + 0x54) == 1000.0f);
+        CHECK(game::rdv<uintptr_t>(stray + 0x50) == 0);
         cheats::find("lockpick")->on = false;
         cheats::tick();
-        CHECK(!memcmp((const void*)(record + 12), cheats::LOCK_DIFFICULTIES[2], sizeof cheats::LOCK_DIFFICULTIES[2]));
+        CHECK(!cheats::objects_missing);
     }
 
     {

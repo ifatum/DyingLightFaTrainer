@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.1
+
+- Fixed a crash that could happen after turning a cheat off. The trainer wrote to game memory that the game had already freed, for example after a level load.
+- Infinite UV flashlight: fixed. The trainer was filling the normal flashlight's battery instead of the UV charge.
+- Instant lockpicking: fixed. The sweet spot now follows your pick, so any position opens the lock.
+- Cheats that need game objects (UV flashlight, lockpicking, prison timers) find them again on their own after a level load, even when the menu stays closed.
+- Turning a cheat off restores a value only if the game has not changed it since.
+- Ignores stray stash objects with garbage capacity.
+
 ## 1.7
 
 - New: Prison page for Harran Prison. Pause the run timer and the reward room countdown, teleport to every prison section, and save and load your position anywhere.

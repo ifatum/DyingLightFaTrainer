@@ -185,13 +185,20 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     input::blocked = g_open.load();
     if (!g_ready) init_imgui(sc);
     static DWORD last_tick = 0;
-    if (g_ready && GetTickCount() - last_tick > 100) {
+    static std::atomic<bool> tick_queued{false};
+    if (g_ready && GetTickCount() - last_tick > 100 && !tick_queued.exchange(true)) {
         last_tick = GetTickCount();
-        on_game_thread(cheats::tick);
+        on_game_thread([] {
+            tick_queued = false;
+            cheats::tick();
+        });
     }
-    if (g_open && GetTickCount() - g_last_scan > 3000) {
+    const DWORD MENU_RESCAN = 3000, CHEAT_RESCAN = 15000;
+    DWORD since_scan = GetTickCount() - g_last_scan;
+    if ((g_open && since_scan > MENU_RESCAN) || (cheats::objects_missing && since_scan > CHEAT_RESCAN)) {
         std::lock_guard<std::mutex> l(game::mx);
-        if (!game::g.scanning && (game::g.wallets.empty() || game::g.invs.empty() || game::g.descs.empty() || !cheats::player)) request_refresh();
+        bool menu_needs = game::g.wallets.empty() || game::g.invs.empty() || game::g.descs.empty() || !cheats::player;
+        if (!game::g.scanning && ((g_open && menu_needs) || (cheats::objects_missing && since_scan > CHEAT_RESCAN))) request_refresh();
     }
     if (g_ready && g_open) {
         ImGui::GetIO().MouseDrawCursor = true;

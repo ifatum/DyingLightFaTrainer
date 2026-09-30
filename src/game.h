@@ -125,24 +125,6 @@ inline std::vector<std::vector<uintptr_t>> scan(const std::vector<uintptr_t>& vt
     return out;
 }
 
-inline std::vector<uintptr_t> find_float_records(const std::vector<std::vector<float>>& patterns, uintptr_t module_base) {
-    std::vector<uintptr_t> out;
-    auto visit = [&](uintptr_t c, size_t n) {
-        const uint32_t* w = (const uint32_t*)c;
-        for (auto& p : patterns) {
-            uint32_t first;
-            memcpy(&first, p.data(), 4);
-            size_t bytes = p.size() * 4;
-            for (size_t i = 0; i + p.size() <= n / 4; i++)
-                if (w[i] == first && !memcmp(w + i, p.data(), bytes) && (uintptr_t)(w + i) != (uintptr_t)p.data()) out.push_back(c + i * 4);
-        }
-    };
-    each_heap_chunk(visit);
-    for (auto& s : sections(module_base))
-        if (s.name == ".data" && !IsBadReadPtr((const void*)s.start, s.end - s.start)) visit(s.start, s.end - s.start);
-    return out;
-}
-
 inline const ItemInfo* lookup(const char* s) {
     int lo = 0, hi = ITEM_COUNT - 1;
     while (lo <= hi) {
@@ -234,8 +216,8 @@ struct StatField { int off = -1; bool is_float = true; int votes = 0, samples = 
 struct State {
     uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {};
     uintptr_t vt_player = 0, vt_human = 0, vt_health[3] = {};
-    uintptr_t vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0;
-    std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors;
+    uintptr_t vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_lockpick[3] = {};
+    std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors, lockpick_parts;
     std::map<std::pair<uintptr_t, int>, float> stat_overrides;
     std::vector<Inventory> invs;
     std::map<std::string, uintptr_t> descs;
@@ -332,6 +314,8 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_equipment = find_vtable(base, "EquipmentController");
     g.vt_prison_data = find_vtable(base, "ReplData@Prison");
     g.vt_prison_sensor = find_vtable(base, "SensorPrisonRush");
+    const char* lockpick_classes[] = {"Lock@Lockpicking", "Picklock@Lockpicking", "Screwdriver@Lockpicking"};
+    for (int i = 0; i < 3; i++) g.vt_lockpick[i] = find_vtable(base, lockpick_classes[i]);
     bool ok = g.vt_money && g.vt_inv[0];
     g.status = ok ? "ready" : "game classes not found (game updated?)";
     return ok;
@@ -349,6 +333,7 @@ inline void refresh() {
         vts.push_back(g.vt_equipment);
         vts.push_back(g.vt_prison_data);
         vts.push_back(g.vt_prison_sensor);
+        for (auto v : g.vt_lockpick) vts.push_back(v);
     }
     DWORD t0 = GetTickCount();
     auto found = scan(vts);
@@ -373,7 +358,8 @@ inline void refresh() {
             int cap = rdv<int>(o + 0x58);
             Kind k = INV_KINDS[c];
             const int UNLIMITED = 100000;
-            if (k == K_BACKPACK && (cap < 0 || cap >= UNLIMITED)) k = K_STASH;
+            if (k == K_BACKPACK && (cap < 0 || cap == INT32_MAX)) k = K_STASH;
+            if (k == K_BACKPACK && cap >= UNLIMITED) continue;
             if (n > 4000 || ((!arr || n == 0) && k != K_STASH)) continue;
             Inventory inv{o, k, cap, {}};
             for (uint32_t i = 0; i < n; i++) {
@@ -420,6 +406,8 @@ inline void refresh() {
     g.equipment = found[3 + N_INV_CLASSES];
     g.prison_data = found[4 + N_INV_CLASSES];
     g.prison_sensors = found[5 + N_INV_CLASSES];
+    g.lockpick_parts.clear();
+    for (int i = 0; i < 3; i++) g.lockpick_parts.insert(g.lockpick_parts.end(), found[6 + N_INV_CLASSES + i].begin(), found[6 + N_INV_CLASSES + i].end());
     g.wallets = wallets;
     g.invs = std::move(invs);
     g.descs = std::move(descs);

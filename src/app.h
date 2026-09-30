@@ -13,7 +13,7 @@
 #include "game.h"
 
 inline const char* TITLE = "FaTrainer | Dying Light";
-inline const char* VERSION = "1.7";
+inline const char* VERSION = "1.7.1";
 
 inline void logf(const char* fmt, ...) {
     static std::string path;
@@ -72,10 +72,7 @@ inline void request_refresh() {
     g_last_scan = GetTickCount();
     std::thread([] {
         game::refresh();
-        bool find_locks = cheats::is_on("lockpick") && cheats::lock_records.empty();
-        auto locks = find_locks ? game::find_float_records(cheats::lock_patterns(), game::g.base) : std::vector<uintptr_t>();
         std::lock_guard<std::mutex> l(game::mx);
-        if (find_locks) cheats::lock_records = locks;
         cheats::player = cheats::find_player();
         logf("refresh: %s", game::g.status.c_str());
         logf("inventories:%s", game::inventory_report().c_str());

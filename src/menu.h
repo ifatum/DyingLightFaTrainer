@@ -546,7 +546,10 @@ inline void player_page() {
         ImGui::SameLine(0, S(12));
         stat_tile("stamina", "STAMINA", cheats::stamina(), cheats::stamina_full(), T.ok, tile);
         ImGui::Dummy({0, S(2)});
-        if (accent_button("Refill health & stamina", {ImGui::GetContentRegionAvail().x, S(38)})) on_game_thread(cheats::refill);
+        if (accent_button("Refill health & stamina", {ImGui::GetContentRegionAvail().x, S(38)})) on_game_thread([] {
+            std::lock_guard<std::mutex> l(game::mx);
+            cheats::refill();
+        });
         ImGui::Dummy({0, S(6)});
     }
     begin_card("survival", "SURVIVAL");
