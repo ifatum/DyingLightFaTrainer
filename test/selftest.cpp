@@ -98,6 +98,7 @@ int main(int argc, char** argv) {
     CHECK(game::default_target("Ammo_PistolBig") == game::K_AMMO);
 
     CHECK(game::g.vt_player && game::g.vt_human && game::g.vt_health[0]);
+    CHECK(!memcmp((const void*)game::rdv<uintptr_t>(game::g.vt_player + cheats::SLOT_PHYSICS_POSITION * 8), cheats::PHYSICS_POSITION_START, sizeof cheats::PHYSICS_POSITION_START));
     CHECK(game::g.players.size() == 1);
     game::set_stat(machete, ST_Damage, 1234);
     game::write_stat(machete, ST_Damage, 5);

@@ -6,6 +6,7 @@
 - Infinite UV flashlight: fixed. The trainer was filling the normal flashlight's battery instead of the UV charge.
 - Instant lockpicking: fixed. The game now treats every pick position as the sweet spot, so the lock always turns all the way.
 - Fixed a crash while loading into a save and when pressing Find sections: the trainer read prison section positions through the wrong part of the object. Positions are now looked up the way the game's own class layout describes, and only when you press Find sections.
+- Teleporting moves your physics body too, so the game no longer pulls you back to where you stood.
 - God mode also works in Harran Prison, where the game could apply damage past the normal immortality check.
 - Infinite grappling hook keeps the rope energy full directly, so the hook is ready every time, also while you are still hanging on the rope.
 - Pause prison timers: the trainer now takes ownership of the prison timer data like the game does, so the paused time is no longer overwritten.
