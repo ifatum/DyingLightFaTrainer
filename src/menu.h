@@ -279,6 +279,7 @@ inline void editor_popup() {
                         {ST_Force, "Knockback force", "%.1f", 2},  {ST_StaminaUsage, "Stamina per swing", "%.3f", 0.5f},
                         {ST_DamageRange, "Reach", "%.2f", 1.5f},   {ST_UpgradeLevel, "Upgrade level", "%.0f", 0},
                         {ST_AllowedRepairs, "Repairs left", "%.0f", 0}, {ST_MaxStackCount, "Max stack", "%.0f", 0},
+                        {ST_AmmoCount, "Magazine size", "%.0f", 2}, {ST_ReloadTime, "Reload time", "%.2f", 0.5f},
                         {ST_Price, "Price", "%.0f", 0}};
     int shown = 0;
     if (ImGui::BeginTable("stats", 3, ImGuiTableFlags_SizingFixedFit)) {
@@ -536,6 +537,7 @@ inline void combat_page() {
     end_card();
     begin_card("supplies", "AMMO & SUPPLIES");
     cheat_switch("ammo");
+    cheat_switch("no_reload");
     cheat_switch("supplies");
     end_card();
     note("Weapon stat edits from the Backpack and Stash pages stay applied while the trainer runs.");
@@ -552,9 +554,80 @@ inline void zombie_page() {
     begin_card("abilities", "ABILITIES");
     cheat_switch("z_cooldowns");
     cheat_switch("z_spits");
-    cheat_switch("z_unlock");
     cheat_switch("z_camo");
     end_card();
+    note("Leveling and PvP ranges have their own pages: Skills and PvP.");
+}
+
+inline void skills_page() {
+    if (!cheats::player) return empty_state("Your character was not found yet. Load into your save, then press Refresh.");
+    if (!cheats::set_level_fn) return empty_state("The game's level function was not found. Check fatrainer.log.");
+    begin_card("trees", "SKILL TREES");
+    note("Changes are made by the game itself, so new skill points appear in the skill menu right away.");
+    ImGui::Dummy({0, S(4)});
+    if (ImGui::BeginTable("trees", 3, ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(150));
+        ImGui::TableSetupColumn("level", ImGuiTableColumnFlags_WidthFixed, S(120));
+        ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthStretch);
+        for (auto& t : cheats::TREES) {
+            int max = cheats::tree_max(t.type), level = cheats::tree_level(t.type);
+            if (!max || level < 0) continue;
+            ImGui::PushID(t.type);
+            ImGui::TableNextRow(0, S(44));
+            ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(t.name);
+            ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text("%d", level);
+            ImGui::SameLine(0, S(4));
+            ImGui::TextDisabled("/ %d", max);
+            ImGui::TableNextColumn();
+            struct Step { const char* text; int delta; };
+            for (Step st : {Step{"-10", -10}, Step{"-1", -1}, Step{"+1", 1}, Step{"+10", 10}}) {
+                if (ImGui::Button(st.text, {S(56), 0})) {
+                    int type = t.type, target = level + st.delta;
+                    on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, target); });
+                }
+                ImGui::SameLine(0, S(6));
+            }
+            if (accent_button("Max", {S(64), 0})) {
+                int type = t.type;
+                on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, cheats::tree_max(type)); });
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    end_card();
+}
+
+inline void tweak_slider(cheats::Tweak& t) {
+    ImGui::PushID(t.key);
+    float v = t.factor;
+    ImGui::TextUnformatted(t.label);
+    if (v != 1.0f) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Reset")) v = 1.0f, t.factor = v, save_config();
+    }
+    note(t.hint);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##f", &v, 1.0f, 10.0f, v == 1.0f ? "Normal" : "x%.1f")) t.factor = v;
+    if (ImGui::IsItemDeactivatedAfterEdit()) save_config();
+    ImGui::Dummy({0, S(6)});
+    ImGui::PopID();
+}
+
+inline void pvp_page() {
+    begin_card("zombie", "AS THE NIGHT HUNTER");
+    for (auto& t : cheats::TWEAKS)
+        if (t.zombie) tweak_slider(t);
+    end_card();
+    begin_card("human", "AS A HUMAN");
+    for (auto& t : cheats::TWEAKS)
+        if (!t.zombie) tweak_slider(t);
+    end_card();
+    note("Ranges multiply the game's own values and only change what your side of the match decides. Pounce leap distance and leapfrog have no setting in the game.");
 }
 
 struct Key { int vk; const char* name; };
@@ -570,6 +643,8 @@ inline const Page PAGES[] = {
     {"player", "Player", "Health, stamina and gear", player_page, always},
     {"combat", "Combat", "Enemies, ammo and supplies", combat_page, always},
     {"zombie", "Be The Zombie", "Night Hunter abilities", zombie_page, always},
+    {"skills", "Skills", "Skill tree levels", skills_page, always},
+    {"pvp", "PvP", "Attack ranges for Be The Zombie matches", pvp_page, always},
     {"cash", "Cash", "Your money", cash_page, always},
     {"backpack", "Backpack", "Items you carry", [] { inventory_page(game::K_BACKPACK); }, always},
     {"stash", "Stash", "Items stored in your stash", [] { inventory_page(game::K_STASH); }, always},
@@ -694,7 +769,7 @@ inline std::string g_page = "player";
 
 inline bool nav_item(const Page& p, bool active) {
     ImGui::PushID(p.id);
-    float w = ImGui::GetContentRegionAvail().x, h = S(40);
+    float w = ImGui::GetContentRegionAvail().x, h = S(36);
     ImVec2 at = ImGui::GetCursorScreenPos();
     bool clicked = ImGui::InvisibleButton("nav", {w, h});
     float hover = animate(ImGui::GetID("h"), ImGui::IsItemHovered() ? 1.0f : 0.0f);
@@ -721,14 +796,16 @@ inline void sidebar() {
     ImGui::PopFont();
     ImGui::SetCursorPosX(S(19));
     label("DYING LIGHT");
-    ImGui::Dummy({0, S(14)});
+    ImGui::Dummy({0, S(10)});
+    float footer = ImGui::GetFrameHeight() + S(34);
+    ImGui::BeginChild("nav", {0, ImGui::GetContentRegionAvail().y - footer}, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
     for (auto& e : config::cfg.pages) {
         auto* p = page_by_id(e.id);
         if (!p || !e.visible || !p->shown()) continue;
         if (nav_item(*p, g_page == p->id)) g_page = p->id;
     }
-    float bottom = ImGui::GetWindowHeight() - S(20) - ImGui::GetFrameHeight() - S(34);
-    if (ImGui::GetCursorPosY() < bottom) ImGui::SetCursorPosY(bottom);
+    ImGui::EndChild();
+    ImGui::Dummy({0, S(4)});
     const char* st = game::g.scanning ? "Scanning..." : game::g.vt_money ? (cheats::player ? "Connected" : "Waiting for save") : "Game not ready";
     ImVec4 sc = game::g.scanning ? T.accent : game::g.vt_money ? (cheats::player ? T.ok : T.accent) : T.bad;
     ImVec2 p = ImGui::GetCursorScreenPos();
@@ -812,6 +889,8 @@ inline void startup() {
     if (config::cfg.remember_cheats)
         for (auto& key : config::cfg.cheats_on)
             if (auto* c = cheats::find(key)) c->on = true;
+    for (auto& [key, factor] : config::cfg.tweaks)
+        if (auto* t = cheats::find_tweak(key)) t->factor = std::clamp(factor, 1.0f, 10.0f);
 }
 
 }

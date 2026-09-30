@@ -15,11 +15,13 @@
 ### Features
 
 - **Player**: god mode, infinite stamina, infinite grappling hook, infinite UV flashlight, instant refill
-- **Combat**: one hit kill, infinite ammo, infinite consumables
-- **Be The Zombie**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, all abilities unlocked, long camouflage
+- **Combat**: one hit kill, infinite ammo, no reload, infinite consumables
+- **Be The Zombie**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, long camouflage
+- **Skills**: raise or lower any skill tree level (+1, +10, max, -1, -10)
+- **PvP**: range sliders for pounce slam, ground pound, tackle, claws, spit, death from above, dropkick, kicks and melee
 - **Cash / Backpack / Stash / Materials**: set money and any stack count
 - **Give items**: spawn any weapon, consumable, material or blueprint
-- **Weapon editor**: damage, durability, crits, knockback, stamina, reach, upgrades, repairs, rarity
+- **Weapon editor**: damage, durability, crits, knockback, stamina, reach, magazine, reload time, upgrades, repairs, rarity
 - **Settings**: accent color, interface size, background dim, menu key, sidebar order and visibility, saved to `fatrainer.ini`
 
 ### Install

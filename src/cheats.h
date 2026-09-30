@@ -13,8 +13,10 @@ using game::wr;
 const int LOCAL_PLAYER = 0x780, PARAM_CONTAINER = 0xe58, PARAM_TABLE = 0xd0, PARAM_VALUE = 8;
 const int HEALTH_OBJECT = 0x8f8, STAMINA_OBJECTS[] = {0x1340, 0x1348};
 const int STAMINA_CURRENT = 0x10, STAMINA_FULL = 0x14;
+const int PARAM_CACHE = 0x9c0, CACHE_ARRAY = 0x28, CACHE_ENTRY = 40, CACHE_FLAGS = 0x20;
+const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_LEVEL = 0x14, TREE_MAX = 0x16;
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
-const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199;
+const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MODULE_UPDATE = 245;
 const int COPIED_SLOTS = 64;
 const float ONE_HIT_HEALTH = 1.0f;
 
@@ -39,6 +41,10 @@ inline Cheat CHEATS[] = {
     {"one_hit", "One hit kill", "Zombies and humans drop to 1 health. Works when you are the host.", {}, {}},
     {"ammo", "Infinite ammo", "Magazines never empty and reserve ammo stays full.", {}, {}},
     {"supplies", "Infinite consumables", "Medkits, throwables and crafting materials never run out.", {}, {}},
+    {"no_reload", "No reload", "999 round magazines and instant reloads. Best together with infinite ammo.",
+     {{"FirearmsPistolReloadTimeMul", 0.05f}, {"FirearmsRevolverReloadTimeMul", 0.05f}, {"FirearmsRifleReloadTimeMul", 0.05f},
+      {"FirearmsShotgunReloadTimeMul", 0.05f}, {"FirearmsHeavyReloadTimeMul", 0.05f}},
+     {"FastRevolverReload"}},
     {"z_energy", "Infinite hunter energy", "Fitness and stamina never drain, UV light cannot exhaust you.", {},
      {"InfiniteFitness", "InfiniteStamina"}},
     {"z_cooldowns", "No ability cooldowns", "Tendril, camouflage, ground pound and grab breaks are always ready.",
@@ -46,13 +52,42 @@ inline Cheat CHEATS[] = {
       {"FastGrabBreakCooldown", 0}},
      {}},
     {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}},
-    {"z_unlock", "Unlock all hunter abilities", "Pounce slam, every spit type, camouflage and UV heal without leveling up.", {},
-     {"ZombiePounceEnabled", "ZombiePounceSlamEnabled", "ZombieSpitLightDisableEnabled", "ZombieSpitLightDisableUpgraded",
-      "ZombieSpitGroundPoundEnabled", "ZombieSpitControlTheHordeEnabled", "ZombieSpitControlTheHordeUpgraded",
-      "ZombieSpitChargingEnabled", "ZombieSpitCamoEnabled", "ZombieSpitToxicEnabled", "UVHealEnabled"}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
 };
+
+struct Tweak {
+    const char* key;
+    const char* label;
+    const char* hint;
+    bool zombie;
+    std::vector<const char*> params;
+    std::atomic<float> factor{1.0f};
+};
+
+inline Tweak TWEAKS[] = {
+    {"z_pounce", "Pounce slam range", "Blast radius when a pounce slam lands.", true, {"ZombiePounceHighRageExplosionRange"}},
+    {"z_pound", "Ground pound range", "Reach of the ground pound and the aerial ground pound.", true, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}},
+    {"z_tackle", "Tackle range", "How far away the charge tackle still connects.", true, {"ZombieChargeAttackRange"}},
+    {"z_claws", "Claws range", "Reach of your claw swipes.", true, {"RangeMeleeMul", "BestTargetMeleeRange"}},
+    {"z_spit", "Spit range", "Spits fly faster and further.", true, {"ZombieSpitControlTheHordeVelocityMul", "ZombieSpitLightDisableVelocityMul"}},
+    {"h_dfa", "Death from above range", "How far below you a target can be, and the size of the landing shockwave.", false,
+     {"JumpAttackRange", "JumpAttackShockwaveRadius"}},
+    {"h_dropkick", "Dropkick range", "How far away the dropkick still connects.", false, {"AirKickRangeMul"}},
+    {"h_kicks", "Other kicks & ground pound range", "Wrestling kick and ground pound reach.", false, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
+    {"h_melee", "Melee range", "Reach of melee attacks and how far the game looks for a target.", false, {"RangeMeleeMul", "BestTargetMeleeRange"}},
+    {"h_angle", "Attack angle", "How far above or below your aim an attack still locks on. The game has no setting for hitting behind you.",
+     false, {"MaxVerticalAngleForRangeMeleeCorrection"}},
+};
+
+inline Tweak* find_tweak(const std::string& key) {
+    for (auto& t : TWEAKS)
+        if (key == t.key) return &t;
+    return nullptr;
+}
+
+struct Tree { int type; const char* name; };
+inline const Tree TREES[] = {{3, "Survivor"}, {1, "Agility"}, {2, "Power"}, {5, "Legend"}, {6, "Driver"}, {7, "Hellraid"}, {4, "Reputation"}, {0, "Other"}};
 
 inline Cheat* find(const std::string& key) {
     for (auto& c : CHEATS)
@@ -62,7 +97,8 @@ inline Cheat* find(const std::string& key) {
 inline bool is_on(const char* key) { return find(key) && find(key)->on; }
 
 inline uintptr_t player = 0;
-inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0;
+inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0;
+inline uintptr_t vt_param_float = 0, vt_param_bool = 0;
 inline std::map<std::string, int> param_ids;
 inline uintptr_t immortal_vtable[COPIED_SLOTS + 1];
 inline uintptr_t original_vtable = 0;
@@ -70,7 +106,8 @@ inline float best_stamina[2] = {};
 inline std::mutex modules_mx;
 inline std::vector<uintptr_t> enemy_modules;
 inline std::map<uintptr_t, int> stack_floor;
-inline std::map<uintptr_t, uint32_t> saved_values;
+inline std::map<uintptr_t, std::vector<uint8_t>> saved_bytes;
+inline std::set<uintptr_t> cache_entries;
 inline std::vector<uintptr_t> saved_containers;
 
 inline bool in_game_module(uintptr_t p) {
@@ -139,6 +176,11 @@ inline void locate(uintptr_t base) {
                 break;
             }
     }
+    if (auto hits = game::find_code(base, "48 89 5C 24 18 48 89 74 24 20 57 48 83 EC 20 49 63 F0 48 8B D9 48 8B 49 40 48 8B FE 48 C1 E7 05 44 0F BF C2");
+        !hits.empty())
+        set_level_fn = hits[0];
+    vt_param_float = game::find_vtable(base, "?$Param@M");
+    vt_param_bool = game::find_vtable(base, "?$Param@_N");
     read_param_names();
 }
 
@@ -210,40 +252,130 @@ inline uintptr_t param_value(uintptr_t container, const std::string& name) {
     return param ? param + PARAM_VALUE : 0;
 }
 
-inline void override_value(uintptr_t at, const void* v, size_t n, std::set<uintptr_t>& touched) {
-    if (!at) return;
+inline uintptr_t param_cache(const std::string& name) {
+    auto it = param_ids.find(name);
+    uintptr_t cache = alive(player) ? rdv<uintptr_t>(rdv<uintptr_t>(player + PARAM_CACHE) + CACHE_ARRAY) : 0;
+    return it == param_ids.end() || !cache ? 0 : cache + (it->second + 1) * CACHE_ENTRY;
+}
+
+inline void put_bytes(uintptr_t at, const void* v, size_t n, std::set<uintptr_t>& touched) {
+    if (!at || IsBadWritePtr((void*)at, n)) return;
+    if (!saved_bytes.count(at)) {
+        std::vector<uint8_t> b(n);
+        if (!rd(at, b.data(), n)) return;
+        saved_bytes[at] = b;
+    }
     touched.insert(at);
-    if (!saved_values.count(at)) saved_values[at] = rdv<uint32_t>(at);
-    if (!IsBadWritePtr((void*)at, n)) memcpy((void*)at, v, n);
+    memcpy((void*)at, v, n);
+}
+
+inline float original_float(uintptr_t at) {
+    auto it = saved_bytes.find(at);
+    float f;
+    if (it == saved_bytes.end() || it->second.size() < 4) return rdv<float>(at, NAN);
+    memcpy(&f, it->second.data(), 4);
+    return f;
+}
+
+inline void set_param(const std::string& name, float value, bool is_switch, const std::vector<uintptr_t>& containers,
+                      std::set<uintptr_t>& touched) {
+    uint8_t yes = value != 0;
+    for (uintptr_t c : containers) {
+        uintptr_t at = param_value(c, name);
+        if (is_switch) put_bytes(at, &yes, 1, touched);
+        else put_bytes(at, &value, 4, touched);
+    }
+    uintptr_t e = param_cache(name);
+    if (!e || IsBadWritePtr((void*)e, CACHE_ENTRY)) return;
+    uint8_t record[CACHE_ENTRY - 8];
+    memcpy(record, (const void*)(e + 8), sizeof record);
+    uintptr_t vt = is_switch ? vt_param_bool : vt_param_float;
+    if (!(record[CACHE_FLAGS - 8] & 1) || !*(uintptr_t*)record) {
+        if (!vt) return;
+        memcpy(record, &vt, 8);
+        record[CACHE_FLAGS - 8] |= 1;
+    }
+    if (is_switch) record[8] = yes;
+    else memcpy(record + 8, &value, 4);
+    put_bytes(e + 8, record, sizeof record, touched);
+    cache_entries.insert(e);
+}
+
+inline void set_desc_stat(uintptr_t desc, int stat, float v, std::set<uintptr_t>& touched) {
+    auto& f = g.stats[stat];
+    if (f.off < 0 || !desc) return;
+    int n = (int)std::lround(v);
+    put_bytes(desc + f.off, f.is_float ? (const void*)&v : (const void*)&n, 4, touched);
+}
+
+inline void item_overrides(std::set<uintptr_t>& touched) {
+    bool uv = is_on("uv"), no_reload = is_on("no_reload");
+    if (!uv && !no_reload) return;
+    for (int i = 0; i < ITEM_COUNT; i++) {
+        const ItemInfo& info = ITEMS[i];
+        auto d = g.descs.find(info.id);
+        if (d == g.descs.end()) continue;
+        if (uv && info.st[ST_DepletionTime] < 1e6f) set_desc_stat(d->second, ST_DepletionTime, 1e7f, touched);
+        if (no_reload && info.st[ST_AmmoCount] > 0) {
+            set_desc_stat(d->second, ST_AmmoCount, 999, touched);
+            if (info.st[ST_ReloadTime] > 0) set_desc_stat(d->second, ST_ReloadTime, 0.05f, touched);
+        }
+    }
 }
 
 inline void apply_overrides() {
     auto containers = param_containers();
-    if (containers != saved_containers) saved_values.clear(), saved_containers = containers;
-    std::set<uintptr_t> touched;
+    if (containers != saved_containers) saved_bytes.clear(), cache_entries.clear(), saved_containers = containers;
+    std::map<std::string, std::pair<float, bool>> want;
     for (auto& c : CHEATS) {
         if (!c.on) continue;
-        std::vector<std::pair<std::string, float>> numbers(c.numbers.begin(), c.numbers.end());
+        for (auto& [name, v] : c.numbers) want[name] = {v, false};
+        for (const char* name : c.switches) want[name] = {1, true};
         if (!strcmp(c.key, "z_spits"))
             for (const char* base : SPIT_REGEN)
-                for (int players = 1; players <= 4; players++) numbers.push_back({base + std::to_string(players) + "v1", 0.05f});
-        for (uintptr_t container : containers) {
-            for (auto& [name, v] : numbers) override_value(param_value(container, name), &v, 4, touched);
-            for (const char* name : c.switches) {
-                uint8_t yes = 1;
-                override_value(param_value(container, name), &yes, 1, touched);
-            }
+                for (int players = 1; players <= 4; players++) want[base + std::to_string(players) + "v1"] = {0.05f, false};
+    }
+    for (auto& t : TWEAKS) {
+        float factor = t.factor;
+        if (factor == 1.0f || containers.empty()) continue;
+        for (const char* name : t.params) {
+            float base = original_float(param_value(containers[0], name));
+            if (std::isnan(base)) continue;
+            auto it = want.find(name);
+            float v = base * factor;
+            if (it == want.end() || v > it->second.first) want[name] = {v, false};
         }
     }
+    std::set<uintptr_t> touched;
+    for (auto& [name, w] : want) set_param(name, w.first, w.second, containers, touched);
     if (is_on("ammo") && unlimited_ammo_flag) {
         uint8_t yes = 1;
-        override_value(unlimited_ammo_flag, &yes, 1, touched);
+        put_bytes(unlimited_ammo_flag, &yes, 1, touched);
     }
-    for (auto it = saved_values.begin(); it != saved_values.end();) {
+    item_overrides(touched);
+    for (auto it = saved_bytes.begin(); it != saved_bytes.end();) {
         if (touched.count(it->first)) { ++it; continue; }
-        wr<uint32_t>(it->first, it->second);
-        it = saved_values.erase(it);
+        if (!IsBadWritePtr((void*)it->first, it->second.size())) memcpy((void*)it->first, it->second.data(), it->second.size());
+        if (cache_entries.erase(it->first - 8)) wr<uint64_t>(it->first - 8, ~0ull);
+        it = saved_bytes.erase(it);
     }
+}
+
+inline uintptr_t tree_record(int type) {
+    uintptr_t trees = alive(player) ? rdv<uintptr_t>(rdv<uintptr_t>(player + PARAM_CONTAINER) + SKILL_TREES) : 0;
+    return trees ? trees + type * TREE_RECORD : 0;
+}
+inline int tree_level(int type) { return tree_record(type) ? rdv<uint16_t>(tree_record(type) + TREE_LEVEL) : -1; }
+inline int tree_max(int type) {
+    int m = tree_record(type) ? rdv<uint16_t>(tree_record(type) + TREE_MAX) : 0;
+    return m > 0 && m < 1000 ? m : 0;
+}
+
+inline void set_tree_level(int type, int level) {
+    uintptr_t container = alive(player) ? rdv<uintptr_t>(player + PARAM_CONTAINER) : 0;
+    if (!container || !set_level_fn || !tree_max(type)) return;
+    level = std::clamp(level, 0, tree_max(type));
+    ((void(__fastcall*)(uintptr_t, int16_t, int))set_level_fn)(container, (int16_t)level, type);
 }
 
 inline bool is_health_module(uintptr_t m) {
@@ -296,6 +428,27 @@ inline void keep_stacks(bool ammo, bool supplies) {
     }
 }
 
+extern "C" {
+uintptr_t fatrainer_update_original[3] = {};
+void fatrainer_update_hook0();
+void fatrainer_update_hook1();
+void fatrainer_update_hook2();
+}
+
+inline void install_update_hooks() {
+    void (*hooks[3])() = {fatrainer_update_hook0, fatrainer_update_hook1, fatrainer_update_hook2};
+    for (int i = 0; i < 3; i++) {
+        if (!g.vt_health[i]) continue;
+        auto at = (uintptr_t*)(g.vt_health[i] + SLOT_MODULE_UPDATE * 8);
+        if (*at == (uintptr_t)hooks[i] || !in_game_module(*at)) continue;
+        fatrainer_update_original[i] = *at;
+        DWORD old;
+        VirtualProtect(at, 8, PAGE_READWRITE, &old);
+        *at = (uintptr_t)hooks[i];
+        VirtualProtect(at, 8, old, &old);
+    }
+}
+
 inline void tick() {
     std::lock_guard<std::mutex> l(game::mx);
     game::reapply_stats();
@@ -312,10 +465,31 @@ inline void tick() {
 inline std::string describe() {
     char b[256];
     snprintf(b, sizeof b,
-             "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, ammo flag %s, enemies %zu",
+             "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache %s, ammo flag %s, "
+             "set level %s, enemies %zu, overrides %zu",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", health(), stamina(),
-             param_ids.size(), unlimited_ammo_flag ? "ok" : "missing", enemy_modules.size());
+             param_ids.size(), param_cache("GrapplingHookCooldown") ? "ok" : "missing", unlimited_ammo_flag ? "ok" : "missing",
+             set_level_fn ? "ok" : "missing", enemy_modules.size(), saved_bytes.size());
     return b;
 }
 
+}
+
+#define FATRAINER_UPDATE_HOOK(n)                                                                                    \
+    ".globl fatrainer_update_hook" #n "\n"                                                                          \
+    "fatrainer_update_hook" #n ":\n"                                                                                \
+    "push %rcx\npush %rdx\npush %r8\npush %r9\nsub $0x68, %rsp\n"                                                  \
+    "movdqu %xmm0, 0x20(%rsp)\nmovdqu %xmm1, 0x30(%rsp)\nmovdqu %xmm2, 0x40(%rsp)\nmovdqu %xmm3, 0x50(%rsp)\n"     \
+    "call fatrainer_module_update\n"                                                                                \
+    "movdqu 0x20(%rsp), %xmm0\nmovdqu 0x30(%rsp), %xmm1\nmovdqu 0x40(%rsp), %xmm2\nmovdqu 0x50(%rsp), %xmm3\n"     \
+    "add $0x68, %rsp\npop %r9\npop %r8\npop %rdx\npop %rcx\n"                                                       \
+    "jmp *fatrainer_update_original+" #n "*8(%rip)\n"
+
+asm(".text\n" FATRAINER_UPDATE_HOOK(0) FATRAINER_UPDATE_HOOK(1) FATRAINER_UPDATE_HOOK(2));
+
+extern "C" void fatrainer_module_update(uintptr_t module) {
+    static cheats::Cheat* one_hit = cheats::find("one_hit");
+    if (!one_hit->on || !cheats::is_enemy_module(module)) return;
+    float cur = cheats::rdv<float>(module + cheats::MODULE_HEALTH, NAN);
+    if (cur > cheats::ONE_HIT_HEALTH && cur < 1e7f) cheats::wr<float>(module + cheats::MODULE_HEALTH, cheats::ONE_HIT_HEALTH);
 }

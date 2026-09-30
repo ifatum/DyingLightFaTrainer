@@ -19,6 +19,7 @@ struct Config {
     bool remember_cheats = true;
     std::vector<PageEntry> pages;
     std::vector<std::string> cheats_on;
+    std::vector<std::pair<std::string, float>> tweaks;
 };
 
 inline Config cfg;
@@ -37,7 +38,10 @@ inline void normalize(const std::vector<std::string>& known) {
             std::none_of(out.begin(), out.end(), [&](auto& o) { return o.id == p.id; }))
             out.push_back(p);
     for (auto& id : known)
-        if (std::none_of(out.begin(), out.end(), [&](auto& o) { return o.id == id; })) out.push_back({id, true});
+        if (std::none_of(out.begin(), out.end(), [&](auto& o) { return o.id == id; })) {
+            auto settings = std::find_if(out.begin(), out.end(), [](auto& o) { return o.id == "settings"; });
+            out.insert(id == "settings" ? out.end() : settings, {id, true});
+        }
     for (auto& p : out)
         if (p.id == "settings") p.visible = true;
     cfg.pages = out;
@@ -50,6 +54,7 @@ inline void load(const std::string& path) {
     if (!f) return;
     cfg.pages.clear();
     cfg.cheats_on.clear();
+    cfg.tweaks.clear();
     char line[512];
     while (fgets(line, sizeof line, f)) {
         std::string s = line;
@@ -63,6 +68,10 @@ inline void load(const std::string& path) {
         else if (k == "menu_key") cfg.menu_key = atoi(v.c_str());
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
         else if (k == "cheat") cfg.cheats_on.push_back(v);
+        else if (k == "tweak") {
+            size_t c = v.find(',');
+            if (c != std::string::npos) cfg.tweaks.push_back({v.substr(0, c), (float)atof(v.substr(c + 1).c_str())});
+        }
         else if (k == "page") {
             size_t c = v.find(',');
             cfg.pages.push_back({v.substr(0, c), c == std::string::npos || v.substr(c + 1) != "0"});
@@ -79,6 +88,7 @@ inline bool save(const std::string& path) {
     for (auto& p : cfg.pages) fprintf(f, "page=%s,%d\n", p.id.c_str(), (int)p.visible);
     if (cfg.remember_cheats)
         for (auto& c : cfg.cheats_on) fprintf(f, "cheat=%s\n", c.c_str());
+    for (auto& [k, v] : cfg.tweaks) fprintf(f, "tweak=%s,%.2f\n", k.c_str(), v);
     fclose(f);
     return true;
 }

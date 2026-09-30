@@ -287,8 +287,9 @@ inline void calibrate_stats(const std::vector<std::pair<uintptr_t, const ItemInf
         StatField best;
         best.samples = samples;
         for (auto& [k, e] : votes)
-            if (e.first > best.votes && e.second >= 5) best = {k.first, k.second, e.first, samples};
-        if (best.votes < std::max(8, (int)(samples * 0.7))) best.off = -1;
+            if (e.first > best.votes && e.second >= std::min(5, std::max(2, samples))) best = {k.first, k.second, e.first, samples};
+        bool few = samples > 0 && samples < 8;
+        if (few ? best.votes < samples || best.votes < 2 : best.votes < std::max(8, (int)(samples * 0.7))) best.off = -1;
         out[s] = best;
     }
 }

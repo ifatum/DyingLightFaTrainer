@@ -253,6 +253,7 @@ static void main_thread() {
         logf("ERROR: %s", game::g.status.c_str());
     menu::startup();
     cheats::locate((uintptr_t)gamedll);
+    cheats::install_update_hooks();
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
     logf("input blocking: %d directinput vtables", input::install(engine));

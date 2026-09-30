@@ -81,5 +81,8 @@ inline void save_config() {
     c.cheats_on.clear();
     for (auto& ch : cheats::CHEATS)
         if (ch.on) c.cheats_on.push_back(ch.key);
+    c.tweaks.clear();
+    for (auto& t : cheats::TWEAKS)
+        if (t.factor != 1.0f) c.tweaks.push_back({t.key, t.factor});
     config::save(config::default_path());
 }

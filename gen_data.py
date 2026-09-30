@@ -9,7 +9,7 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 STEAM = os.path.expanduser("~/.local/share/Steam")
 STATS = ["Damage", "Condition", "CriticalProb", "CriticalDamage", "Force", "StaminaUsage", "DamageRange",
-         "UpgradeLevel", "AllowedRepairs", "MaxStackCount", "Price", "Color"]
+         "UpgradeLevel", "AllowedRepairs", "MaxStackCount", "Price", "Color", "AmmoCount", "ReloadTime", "DepletionTime"]
 COLORS = {"Color_White": 0, "Color_Green": 1, "Color_Blue": 2, "Color_Violet": 3, "Color_Orange": 4, "Color_Platinum": 5}
 
 

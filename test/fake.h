@@ -4,12 +4,12 @@
 
 namespace fake {
 
-const int DAMAGE_OFF = 0x120, CONDITION_OFF = 0x140, COLOR_OFF = 0x150;
+const int DAMAGE_OFF = 0x120, CONDITION_OFF = 0x140, COLOR_OFF = 0x150, AMMO_OFF = 0x160, RELOAD_OFF = 0x164, DEPLETION_OFF = 0x168;
 
 struct World {
     uint8_t* mem;
     size_t used = 0;
-    uintptr_t wallet, backpack, stash, materials, manager, player, stamina, enemy, enemy_health, params;
+    uintptr_t wallet, backpack, stash, materials, manager, player, stamina, enemy, enemy_health, params, cache, trees;
     std::map<std::string, uintptr_t> desc;
 
     uintptr_t alloc(size_t n) {
@@ -45,6 +45,9 @@ struct World {
             if (!std::isnan(ITEMS[i].st[ST_Damage])) put<float>(d + DAMAGE_OFF, ITEMS[i].st[ST_Damage]);
             if (!std::isnan(ITEMS[i].st[ST_Condition])) put<int>(d + CONDITION_OFF, (int)ITEMS[i].st[ST_Condition]);
             if (!std::isnan(ITEMS[i].st[ST_Color])) put<int>(d + COLOR_OFF, (int)ITEMS[i].st[ST_Color]);
+            if (!std::isnan(ITEMS[i].st[ST_AmmoCount])) put<int>(d + AMMO_OFF, (int)ITEMS[i].st[ST_AmmoCount]);
+            if (!std::isnan(ITEMS[i].st[ST_ReloadTime])) put<float>(d + RELOAD_OFF, ITEMS[i].st[ST_ReloadTime]);
+            if (!std::isnan(ITEMS[i].st[ST_DepletionTime])) put<float>(d + DEPLETION_OFF, ITEMS[i].st[ST_DepletionTime]);
             put<uintptr_t>(arr + i * 8, d);
             desc[ITEMS[i].id] = d;
         }
@@ -69,6 +72,14 @@ struct World {
         put<uintptr_t>(container + 0xd0, holder);
         put<uintptr_t>(holder, table);
         for (int i = 0; i < 1100; i++) put<uintptr_t>(table + (i + 1) * 8, params + i * 16);
+        uintptr_t provider = alloc(0x40);
+        cache = alloc(40 * 1100);
+        put<uintptr_t>(player + 0x9c0, provider);
+        put<uintptr_t>(provider + 0x28, cache);
+        trees = alloc(0x20 * 8);
+        put<uintptr_t>(container + 0x40, trees);
+        put<uint16_t>(trees + 2 * 0x20 + 0x14, 7);
+        put<uint16_t>(trees + 2 * 0x20 + 0x16, 25);
         stamina = alloc(0x40);
         put<float>(stamina + 0x10, 40);
         put<float>(stamina + 0x14, 100);

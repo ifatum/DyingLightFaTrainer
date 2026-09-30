@@ -89,6 +89,9 @@ int main(int argc, char** argv) {
     cheats::unlimited_ammo_flag = (uintptr_t)fake_rules;
     for (auto* k : {"god", "stamina", "supplies", "one_hit", "hook", "uv", "ammo", "z_spits"}) cheats::find(k)->on = true;
     game::wr<float>(w.params + cheats::param_ids["GrapplingHookCooldown"] * 16 + 8, 12.5f);
+    game::wr<float>(w.params + cheats::param_ids["AirKickRangeMul"] * 16 + 8, 1.0f);
+    cheats::find("no_reload")->on = true;
+    cheats::find_tweak("h_dropkick")->factor = 3.0f;
     cheats::scan_enemies();
     game::set_count(mat->items[0], 999);
     cheats::tick();
@@ -102,12 +105,28 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
     CHECK(game::count(mat->items[0]) == 999);
     auto param = [&](const char* n) { return w.params + cheats::param_ids[n] * 16 + 8; };
+    auto cached = [&](const char* n) { return w.cache + (cheats::param_ids[n] + 1) * 40; };
+    CHECK(game::rdv<float>(cached("GrapplingHookCooldown") + 0x10) == 0 && (game::rdv<uint8_t>(cached("GrapplingHookCooldown") + 0x20) & 1));
+    CHECK(game::rdv<uintptr_t>(cached("GrapplingHookCooldown") + 8) == cheats::vt_param_float && cheats::vt_param_float);
+    CHECK(game::rdv<uint8_t>(cached("CanUseHook") + 0x10) == 1 && game::rdv<uintptr_t>(cached("CanUseHook") + 8) == cheats::vt_param_bool);
+    CHECK(game::rdv<float>(param("AirKickRangeMul")) == 3.0f && game::rdv<float>(cached("AirKickRangeMul") + 0x10) == 3.0f);
+    CHECK(game::g.stats[ST_AmmoCount].off == fake::AMMO_OFF && game::g.stats[ST_DepletionTime].off == fake::DEPLETION_OFF);
+    CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 999 && game::rdv<float>(w.desc["Firearm_PistolAGen"] + fake::RELOAD_OFF) == 0.05f);
+    CHECK(game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 1e7f);
+    CHECK(cheats::tree_level(2) == 7 && cheats::tree_max(2) == 25 && cheats::tree_max(5) == 0);
+    game::wr<float>(w.enemy_health + 0x78, 300);
+    fatrainer_module_update(w.enemy_health);
+    CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
     CHECK(game::rdv<float>(param("GrapplingHookCooldown")) == 0 && game::rdv<uint8_t>(param("CanUseHook")) == 1);
     CHECK(game::rdv<uint8_t>(param("InfiniteStamina")) == 1 && game::rdv<float>(param("FlashlightRechargeSpeed")) == 1000);
     CHECK(game::rdv<uint8_t>(param("CanUseHook")) == 1 && game::rdv<float>(param("ZombieSpitLightDisableAmmoRegenTime3v1")) == 0.05f);
     CHECK(fake_rules[0] == 1);
     for (auto& c : cheats::CHEATS) c.on = false;
+    cheats::find_tweak("h_dropkick")->factor = 1.0f;
     cheats::tick();
+    CHECK(game::rdv<float>(param("AirKickRangeMul")) == 1.0f && game::rdv<uint64_t>(cached("AirKickRangeMul")) == ~0ull);
+    CHECK(game::rdv<uintptr_t>(cached("GrapplingHookCooldown") + 8) == 0 && game::rdv<uint8_t>(cached("GrapplingHookCooldown") + 0x20) == 0);
+    CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 8 && game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 10.0f);
     CHECK(game::rdv<float>(param("GrapplingHookCooldown")) == 12.5f && game::rdv<uint8_t>(param("CanUseHook")) == 0 && fake_rules[0] == 0);
     (void)flag;
     CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == game::g.vt_human);
@@ -116,6 +135,7 @@ int main(int argc, char** argv) {
     config::cfg.accent[0] = 0.25f;
     config::cfg.pages = {{"combat", false}, {"player", true}};
     config::cfg.cheats_on = {"god", "uv"};
+    config::cfg.tweaks = {{"h_dfa", 4.5f}};
     char tmp[MAX_PATH];
     GetTempPathA(MAX_PATH, tmp);
     std::string path = std::string(tmp) + "fatrainer_selftest.ini";
@@ -126,6 +146,9 @@ int main(int argc, char** argv) {
     CHECK(config::cfg.accent[0] == 0.25f && config::cfg.cheats_on.size() == 2 && config::cfg.cheats_on[1] == "uv");
     CHECK(config::cfg.pages.size() == 3 && config::cfg.pages[0].id == "combat" && !config::cfg.pages[0].visible);
     CHECK(config::cfg.pages[2].id == "settings" && config::cfg.pages[2].visible);
+    CHECK(config::cfg.tweaks.size() == 1 && config::cfg.tweaks[0].second == 4.5f);
+    config::normalize({"player", "combat", "skills", "settings"});
+    CHECK(config::cfg.pages[2].id == "skills" && config::cfg.pages[3].id == "settings");
     DeleteFileA(path.c_str());
 
     printf(fails ? "SELFTEST FAILED (%d)\n" : "SELFTEST OK\n", fails);
