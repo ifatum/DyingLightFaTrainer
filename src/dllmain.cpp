@@ -333,6 +333,7 @@ static void main_thread() {
     menu::startup();
     cheats::locate((uintptr_t)gamedll);
     cheats::install_update_hooks();
+    logf("settings cache hook: %s", cheats::install_cache_hook() ? "ok" : cheats::cache_get_fn ? "unexpected code, skipped" : "not found");
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
     logf("input blocking: %d directinput vtables", input::install(engine));

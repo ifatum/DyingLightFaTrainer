@@ -13,8 +13,8 @@ using game::wr;
 const int LOCAL_PLAYER = 0x780, PARAM_CONTAINER = 0xe58, PARAM_TABLE = 0xd0, PARAM_VALUE = 8;
 const int HEALTH_OBJECT = 0x8f8, STAMINA_OBJECTS[] = {0x1340, 0x1348};
 const int STAMINA_CURRENT = 0x10, STAMINA_FULL = 0x14;
-const int PARAM_CACHE = 0x9c0, CACHE_ARRAY = 0x28, CACHE_ENTRY = 40, CACHE_FLAGS = 0x20;
-const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_LEVEL = 0x14, TREE_MAX = 0x16;
+const int PARAM_SLOTS = 1100, CACHED_VALUE = 8, CACHED_FLAGS = 0x18, CACHED_VERSION = -8;
+const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_XP = 8, TREE_LEVEL_START = 0xc, TREE_SPAN = 0x10, TREE_LEVEL = 0x14, TREE_MAX = 0x16;
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
 const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MODULE_UPDATE = 245;
 const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, VAR_SLOTS = 1024;
@@ -41,6 +41,7 @@ inline Cheat CHEATS[] = {
     {"one_hit", "One hit kill", "Zombies and humans drop to 1 health. Works when you are the host.", {}, {}},
     {"ammo", "Infinite ammo", "Magazines never empty and reserve ammo stays full.", {}, {}},
     {"supplies", "Infinite consumables", "Medkits, throwables and crafting materials never run out.", {}, {}},
+    {"lockpick", "Instant lockpicking", "Every pick position opens the lock and lockpicks never break.", {}, {}},
     {"durability", "Unbreakable weapons", "Melee weapons stop losing durability when you hit things.",
      {{"BluntWpnDurabilityLoss", 0}, {"CutWpnDurabilityLoss", 0}}, {}},
     {"no_fall", "No fall damage", "Land safely from any height.", {{"FallDamageReduction", 1}, {"FallHeightMedium", 9999}, {"FallHeightHigh", 9999}},
@@ -88,10 +89,10 @@ inline Tweak TWEAKS[] = {
     {"z_tackle", "Tackle", "How far away the charge tackle still connects.", G_ZOMBIE, {"ZombieChargeAttackRange"}},
     {"z_claws", "Claws", "Reach of your claw swipes.", G_ZOMBIE, {"RangeMeleeMul", "BestTargetMeleeRange"}},
     {"z_spit", "Spit", "Spits fly faster and further.", G_ZOMBIE, {"ZombieSpitControlTheHordeVelocityMul", "ZombieSpitLightDisableVelocityMul"}},
-    {"h_dfa", "Death from above", "At Max you start it 12 m away and at any angle, and it pulls you onto the hunter. Also grows the landing shockwave.",
-     G_HUMAN, {"JumpAttackRange", "JumpAttackShockwaveRadius"},
-     {{"f_btz_jump_attack_range", 12}, {"f_btz_jump_attack_range_velocity_factor", 0.5f}, {"f_btz_jump_attack_angle_max", 180},
-      {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
+    {"h_dfa", "Death from above range", "How far away the hunter can be when you start it. At Max, 12 m. Also grows the landing shockwave.",
+     G_HUMAN, {"JumpAttackRange", "JumpAttackShockwaveRadius"}, {{"f_btz_jump_attack_range", 12}, {"f_btz_jump_attack_range_velocity_factor", 0.5f}}},
+    {"h_dfa_pull", "Death from above pull", "How far off target you can start it; the attack pulls you onto the hunter. At Max he can be beside or behind you.",
+     G_HUMAN, {}, {{"f_btz_jump_attack_angle_max", 180}, {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"h_dropkick", "Dropkick", "At Max you dropkick the hunter from 12 m away, even when he is not in front of you.", G_HUMAN,
      {"AirKickRangeMul"}, {{"f_btz_wrestling_kick_range", 12}, {"f_btz_wrestling_kick_range_velocity_factor", 0.5f}, {"f_btz_wrestling_kick_angle_max", 180}}},
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
@@ -116,7 +117,7 @@ inline Cheat* find(const std::string& key) {
 inline bool is_on(const char* key) { return find(key) && find(key)->on; }
 
 inline uintptr_t player = 0;
-inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0;
+inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0;
 inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 inline VarFloatFn original_var_float = nullptr;
@@ -129,7 +130,16 @@ inline std::mutex modules_mx;
 inline std::vector<uintptr_t> enemy_modules;
 inline std::map<uintptr_t, int> stack_floor;
 inline std::map<uintptr_t, std::vector<uint8_t>> saved_bytes;
-inline std::set<uintptr_t> cache_entries;
+using CacheGetFn = uintptr_t (*)(uintptr_t, int);
+inline CacheGetFn cache_get_original = nullptr;
+struct CachedParam { std::atomic<uint8_t> kind{0}; std::atomic<float> value{0}; std::atomic<uint32_t> reads{0}; };
+enum { CACHED_NONE, CACHED_FLOAT, CACHED_SWITCH };
+inline CachedParam cached[PARAM_SLOTS];
+inline std::mutex cached_mx;
+inline std::map<int, std::set<uintptr_t>> cached_entries;
+inline std::vector<uintptr_t> lock_records;
+inline const float LOCK_DIFFICULTIES[4][5] = {{1.9f, 40, 40, 90, 0}, {1.9f, 30, 29, 90, 0}, {1.9f, 16, 15, 90, 0}, {1.9f, 10, 5, 90, 0}};
+inline const float LOCK_OPEN[3] = {1000, 1000, 1000};
 inline std::vector<uintptr_t> saved_containers;
 
 inline bool in_game_module(uintptr_t p) {
@@ -201,6 +211,10 @@ inline void locate(uintptr_t base) {
     if (auto hits = game::find_code(base, "48 89 5C 24 18 48 89 74 24 20 57 48 83 EC 20 49 63 F0 48 8B D9 48 8B 49 40 48 8B FE 48 C1 E7 05 44 0F BF C2");
         !hits.empty())
         set_level_fn = hits[0];
+    if (auto hits = game::find_code(base, "40 55 56 41 57 48 83 EC 50 48 8B 41 40 48 8B F1 4C 63 FA 49 8B EF 48 C1 E5 05 66 83 7C 28 14 00");
+        !hits.empty())
+        level_from_xp_fn = hits[0];
+    if (auto hits = game::find_code(base, "8B ? C0 09 00 00 BA ? ? ? ? E8"); !hits.empty()) cache_get_fn = game::rip_target(hits[0] + 11, 1, 5);
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 8B 0D ? ? ? ? 48 8B 18 48 8B 01 FF 90 90 01 00 00 48 8B 0D ? ? ? ? 48 8D 55 ? 4C 8B C0 FF 93 90 03 00 00");
         !hits.empty())
         var_root = game::rip_target(hits[0], 3, 7);
@@ -277,12 +291,6 @@ inline uintptr_t param_value(uintptr_t container, const std::string& name) {
     return param ? param + PARAM_VALUE : 0;
 }
 
-inline uintptr_t param_cache(const std::string& name) {
-    auto it = param_ids.find(name);
-    uintptr_t cache = alive(player) ? rdv<uintptr_t>(rdv<uintptr_t>(player + PARAM_CACHE) + CACHE_ARRAY) : 0;
-    return it == param_ids.end() || !cache ? 0 : cache + (it->second + 1) * CACHE_ENTRY;
-}
-
 inline void put_bytes(uintptr_t at, const void* v, size_t n, std::set<uintptr_t>& touched) {
     if (!at || IsBadWritePtr((void*)at, n)) return;
     if (!saved_bytes.count(at)) {
@@ -310,20 +318,6 @@ inline void set_param(const std::string& name, float value, bool is_switch, cons
         if (is_switch) put_bytes(at, &yes, 1, touched);
         else put_bytes(at, &value, 4, touched);
     }
-    uintptr_t e = param_cache(name);
-    if (!e || IsBadWritePtr((void*)e, CACHE_ENTRY)) return;
-    uint8_t record[CACHE_ENTRY - 8];
-    memcpy(record, (const void*)(e + 8), sizeof record);
-    uintptr_t vt = is_switch ? vt_param_bool : vt_param_float;
-    if (!(record[CACHE_FLAGS - 8] & 1) || !*(uintptr_t*)record) {
-        if (!vt) return;
-        memcpy(record, &vt, 8);
-        record[CACHE_FLAGS - 8] |= 1;
-    }
-    if (is_switch) record[8] = yes;
-    else memcpy(record + 8, &value, 4);
-    put_bytes(e + 8, record, sizeof record, touched);
-    cache_entries.insert(e);
 }
 
 inline void set_desc_stat(uintptr_t desc, int stat, float v, std::set<uintptr_t>& touched) {
@@ -348,9 +342,91 @@ inline void item_overrides(std::set<uintptr_t>& touched) {
     }
 }
 
+inline void apply_cached(const std::map<std::string, std::pair<float, bool>>& want) {
+    uint8_t kinds[PARAM_SLOTS] = {};
+    for (auto& [name, w] : want) {
+        auto it = param_ids.find(name);
+        int id = it == param_ids.end() ? -1 : it->second + 1;
+        if (id < 0 || id >= PARAM_SLOTS) continue;
+        cached[id].value = w.first;
+        kinds[id] = w.second ? CACHED_SWITCH : CACHED_FLOAT;
+    }
+    std::lock_guard<std::mutex> l(cached_mx);
+    for (int id = 0; id < PARAM_SLOTS; id++) {
+        if (cached[id].kind == kinds[id]) continue;
+        cached[id].kind = kinds[id];
+        if (kinds[id]) continue;
+        for (uintptr_t param : cached_entries[id]) wr<uint64_t>(param + CACHED_VERSION, ~0ull);
+        cached_entries.erase(id);
+    }
+}
+
+inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
+    uintptr_t param = cache_get_original(provider, id);
+    if (id < 0 || id >= PARAM_SLOTS || !param) return param;
+    auto& c = cached[id];
+    c.reads++;
+    uint8_t kind = c.kind;
+    if (!kind) return param;
+    uint8_t& flags = *(uint8_t*)(param + CACHED_FLAGS);
+    if (!(flags & 1) || !*(uintptr_t*)param) {
+        uintptr_t vt = kind == CACHED_SWITCH ? vt_param_bool : vt_param_float;
+        if (!vt) return param;
+        *(uintptr_t*)param = vt;
+        flags |= 1;
+    }
+    if (kind == CACHED_SWITCH) *(uint8_t*)(param + CACHED_VALUE) = c.value != 0;
+    else *(float*)(param + CACHED_VALUE) = c.value;
+    std::lock_guard<std::mutex> l(cached_mx);
+    cached_entries[id].insert(param);
+    return param;
+}
+
+inline void absolute_jump(uint8_t* at, uintptr_t target) {
+    const uint8_t jmp[6] = {0xFF, 0x25, 0, 0, 0, 0};
+    memcpy(at, jmp, 6);
+    memcpy(at + 6, &target, 8);
+}
+
+inline bool install_cache_hook() {
+    const uint8_t prologue[15] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18};
+    if (cache_get_original) return true;
+    if (!cache_get_fn || memcmp((const void*)cache_get_fn, prologue, sizeof prologue)) return false;
+    auto* trampoline = (uint8_t*)VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!trampoline) return false;
+    memcpy(trampoline, prologue, sizeof prologue);
+    absolute_jump(trampoline + sizeof prologue, cache_get_fn + sizeof prologue);
+    cache_get_original = (CacheGetFn)trampoline;
+    uint8_t patch[sizeof prologue];
+    absolute_jump(patch, (uintptr_t)&cache_get_hook);
+    patch[14] = 0x90;
+    DWORD old;
+    VirtualProtect((void*)cache_get_fn, sizeof patch, PAGE_EXECUTE_READWRITE, &old);
+    memcpy((void*)cache_get_fn, patch, sizeof patch);
+    VirtualProtect((void*)cache_get_fn, sizeof patch, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)cache_get_fn, sizeof patch);
+    return true;
+}
+
+inline std::vector<std::vector<float>> lock_patterns() {
+    std::vector<std::vector<float>> out;
+    for (auto& d : LOCK_DIFFICULTIES) out.push_back(std::vector<float>(d, d + 5));
+    return out;
+}
+
+inline void open_locks(std::set<uintptr_t>& touched) {
+    for (uintptr_t r : lock_records) {
+        float head[3];
+        if (!rd(r, head, sizeof head)) continue;
+        bool original = false;
+        for (auto& d : LOCK_DIFFICULTIES) original |= !memcmp(head, d, sizeof head);
+        if (original || !memcmp(head, LOCK_OPEN, sizeof head)) put_bytes(r, LOCK_OPEN, sizeof LOCK_OPEN, touched);
+    }
+}
+
 inline void apply_overrides() {
     auto containers = param_containers();
-    if (containers != saved_containers) saved_bytes.clear(), cache_entries.clear(), saved_containers = containers;
+    if (containers != saved_containers) saved_bytes.clear(), saved_containers = containers;
     std::map<std::string, std::pair<float, bool>> want;
     for (auto& c : CHEATS) {
         if (!c.on) continue;
@@ -373,6 +449,8 @@ inline void apply_overrides() {
     }
     std::set<uintptr_t> touched;
     for (auto& [name, w] : want) set_param(name, w.first, w.second, containers, touched);
+    apply_cached(want);
+    if (is_on("lockpick")) open_locks(touched);
     if (is_on("ammo") && unlimited_ammo_flag) {
         uint8_t yes = 1;
         put_bytes(unlimited_ammo_flag, &yes, 1, touched);
@@ -381,7 +459,6 @@ inline void apply_overrides() {
     for (auto it = saved_bytes.begin(); it != saved_bytes.end();) {
         if (touched.count(it->first)) { ++it; continue; }
         if (!IsBadWritePtr((void*)it->first, it->second.size())) memcpy((void*)it->first, it->second.data(), it->second.size());
-        if (cache_entries.erase(it->first - 8)) wr<uint64_t>(it->first - 8, ~0ull);
         it = saved_bytes.erase(it);
     }
 }
@@ -440,6 +517,14 @@ inline int tree_level(int type) { return tree_record(type) ? rdv<uint16_t>(tree_
 inline int tree_max(int type) {
     int m = tree_record(type) ? rdv<uint16_t>(tree_record(type) + TREE_MAX) : 0;
     return m > 0 && m < 1000 ? m : 0;
+}
+
+inline void level_up_with_xp(int type) {
+    uintptr_t container = alive(player) ? rdv<uintptr_t>(player + PARAM_CONTAINER) : 0, r = tree_record(type);
+    if (!container || !r || !level_from_xp_fn || tree_level(type) >= tree_max(type)) return;
+    uint32_t next = rdv<uint32_t>(r + TREE_LEVEL_START) + rdv<uint32_t>(r + TREE_SPAN);
+    if (rdv<uint32_t>(r + TREE_XP) < next) wr<uint32_t>(r + TREE_XP, next);
+    ((void(__fastcall*)(uintptr_t, int))level_from_xp_fn)(container, type);
 }
 
 inline void set_tree_level(int type, int level) {
@@ -534,14 +619,20 @@ inline void tick() {
     else best_stamina[0] = best_stamina[1] = 0;
 }
 
+inline uint32_t reads_of(const char* name) {
+    auto it = param_ids.find(name);
+    return it == param_ids.end() || it->second + 1 >= PARAM_SLOTS ? 0 : cached[it->second + 1].reads.load();
+}
+
 inline std::string describe() {
-    char b[320];
+    char b[480];
     snprintf(b, sizeof b,
-             "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache %s, ammo flag %s, "
-             "set level %s, script vars %s, enemies %zu, overrides %zu",
+             "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
+             "ammo flag %s, set level %s, xp level %s, script vars %s, lock records %zu, enemies %zu, overrides %zu",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", health(), stamina(),
-             param_ids.size(), param_cache("GrapplingHookCooldown") ? "ok" : "missing", unlimited_ammo_flag ? "ok" : "missing",
-             set_level_fn ? "ok" : "missing", var_root ? "ok" : "missing", enemy_modules.size(), saved_bytes.size());
+             param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
+             reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
+             level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", lock_records.size(), enemy_modules.size(), saved_bytes.size());
     return b;
 }
 

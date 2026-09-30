@@ -62,6 +62,7 @@ struct World {
                                                      {"Throwable_ThrowingAxeAGen", 30}, {"Throwable_Molotov", 7},
                                                      {"Melee_MacheteAGen", 1}, {"Special_Hook", 1}});
         stash = inventory(game::g.vt_inv[0], -1, {{"Melee_WrenchARusty", 1}, {"Melee_KnifeDGen", 1}, {"Throwable_Btz_Flare", 8}});
+        inventory(game::g.vt_inv[0], -1, {});
         player = alloc(0x3000);
         put<uintptr_t>(player, game::g.vt_player);
         put<uintptr_t>(player + 0x8f8, game::g.vt_human);

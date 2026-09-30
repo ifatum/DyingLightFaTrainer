@@ -94,28 +94,48 @@ inline std::vector<uintptr_t> find_code(uintptr_t base, const char* pattern, siz
 
 inline uintptr_t rip_target(uintptr_t at, int disp_at, int length) { return at + length + rdv<int32_t>(at + disp_at); }
 
-inline std::vector<std::vector<uintptr_t>> scan(const std::vector<uintptr_t>& vts) {
-    std::vector<std::vector<uintptr_t>> out(vts.size());
+template <class F> inline void each_heap_chunk(F visit) {
     const size_t CH = 1 << 20;
-    uintptr_t vts_at = (uintptr_t)vts.data();
     MEMORY_BASIC_INFORMATION mbi;
-    VirtualQuery(&mbi, &mbi, sizeof mbi);
-    uintptr_t stack = (uintptr_t)mbi.AllocationBase;
+    const uintptr_t STACK_AREA = 0x400000;
+    uintptr_t stack_hi = (uintptr_t)((NT_TIB*)NtCurrentTeb())->StackBase, stack_lo = stack_hi - STACK_AREA;
     for (uintptr_t a = 0x10000; a < 0x7FFFFFFF0000ULL && VirtualQuery((LPCVOID)a, &mbi, sizeof mbi); ) {
         uintptr_t s = (uintptr_t)mbi.BaseAddress, e = s + mbi.RegionSize;
         bool ok = mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && mbi.Protect == PAGE_READWRITE &&
-                  mbi.RegionSize <= (1ULL << 30) && (uintptr_t)mbi.AllocationBase != stack;
+                  mbi.RegionSize <= (1ULL << 30) && !(s < stack_hi && e > stack_lo);
         for (uintptr_t c = s; ok && c < e; c += CH) {
             size_t n = std::min<uintptr_t>(CH, e - c);
-            if (IsBadReadPtr((const void*)c, n)) continue;
-            const uint64_t* q = (const uint64_t*)c;
-            for (size_t i = 0; i < n / 8; i++)
-                for (size_t j = 0; j < vts.size(); j++)
-                    if (q[i] == vts[j] && vts[j] && (c + i * 8 < vts_at || c + i * 8 >= vts_at + vts.size() * 8))
-                        out[j].push_back(c + i * 8);
+            if (!IsBadReadPtr((const void*)c, n)) visit(c, n);
         }
         a = e > a ? e : a + 0x1000;
     }
+}
+
+inline std::vector<std::vector<uintptr_t>> scan(const std::vector<uintptr_t>& vts) {
+    std::vector<std::vector<uintptr_t>> out(vts.size());
+    uintptr_t vts_at = (uintptr_t)vts.data();
+    each_heap_chunk([&](uintptr_t c, size_t n) {
+        const uint64_t* q = (const uint64_t*)c;
+        for (size_t i = 0; i < n / 8; i++)
+            for (size_t j = 0; j < vts.size(); j++)
+                if (q[i] == vts[j] && vts[j] && (c + i * 8 < vts_at || c + i * 8 >= vts_at + vts.size() * 8))
+                    out[j].push_back(c + i * 8);
+    });
+    return out;
+}
+
+inline std::vector<uintptr_t> find_float_records(const std::vector<std::vector<float>>& patterns) {
+    std::vector<uintptr_t> out;
+    each_heap_chunk([&](uintptr_t c, size_t n) {
+        const uint32_t* w = (const uint32_t*)c;
+        for (auto& p : patterns) {
+            uint32_t first;
+            memcpy(&first, p.data(), 4);
+            size_t bytes = p.size() * 4;
+            for (size_t i = 0; i + p.size() <= n / 4; i++)
+                if (w[i] == first && !memcmp(w + i, p.data(), bytes) && (uintptr_t)(w + i) != (uintptr_t)p.data()) out.push_back(c + i * 4);
+        }
+    });
     return out;
 }
 
@@ -339,10 +359,10 @@ inline void refresh() {
         for (auto o : found[2 + c]) {
             uintptr_t arr = rdv<uintptr_t>(o + 0x40);
             uint32_t n = rdv<uint32_t>(o + 0x48);
-            if (!arr || n == 0 || n > 4000) continue;
             int cap = rdv<int>(o + 0x58);
             Kind k = INV_KINDS[c];
             if (k == K_BACKPACK && cap < 0) k = K_STASH;
+            if (n > 4000 || ((!arr || n == 0) && k != K_STASH)) continue;
             Inventory inv{o, k, cap, {}};
             for (uint32_t i = 0; i < n; i++) {
                 uintptr_t it = rdv<uintptr_t>(arr + i * 8);
@@ -350,7 +370,7 @@ inline void refresh() {
                 inv.items.push_back({it, nullptr, ""});
                 all.push_back(it);
             }
-            if (!inv.items.empty()) invs.push_back(std::move(inv));
+            if (!inv.items.empty() || k == K_STASH) invs.push_back(std::move(inv));
         }
     int sc = 0;
     NameRule rule = calibrate_names(all, &sc);
@@ -398,6 +418,12 @@ inline void refresh() {
              (unsigned long)(GetTickCount() - t0));
     g.status = s;
     g.scanning = false;
+}
+
+inline std::string inventory_report() {
+    std::string out;
+    for (auto& inv : g.invs) out += std::string(" ") + KIND_NAMES[inv.kind] + "(" + std::to_string(inv.items.size()) + "/" + std::to_string(inv.capacity) + ")";
+    return out;
 }
 
 inline std::string stat_report() {

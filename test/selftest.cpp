@@ -39,6 +39,10 @@ static float read_var(const char* name) {
 }
 
 static void __fastcall refuse_add(uintptr_t, void*, int, bool) {}
+static uintptr_t fake_cache_base;
+static uintptr_t fake_cache_get(uintptr_t, int id) { return fake_cache_base + id * 40 + 8; }
+static int fake_level_calls = 0;
+static void __fastcall fake_level_from_xp(uintptr_t, int) { fake_level_calls++; }
 
 int main(int argc, char** argv) {
     HMODULE m = LoadLibraryExA(argv[1], nullptr, DONT_RESOLVE_DLL_REFERENCES);
@@ -58,6 +62,7 @@ int main(int argc, char** argv) {
     auto* mat = game::find_inventory(game::K_MATERIALS);
     CHECK(bp && bp->items.size() == 6 && bp->capacity == 14);
     CHECK(st && st->items.size() == 3);
+    CHECK(std::count_if(game::g.invs.begin(), game::g.invs.end(), [](auto& i) { return i.kind == game::K_STASH; }) == 2);
     CHECK(mat && mat->items.size() == 5 && mat->items[0].info && !strcmp(mat->items[0].info->id, "Craft_Gauze"));
     CHECK(game::g.descs.size() == (size_t)ITEM_COUNT);
     CHECK(game::g.stats[ST_Damage].off == fake::DAMAGE_OFF && game::g.stats[ST_Damage].is_float);
@@ -103,6 +108,11 @@ int main(int argc, char** argv) {
     }
     CHECK(cheats::local_player_root && cheats::params_root && cheats::unlimited_ammo_flag && cheats::var_root);
     CHECK(cheats::var_root > (uintptr_t)m && cheats::var_root < (uintptr_t)m + 0x4000000);
+    CHECK(cheats::level_from_xp_fn && cheats::cache_get_fn);
+    CHECK(!memcmp((const void*)cheats::cache_get_fn, "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18", 15));
+    fake_cache_base = w.cache;
+    cheats::cache_get_original = fake_cache_get;
+    cheats::level_from_xp_fn = (uintptr_t)&fake_level_from_xp;
     fake_var_vtable[1 + cheats::SLOT_VAR_FLOAT] = (uintptr_t)&fake_var_float;
     cheats::var_root = (uintptr_t)&fake_var_holder;
     cheats::local_player_root = cheats::params_root = 0;
@@ -130,6 +140,8 @@ int main(int argc, char** argv) {
     CHECK(game::count(mat->items[0]) == 999);
     auto param = [&](const char* n) { return w.params + cheats::param_ids[n] * 16 + 8; };
     auto cached = [&](const char* n) { return w.cache + (cheats::param_ids[n] + 1) * 40; };
+    for (auto* n : {"GrapplingHookCooldown", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(0, cheats::param_ids[n] + 1);
+    CHECK(cheats::reads_of("GrapplingHookCooldown") == 1);
     CHECK(game::rdv<float>(cached("GrapplingHookCooldown") + 0x10) == 0 && (game::rdv<uint8_t>(cached("GrapplingHookCooldown") + 0x20) & 1));
     CHECK(game::rdv<uintptr_t>(cached("GrapplingHookCooldown") + 8) == cheats::vt_param_float && cheats::vt_param_float);
     CHECK(game::rdv<uint8_t>(cached("CanUseHook") + 0x10) == 1 && game::rdv<uintptr_t>(cached("CanUseHook") + 8) == cheats::vt_param_bool);
@@ -138,6 +150,10 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 999 && game::rdv<float>(w.desc["Firearm_PistolAGen"] + fake::RELOAD_OFF) == 0.05f);
     CHECK(game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 1e7f);
     CHECK(cheats::tree_level(2) == 7 && cheats::tree_max(2) == 25 && cheats::tree_max(5) == 0);
+    game::wr<uint32_t>(w.trees + 2 * 0x20 + 0xc, 1000);
+    game::wr<uint32_t>(w.trees + 2 * 0x20 + 0x10, 500);
+    cheats::level_up_with_xp(2);
+    CHECK(game::rdv<uint32_t>(w.trees + 2 * 0x20 + 8) == 1500 && fake_level_calls == 1);
     game::wr<float>(w.enemy_health + 0x78, 300);
     fatrainer_module_update(w.enemy_health);
     CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
@@ -149,7 +165,7 @@ int main(int argc, char** argv) {
     cheats::find_tweak("h_dropkick")->factor = 1.0f;
     cheats::tick();
     CHECK(game::rdv<float>(param("AirKickRangeMul")) == 1.0f && game::rdv<uint64_t>(cached("AirKickRangeMul")) == ~0ull);
-    CHECK(game::rdv<uintptr_t>(cached("GrapplingHookCooldown") + 8) == 0 && game::rdv<uint8_t>(cached("GrapplingHookCooldown") + 0x20) == 0);
+    CHECK(game::rdv<uint64_t>(cached("GrapplingHookCooldown")) == ~0ull && game::rdv<uint64_t>(cached("CanUseHook")) == ~0ull);
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 8 && game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 10.0f);
     CHECK(game::rdv<float>(param("GrapplingHookCooldown")) == 12.5f && game::rdv<uint8_t>(param("CanUseHook")) == 0 && fake_rules[0] == 0);
     (void)flag;
@@ -165,11 +181,27 @@ int main(int argc, char** argv) {
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -70 && read_var("f_btz_other") == 7 && read_var("i_other") == 7);
     CHECK(cheats::active_count() == 2);
     cheats::find_tweak("h_dfa")->factor = 10.0f;
-    CHECK(read_var("f_btz_jump_attack_range") == 12 && read_var("f_btz_jump_attack_angle_max") == 180);
+    CHECK(read_var("f_btz_jump_attack_range") == 12 && read_var("f_btz_jump_attack_angle_max") == 7);
+    cheats::find_tweak("h_dfa_pull")->factor = 10.0f;
+    CHECK(read_var("f_btz_jump_attack_angle_max") == 180 && read_var("f_btz_jump_attack_range") == 12);
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_zombie_grab_range") == 25);
     cheats::all_off();
     CHECK(read_var("f_btz_jump_attack_range") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
+
+    {
+        uintptr_t record = w.alloc(0x40);
+        memcpy((void*)(record + 12), cheats::LOCK_DIFFICULTIES[2], sizeof cheats::LOCK_DIFFICULTIES[2]);
+        auto found = game::find_float_records(cheats::lock_patterns());
+        CHECK(found.size() == 1 && found[0] == record + 12);
+        cheats::lock_records = found;
+        cheats::find("lockpick")->on = true;
+        cheats::tick();
+        CHECK(game::rdv<float>(record + 12) == 1000 && game::rdv<float>(record + 20) == 1000 && game::rdv<float>(record + 24) == 90);
+        cheats::find("lockpick")->on = false;
+        cheats::tick();
+        CHECK(!memcmp((const void*)(record + 12), cheats::LOCK_DIFFICULTIES[2], sizeof cheats::LOCK_DIFFICULTIES[2]));
+    }
 
     {
         static uintptr_t refusing_vt[8] = {}, accepting_vt[8] = {};

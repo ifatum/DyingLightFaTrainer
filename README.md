@@ -14,12 +14,12 @@
 
 ### Features
 
-- **Player**: god mode, infinite stamina, infinite grappling hook, infinite UV flashlight, no fall damage, movement speed, jump height, instant refill
+- **Player**: god mode, infinite stamina, infinite grappling hook, infinite UV flashlight, instant lockpicking, no fall damage, movement speed, jump height, instant refill
 - **Combat**: one hit kill, infinite ammo, no reload, infinite consumables, unbreakable weapons
-- **Skills**: XP multiplier, raise or lower any skill tree level (+1, +10, max, -1, -10)
+- **Skills**: XP multiplier, Level up with XP, or set any skill tree level (+1, +10, max, -1, -10)
 - **Night Hunter**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, long camouflage
 - **PvP**: one reach slider per attack (pounce, ground pound, tackle, claws, spit, death from above, dropkick, kicks, melee). At Max the pounce, dropkick and death from above also hit targets that are not in front of you
-- **Cash / Backpack / Stash / Materials**: set money and any stack count
+- **Cash / Backpack / Stash / Materials**: set your money and any stack count
 - **Give items**: spawn any weapon, upgrade, consumable, material or blueprint; each item goes into the inventory the game accepts it in
 - **Weapon editor**: damage, durability, crits, knockback, stamina, reach, magazine, reload time, upgrades, repairs, rarity
 - **Settings**: accent color, interface size, background dim, menu key, sidebar order and visibility, saved to `fatrainer.ini`
@@ -36,6 +36,8 @@ WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 ```
 
 Press **Insert** or **F8** in game to open the menu. While it is open the game ignores your mouse and keyboard. A dot in the sidebar marks pages with something turned on, and **Turn all off** resets every cheat and slider at once.
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ### Notes
 

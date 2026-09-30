@@ -154,6 +154,7 @@ inline void cheat_switch(const char* key, const char* override_label = nullptr) 
     if (switch_row(override_label ? override_label : c->label, c->hint, v)) {
         c->on = v;
         save_config();
+        if (v && !strcmp(key, "lockpick")) request_refresh();
     }
 }
 
@@ -342,7 +343,7 @@ inline void inventory_page(game::Kind kind) {
     ImGui::BeginChild("list", {0, 0});
     for (size_t i = 0; i < game::g.invs.size(); i++) {
         auto& inv = game::g.invs[i];
-        if (inv.kind != kind) continue;
+        if (inv.kind != kind || (kind == game::K_STASH && shown_inv)) continue;
         shown_inv++;
         std::string title = std::to_string(inv.items.size()) + " ITEMS";
         if (inv.capacity > 0) title += "   /   " + std::to_string(inv.capacity) + " SLOTS";
@@ -472,31 +473,38 @@ inline void give_page() {
     ImGui::EndChild();
 }
 
+inline int cash() {
+    int best = -1;
+    for (uintptr_t w : game::g.wallets) best = std::max(best, game::money(w));
+    return best;
+}
+
+inline void set_cash(int amount) {
+    amount = std::clamp(amount, 0, 999999999);
+    for (uintptr_t w : game::g.wallets) game::set_money(w, amount);
+}
+
 inline void cash_page() {
-    if (game::g.wallets.empty()) return empty_state("No wallet found yet. Load into your save, then press Refresh.");
+    if (game::g.wallets.empty()) return empty_state("No money found yet. Load into your save, then press Refresh.");
     static int custom = 100000;
-    for (size_t i = 0; i < game::g.wallets.size(); i++) {
-        uintptr_t w = game::g.wallets[i];
-        ImGui::PushID((int)i);
-        begin_card("wallet", game::g.wallets.size() > 1 ? ("WALLET " + std::to_string(i + 1)).c_str() : "BALANCE");
-        ImGui::PushFont(f_big);
-        ImGui::TextUnformatted(("$" + thousands(game::money(w))).c_str());
-        ImGui::PopFont();
-        ImGui::Dummy({0, S(2)});
-        for (int a : {1000, 10000, 100000}) {
-            if (ImGui::Button(("+" + thousands(a)).c_str())) game::set_money(w, game::money(w) + a);
-            ImGui::SameLine();
-        }
-        if (ImGui::Button("Max")) game::set_money(w, 9999999);
-        ImGui::SameLine(0, S(24));
-        ImGui::SetNextItemWidth(S(150));
-        ImGui::InputInt("##custom", &custom, 0, 0);
+    int now = cash();
+    begin_card("wallet", "CASH");
+    ImGui::PushFont(f_big);
+    ImGui::TextUnformatted(("$" + thousands(now)).c_str());
+    ImGui::PopFont();
+    ImGui::Dummy({0, S(2)});
+    for (int a : {1000, 10000, 100000}) {
+        if (ImGui::Button(("+" + thousands(a)).c_str())) set_cash(now + a);
         ImGui::SameLine();
-        if (accent_button("Set")) game::set_money(w, std::max(0, custom));
-        end_card();
-        ImGui::PopID();
     }
-    if (game::g.wallets.size() > 1) note("Several wallets found: yours shows the same amount as the game's inventory screen.");
+    if (ImGui::Button("Max")) set_cash(9999999);
+    ImGui::SameLine(0, S(24));
+    ImGui::SetNextItemWidth(S(150));
+    ImGui::InputInt("##custom", &custom, 0, 0);
+    ImGui::SameLine();
+    if (accent_button("Set")) set_cash(custom);
+    end_card();
+    note("Type an amount and press Set, or use the quick buttons. The new amount shows in the game's inventory screen.");
 }
 
 inline void tweak_slider(cheats::Tweak& t) {
@@ -548,6 +556,7 @@ inline void player_page() {
     begin_card("gear", "GEAR");
     cheat_switch("hook");
     cheat_switch("uv");
+    cheat_switch("lockpick");
     end_card();
     begin_card("movement", "MOVEMENT");
     cheat_switch("no_fall");
@@ -594,11 +603,12 @@ inline void skills_page() {
     if (!cheats::player) return empty_state("Your character was not found yet. Load into your save, then press Refresh.");
     if (!cheats::set_level_fn) return empty_state("The game's level function was not found. Check fatrainer.log.");
     begin_card("trees", "SKILL TREES");
-    note("Changes are made by the game itself, so new skill points appear in the skill menu right away.");
+    note("Level up gives you exactly the XP for the next level, like playing would. The other buttons set the level directly. Skill points appear in the skill menu right away.");
     ImGui::Dummy({0, S(4)});
-    if (ImGui::BeginTable("trees", 3, ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(150));
-        ImGui::TableSetupColumn("level", ImGuiTableColumnFlags_WidthFixed, S(120));
+    if (ImGui::BeginTable("trees", 4, ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(130));
+        ImGui::TableSetupColumn("level", ImGuiTableColumnFlags_WidthFixed, S(90));
+        ImGui::TableSetupColumn("xp", ImGuiTableColumnFlags_WidthFixed, S(120));
         ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthStretch);
         for (auto& t : cheats::TREES) {
             int max = cheats::tree_max(t.type), level = cheats::tree_level(t.type);
@@ -614,6 +624,13 @@ inline void skills_page() {
             ImGui::SameLine(0, S(4));
             ImGui::TextDisabled("/ %d", max);
             ImGui::TableNextColumn();
+            ImGui::BeginDisabled(!cheats::level_from_xp_fn || level >= max);
+            if (accent_button("Level up", {S(110), 0})) {
+                int type = t.type;
+                on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::level_up_with_xp(type); });
+            }
+            ImGui::EndDisabled();
+            ImGui::TableNextColumn();
             struct Step { const char* text; int delta; };
             for (Step st : {Step{"-10", -10}, Step{"-1", -1}, Step{"+1", 1}, Step{"+10", 10}}) {
                 if (ImGui::Button(st.text, {S(56), 0})) {
@@ -622,7 +639,7 @@ inline void skills_page() {
                 }
                 ImGui::SameLine(0, S(6));
             }
-            if (accent_button("Max", {S(64), 0})) {
+            if (ImGui::Button("Max", {S(64), 0})) {
                 int type = t.type;
                 on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, cheats::tree_max(type)); });
             }
@@ -664,12 +681,12 @@ inline bool always() { return true; }
 inline void settings_page();
 inline bool has_tools() { return game::find_inventory(game::K_TOOLS) != nullptr; }
 inline const Page PAGES[] = {
-    {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS", {"god", "stamina", "hook", "uv", "no_fall", "speed", "jump"}},
+    {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS", {"god", "stamina", "hook", "uv", "lockpick", "no_fall", "speed", "jump"}},
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "BE THE ZOMBIE", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
     {"pvp", "PvP", "How far your attacks reach", pvp_page, always, "BE THE ZOMBIE",
-     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dropkick", "h_kicks", "h_melee"}},
+     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dfa_pull", "h_dropkick", "h_kicks", "h_melee"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},
     {"stash", "Stash", "Items stored in your stash. Press Edit to change a weapon", [] { inventory_page(game::K_STASH); }, always, "ITEMS", {}},
@@ -725,8 +742,13 @@ inline void settings_page() {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Interface size");
     ImGui::SameLine(S(170));
-    ImGui::SetNextItemWidth(S(260));
-    if (ImGui::SliderFloat("##scale", &c.scale, 0.75f, 1.5f, "%.2fx")) changed = true;
+    static float pending_scale = c.scale;
+    ImGui::SetNextItemWidth(S(200));
+    ImGui::SliderFloat("##scale", &pending_scale, 0.75f, 1.5f, "%.2fx", ImGuiSliderFlags_NoInput);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(pending_scale == c.scale);
+    if (accent_button("Apply")) c.scale = pending_scale, changed = true;
+    ImGui::EndDisabled();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Background dim");
     ImGui::SameLine(S(170));
@@ -787,6 +809,7 @@ inline void settings_page() {
     ImGui::Dummy({0, S(2)});
     if (ImGui::Button("Reset to defaults")) {
         config::cfg = config::Config();
+        pending_scale = config::cfg.scale;
         config::normalize(page_ids());
         changed = true;
     }
