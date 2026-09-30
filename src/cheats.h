@@ -13,7 +13,7 @@ using game::wr;
 
 const int LOCAL_PLAYER = 0x780, PARAM_CONTAINER = 0xe58, PARAM_TABLE = 0xd0, PARAM_VALUE = 8;
 const int HEALTH_OBJECT = 0x8f8, STAMINA_OBJECTS[] = {0x1340, 0x1348};
-const int STAMINA_CURRENT = 0x10, STAMINA_FULL = 0x14, HEALTH_VALUE = 0x964, SLOT_SET_HEALTH = 4;
+const int STAMINA_CURRENT = 0x10, STAMINA_FULL = 0x14;
 const int ROPE_ENERGY = 0x40, ROPE_DEPLETED = 0x44;
 const int REPL_OWNED = 0x28;
 const int PARAM_SLOTS = 1100, CACHED_VALUE = 8, CACHED_FLAGS = 0x18, CACHED_VERSION = -8;
@@ -126,7 +126,7 @@ inline Cheat* find(const std::string& key) {
 inline bool is_on(const char* key) { return find(key) && find(key)->on; }
 
 inline uintptr_t player = 0;
-inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0;
+inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0;
 inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 inline VarFloatFn original_var_float = nullptr;
@@ -225,6 +225,9 @@ inline void locate(uintptr_t base) {
     const int CLAMP_AT = 0x2e;
     auto spot = game::find_code(base, "F3 0F 10 56 50 B1 01 F3 0F 5C 90 18 01 00 00 F3 0F 10 4E 54 F3 0F 59 0D ? ? ? ? 0F 54 15 ? ? ? ? 0F 54 0D ? ? ? ? F3 0F 5C D1");
     if (!spot.empty() && !memcmp((const void*)(spot[0] + CLAMP_AT), SPOT_DISTANCE_CLAMP, 4)) lockpick_patch = spot[0] + CLAMP_AT;
+    const int FORCED_DAMAGE_AT = 16;
+    if (auto hits = game::find_code(base, "0F 2F B3 64 09 00 00 73 0D 80 BB 2E 07 00 00 00 0F 84"); !hits.empty())
+        forced_damage_jump = hits[0] + FORCED_DAMAGE_AT;
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 8B 0D ? ? ? ? 48 8B 18 48 8B 01 FF 90 90 01 00 00 48 8B 0D ? ? ? ? 48 8D 55 ? 4C 8B C0 FF 93 90 03 00 00");
         !hits.empty())
         var_root = game::rip_target(hits[0], 3, 7);
@@ -257,12 +260,6 @@ inline float stamina() { return rdv<float>(stamina_object(0) + STAMINA_CURRENT, 
 inline float stamina_full() { return rdv<float>(stamina_object(0) + STAMINA_FULL, NAN); }
 
 inline bool __fastcall always_immortal(uintptr_t) { return true; }
-using SetHealthFn = void(__fastcall*)(uintptr_t, float, bool);
-inline SetHealthFn original_set_health = nullptr;
-inline void __fastcall set_health_without_damage(uintptr_t health_object, float value, bool notify) {
-    if (value < rdv<float>(health_object + HEALTH_VALUE, NAN)) return;
-    original_set_health(health_object, value, notify);
-}
 
 inline void set_immortal(bool enable) {
     uintptr_t health_object = player + HEALTH_OBJECT;
@@ -271,8 +268,6 @@ inline void set_immortal(bool enable) {
     if (enable && current != ours && in_game_module(current)) {
         if (!rd(current - 8, immortal_vtable, sizeof immortal_vtable)) return;
         immortal_vtable[1 + SLOT_IS_IMMORTAL] = (uintptr_t)&always_immortal;
-        original_set_health = (SetHealthFn)immortal_vtable[1 + SLOT_SET_HEALTH];
-        immortal_vtable[1 + SLOT_SET_HEALTH] = (uintptr_t)&set_health_without_damage;
         original_vtable = current;
         wr<uintptr_t>(health_object, ours);
     } else if (!enable && current == ours && original_vtable) {
@@ -454,15 +449,26 @@ inline bool install_cache_hook() {
     return true;
 }
 
+inline void write_code(uintptr_t at, const uint8_t* bytes, size_t n) {
+    DWORD old;
+    VirtualProtect((void*)at, n, PAGE_EXECUTE_READWRITE, &old);
+    memcpy((void*)at, bytes, n);
+    VirtualProtect((void*)at, n, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)at, n);
+}
+
 inline bool lockpick_patched() { return lockpick_patch && !memcmp((const void*)lockpick_patch, SPOT_DISTANCE_ZERO, 4); }
 
 inline void patch_lockpick(bool on) {
-    if (!lockpick_patch || lockpick_patched() == on) return;
-    DWORD old;
-    VirtualProtect((void*)lockpick_patch, 4, PAGE_EXECUTE_READWRITE, &old);
-    memcpy((void*)lockpick_patch, on ? SPOT_DISTANCE_ZERO : SPOT_DISTANCE_CLAMP, 4);
-    VirtualProtect((void*)lockpick_patch, 4, old, &old);
-    FlushInstructionCache(GetCurrentProcess(), (void*)lockpick_patch, 4);
+    if (lockpick_patch && lockpick_patched() != on) write_code(lockpick_patch, on ? SPOT_DISTANCE_ZERO : SPOT_DISTANCE_CLAMP, 4);
+}
+
+inline bool forced_damage_blocked() { return forced_damage_jump && rdv<uint8_t>(forced_damage_jump) == 0x90; }
+
+inline void block_forced_damage(bool on) {
+    if (!forced_damage_jump || forced_damage_blocked() == on) return;
+    const uint8_t conditional[2] = {0x0F, 0x84}, always[2] = {0x90, 0xE9};
+    write_code(forced_damage_jump, on ? always : conditional, 2);
 }
 
 inline void apply_overrides() {
@@ -878,6 +884,7 @@ inline void tick() {
     bool uv_missing = is_on("uv") && !keep_uv_charge();
     bool rope_missing = is_on("hook") && !keep_rope_energy();
     patch_lockpick(is_on("lockpick"));
+    block_forced_damage(is_on("god"));
     route_tick();
     objects_missing = prison_missing || uv_missing || rope_missing;
     game::reapply_stats();
@@ -901,12 +908,13 @@ inline std::string describe() {
     char b[800];
     snprintf(b, sizeof b,
              "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
-             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
+             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
              "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s (player +%x, sensor +%x/+%x)",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
-             level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", !lockpick_patch ? "missing" : lockpick_patched() ? "on" : "ready", enemy_modules.size(), saved_bytes.size(),
+             level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", !lockpick_patch ? "missing" : lockpick_patched() ? "on" : "ready",
+             !forced_damage_jump ? "missing" : forced_damage_blocked() ? "on" : "ready", enemy_modules.size(), saved_bytes.size(),
              g.equipment.size(), g.ropes.size(), g.prison_data.size(), g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_START_TIME, NAN),
              g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_END_TIME, NAN), g.prison_sensors.size(),
              get_position && set_position ? "ok" : "missing", game::g.player_control, game::g.sensor_control, game::g.sensor_rtti);

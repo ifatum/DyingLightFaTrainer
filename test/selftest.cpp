@@ -42,8 +42,6 @@ static void __fastcall refuse_add(uintptr_t, void*, int, bool) {}
 static uintptr_t fake_cache_base;
 static uintptr_t fake_cache_get(uintptr_t, int id) { return fake_cache_base + id * 40 + 8; }
 static int fake_level_calls = 0;
-static float fake_health_set = -1;
-static void __fastcall fake_set_health(uintptr_t, float v, bool) { fake_health_set = v; }
 static int ownership_requests = 0;
 static void fake_request_ownership(uintptr_t repl) { ownership_requests++; *(uint8_t*)(repl + 0x28) = 1; }
 static void __fastcall fake_level_from_xp(uintptr_t, int) { fake_level_calls++; }
@@ -115,6 +113,17 @@ int main(int argc, char** argv) {
     CHECK(cheats::var_root > (uintptr_t)m && cheats::var_root < (uintptr_t)m + 0x4000000);
     CHECK(cheats::level_from_xp_fn && cheats::cache_get_fn);
     uintptr_t lockpick_code = cheats::lockpick_patch;
+    CHECK(cheats::forced_damage_jump == (uintptr_t)m + 0xbae6c3);
+    {
+        static uint8_t fake_jump[6] = {0x0F, 0x84, 1, 2, 3, 4};
+        uintptr_t real = cheats::forced_damage_jump;
+        cheats::forced_damage_jump = (uintptr_t)fake_jump;
+        cheats::block_forced_damage(true);
+        CHECK(fake_jump[0] == 0x90 && fake_jump[1] == 0xE9 && fake_jump[2] == 1 && cheats::forced_damage_blocked());
+        cheats::block_forced_damage(false);
+        CHECK(fake_jump[0] == 0x0F && fake_jump[1] == 0x84 && !cheats::forced_damage_blocked());
+        cheats::forced_damage_jump = real;
+    }
     CHECK(lockpick_code == (uintptr_t)m + 0x7817ae);
     CHECK(!memcmp((const void*)cheats::cache_get_fn, "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18", 15));
     fake_cache_base = w.cache;
@@ -142,18 +151,6 @@ int main(int argc, char** argv) {
     CHECK(cheats::player == w.player && cheats::health() == 87);
     CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == (uintptr_t)&cheats::immortal_vtable[1]);
     CHECK(((bool(__fastcall*)(uintptr_t))cheats::slot(w.player + 0x8f8, cheats::SLOT_IS_IMMORTAL))(0));
-    CHECK(cheats::slot(w.player + 0x8f8, cheats::SLOT_SET_HEALTH) == (uintptr_t)&cheats::set_health_without_damage);
-    {
-        auto real = cheats::original_set_health;
-        cheats::original_set_health = fake_set_health;
-        uintptr_t health_object = w.alloc(0xa00);
-        w.put<float>(health_object + 0x964, 100.0f);
-        cheats::set_health_without_damage(health_object, 40.0f, true);
-        CHECK(fake_health_set == -1);
-        cheats::set_health_without_damage(health_object, 150.0f, true);
-        CHECK(fake_health_set == 150.0f);
-        cheats::original_set_health = real;
-    }
     CHECK(game::rdv<float>(w.stamina + 0x10) == 100);
     CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
     CHECK(game::count(mat->items[0]) == 999);
@@ -244,7 +241,7 @@ int main(int argc, char** argv) {
             static uint8_t stub[14] = {0xFF, 0x25, 0, 0, 0, 0};
             uintptr_t target = 0x123456789;
             memcpy(stub + 6, &target, 8);
-            CHECK(cheats::follow_jump((uintptr_t)stub) == target && cheats::follow_jump((uintptr_t)&fake_set_health) == (uintptr_t)&fake_set_health);
+            CHECK(cheats::follow_jump((uintptr_t)stub) == target && cheats::follow_jump((uintptr_t)&fake_request_ownership) == (uintptr_t)&fake_request_ownership);
         }
         CHECK(game::g.human_control == 0x18);
         CHECK(!memcmp((const void*)(game::rdv<uintptr_t>(game::g.vt_human + cheats::SLOT_KILL * 8) + 6), "\x48\x8B\x81\xE8\x0C\x00\x00", 7));

@@ -10,7 +10,7 @@
 - New: route recorder on the Prison page. Record your route once while playing normally; Replay teleports you along it in small steps so every quest trigger fires, and pauses where you stood still (fights, doors) until you press Continue. Saved in fatrainer_route.txt next to the game.
 - Prison sections are recognised again (they all showed as unnamed sections before) and listed in run order: Start, every split checkpoint (Split 1, 2, ...), the reward room and the evacuation. A Next section button jumps to them one after another.
 - Teleporting moves your physics body too, so the game no longer pulls you back to where you stood.
-- God mode also works in Harran Prison, where the game could apply damage past the normal immortality check.
+- God mode also works in Harran Prison: while it is on, the game's forced damage (which the prison uses) is blocked too.
 - Infinite grappling hook keeps the rope energy full directly, so the hook is ready every time, also while you are still hanging on the rope.
 - Pause prison timers: the trainer now takes ownership of the prison timer data like the game does, so the paused time is no longer overwritten.
 - Cheats that need game objects (UV flashlight, grappling hook, prison timers) find them again on their own after a level load, even when the menu stays closed.
