@@ -700,7 +700,7 @@ inline void prison_page() {
     auto& sections = cheats::prison_sections;
     if (sections.empty()) note("No prison sections found yet. Load into Harran Prison, then press Find sections.");
     else {
-        note("In run order: the start, every split checkpoint, the reward room and the evacuation. Next section jumps to them one after another.");
+        note("In run order: the start, every split checkpoint, the reward room and the evacuation. The prison is scripted: when an objective asks you to kill infected or a final wave, finish it where you are (One hit kill helps) and wait for the objective to change before you press Next section. Skipping a fight leaves the objective stuck.");
         cheats::next_section = std::clamp(cheats::next_section, 0, (int)sections.size() - 1);
         std::string next = "Next section: " + section_name(cheats::next_section);
         if (accent_button(next.c_str(), {ImGui::GetContentRegionAvail().x, S(38)})) {
