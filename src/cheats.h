@@ -677,7 +677,13 @@ inline Vec3 saved_position{};
 inline bool has_saved_position = false;
 inline DWORD last_prison_tick = 0;
 
-inline bool reflected(uintptr_t object) { return float_field_editor && slot(object, SLOT_FLOAT_FIELD_EDITOR) == float_field_editor; }
+inline uintptr_t follow_jump(uintptr_t fn) {
+    uint8_t op[2];
+    if (!rd(fn, op, 2) || op[0] != 0xFF || op[1] != 0x25) return fn;
+    return rdv<uintptr_t>(fn + 6 + rdv<int32_t>(fn + 2));
+}
+
+inline bool reflected(uintptr_t object) { return float_field_editor && follow_jump(slot(object, SLOT_FLOAT_FIELD_EDITOR)) == float_field_editor; }
 
 inline std::atomic<bool> sections_wanted{false};
 inline int next_section = 0;

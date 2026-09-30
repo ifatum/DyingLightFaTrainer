@@ -240,6 +240,12 @@ int main(int argc, char** argv) {
             CHECK(run[0].type == cheats::SENSOR_START && run[1].stage == 1 && run[2].stage == 3 && run[3].type == cheats::SENSOR_REWARD);
             CHECK(run[4].type == cheats::SENSOR_EVAC && run[5].type == 0);
         }
+        {
+            static uint8_t stub[14] = {0xFF, 0x25, 0, 0, 0, 0};
+            uintptr_t target = 0x123456789;
+            memcpy(stub + 6, &target, 8);
+            CHECK(cheats::follow_jump((uintptr_t)stub) == target && cheats::follow_jump((uintptr_t)&fake_set_health) == (uintptr_t)&fake_set_health);
+        }
         CHECK(game::g.player_control == 0x18 && game::g.sensor_control == 0 && game::g.sensor_rtti == 0x10);
         cheats::find("uv")->on = true;
         cheats::find("prison_pause")->on = true;
