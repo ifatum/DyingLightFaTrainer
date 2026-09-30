@@ -348,6 +348,27 @@ int main(int argc, char** argv) {
     }
 
     {
+        std::vector<std::pair<uintptr_t, const ItemInfo*>> packed;
+        for (int i = 0; i < ITEM_COUNT && packed.size() < 60; i++) {
+            float color = ITEMS[i].st[ST_Color];
+            if (std::isnan(color) || color < 0 || color > 5) continue;
+            uintptr_t d = w.alloc(0x600);
+            w.put<uint32_t>(d + 0x78, ((uint32_t)color << 24) | 0x00AB0013 | ((uint32_t)(i & 3) << 28));
+            packed.push_back({d, &ITEMS[i]});
+        }
+        game::StatField fields[ST_COUNT];
+        game::calibrate_stats(packed, fields);
+        CHECK(packed.size() >= 20 && fields[ST_Color].off == 0x78 && fields[ST_Color].shift == 24 && !fields[ST_Color].is_float);
+        auto saved = game::g.stats[ST_Color];
+        game::g.stats[ST_Color] = fields[ST_Color];
+        uintptr_t d = packed[0].first;
+        uint32_t before = game::rdv<uint32_t>(d + 0x78);
+        CHECK(game::write_stat(d, ST_Color, 5) && game::get_stat(d, ST_Color) == 5);
+        CHECK((game::rdv<uint32_t>(d + 0x78) & ~(0xFu << 24)) == (before & ~(0xFu << 24)));
+        game::g.stats[ST_Color] = saved;
+    }
+
+    {
         static uintptr_t refusing_vt[8] = {}, accepting_vt[8] = {};
         refusing_vt[6] = (uintptr_t)&refuse_add;
         accepting_vt[6] = (uintptr_t)&fake_add;

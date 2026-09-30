@@ -226,7 +226,8 @@ const int N_INV_CLASSES = 5;
 
 struct Item { uintptr_t addr; const ItemInfo* info; std::string name; };
 struct Inventory { uintptr_t obj; Kind kind; int capacity; std::vector<Item> items; };
-struct StatField { int off = -1; bool is_float = true; int votes = 0, samples = 0; };
+struct StatField { int off = -1; bool is_float = true; int votes = 0, samples = 0, shift = -1; };
+const uint32_t NIBBLE = 0xF;
 
 struct State {
     uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {};
@@ -255,11 +256,16 @@ inline bool has_stat(int s) { return g.stats[s].off >= 0; }
 inline float get_stat(uintptr_t desc, int s) {
     auto& f = g.stats[s];
     if (f.off < 0) return NAN;
+    if (f.shift >= 0) return (float)((rdv<uint32_t>(desc + f.off) >> f.shift) & NIBBLE);
     return f.is_float ? rdv<float>(desc + f.off, NAN) : (float)rdv<int>(desc + f.off);
 }
 inline bool write_stat(uintptr_t desc, int s, float v) {
     auto& f = g.stats[s];
     if (f.off < 0 || !desc) return false;
+    if (f.shift >= 0) {
+        uint32_t word = rdv<uint32_t>(desc + f.off), value = (uint32_t)std::lround(v) & NIBBLE;
+        return wr<uint32_t>(desc + f.off, (word & ~(NIBBLE << f.shift)) | (value << f.shift));
+    }
     return f.is_float ? wr<float>(desc + f.off, v) : wr<int>(desc + f.off, (int)std::lround(v));
 }
 inline bool set_stat(uintptr_t desc, int s, float v) {
@@ -283,7 +289,7 @@ inline void calibrate_stats(const std::vector<std::pair<uintptr_t, const ItemInf
         infos.push_back(info);
     }
     for (int s = 0; s < ST_COUNT; s++) {
-        std::map<std::pair<int, bool>, std::pair<int, int>> votes;
+        std::map<std::tuple<int, bool, int>, std::pair<int, int>> votes;
         int samples = 0;
         for (size_t k = 0; k < bufs.size(); k++) {
             float v = infos[k]->st[s];
@@ -296,21 +302,28 @@ inline void calibrate_stats(const std::vector<std::pair<uintptr_t, const ItemInf
                 memcpy(&f, &bufs[k][off], 4);
                 memcpy(&n, &bufs[k][off], 4);
                 if (std::fabs(f - v) <= 1e-4f * std::max(1.0f, std::fabs(v))) {
-                    auto& e = votes[{off, true}];
+                    auto& e = votes[{off, true, -1}];
                     e.first++;
                     if (v != 0) e.second++;
                 }
                 if (integral && n == (int)v) {
-                    auto& e = votes[{off, false}];
+                    auto& e = votes[{off, false, -1}];
                     e.first++;
                     if (v != 0) e.second++;
                 }
+                for (int shift = 0; integral && v >= 0 && v <= NIBBLE && shift < 32; shift += 4)
+                    if ((((uint32_t)n >> shift) & NIBBLE) == (uint32_t)v) {
+                        auto& e = votes[{off, false, shift}];
+                        e.first++;
+                        if (v != 0) e.second++;
+                    }
             }
         }
         StatField best;
         best.samples = samples;
         for (auto& [k, e] : votes)
-            if (e.first > best.votes && e.second >= std::min(5, std::max(2, samples))) best = {k.first, k.second, e.first, samples};
+            if (e.first > best.votes + (std::get<2>(k) >= 0 ? samples / 50 : 0) && e.second >= std::min(5, std::max(2, samples)))
+                best = {std::get<0>(k), std::get<1>(k), e.first, samples, std::get<2>(k)};
         bool few = samples > 0 && samples < 8;
         if (few ? best.votes < samples || best.votes < 2 : best.votes < std::max(8, (int)(samples * 0.7))) best.off = -1;
         out[s] = best;
@@ -454,8 +467,9 @@ inline std::string stat_report() {
     std::string out;
     for (int s = 0; s < ST_COUNT; s++) {
         char b[96];
-        snprintf(b, sizeof b, "%s=%s+%x(%d/%d) ", STAT_KEYS[s], g.stats[s].off < 0 ? "none" : g.stats[s].is_float ? "f" : "i",
-                 g.stats[s].off < 0 ? 0 : g.stats[s].off, g.stats[s].votes, g.stats[s].samples);
+        auto& f = g.stats[s];
+        if (f.off >= 0 && f.shift >= 0) snprintf(b, sizeof b, "%s=bits+%x>>%d(%d/%d) ", STAT_KEYS[s], f.off, f.shift, f.votes, f.samples);
+        else snprintf(b, sizeof b, "%s=%s+%x(%d/%d) ", STAT_KEYS[s], f.off < 0 ? "none" : f.is_float ? "f" : "i", f.off < 0 ? 0 : f.off, f.votes, f.samples);
         out += b;
     }
     return out;

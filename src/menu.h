@@ -243,7 +243,7 @@ inline void item_label(const char* name, const char* id) {
 inline uintptr_t g_edit_desc = 0;
 inline std::string g_edit_name, g_edit_id;
 inline bool g_edit_request = false;
-inline const char* RARITY[] = {"Common (white)", "Uncommon (green)", "Rare (blue)", "Unique (violet)", "Legendary (orange)", "Gold tier (platinum)"};
+inline const char* RARITY[] = {"Gray", "Green", "Blue", "Purple", "Orange", "Gold"};
 
 inline bool editable(const game::Item& it) {
     if (!it.info) return false;
