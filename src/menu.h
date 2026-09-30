@@ -664,15 +664,21 @@ inline void pvp_page() {
     end_card();
 }
 
-inline std::string section_name(const cheats::Section& sec, int index) {
+inline std::string section_name(size_t index) {
+    auto& sec = cheats::prison_sections[index];
     char b[64];
     switch (sec.type) {
         case cheats::SENSOR_START: return "Start";
         case cheats::SENSOR_REWARD: return "Reward room";
         case cheats::SENSOR_EVAC: return "Evacuation";
+        case cheats::SENSOR_STAGE: {
+            int split = 1;
+            for (size_t i = 0; i < index; i++) split += cheats::prison_sections[i].type == cheats::SENSOR_STAGE;
+            snprintf(b, sizeof b, "Split %d%s", split, sec.last ? " (last)" : "");
+            return b;
+        }
     }
-    if (sec.stage >= 0) snprintf(b, sizeof b, "Stage %d%s", sec.stage, sec.last ? " (last)" : "");
-    else snprintf(b, sizeof b, "Section %d", index + 1);
+    snprintf(b, sizeof b, "Section %zu", index + 1);
     return b;
 }
 
@@ -691,14 +697,27 @@ inline void prison_page() {
     cheat_switch("prison_pause");
     end_card();
     begin_card("sections", "TELEPORT TO A SECTION");
-    if (cheats::prison_sections.empty()) note("No prison sections found yet. Load into Harran Prison, then press Find sections.");
-    for (size_t i = 0; i < cheats::prison_sections.size(); i++) {
-        auto& sec = cheats::prison_sections[i];
+    auto& sections = cheats::prison_sections;
+    if (sections.empty()) note("No prison sections found yet. Load into Harran Prison, then press Find sections.");
+    else {
+        note("In run order: the start, every split checkpoint, the reward room and the evacuation. Next section jumps to them one after another.");
+        cheats::next_section = std::clamp(cheats::next_section, 0, (int)sections.size() - 1);
+        std::string next = "Next section: " + section_name(cheats::next_section);
+        if (accent_button(next.c_str(), {ImGui::GetContentRegionAvail().x, S(38)})) {
+            go_to(sections[cheats::next_section].pos);
+            cheats::next_section = (cheats::next_section + 1) % (int)sections.size();
+        }
+        ImGui::Dummy({0, S(4)});
+    }
+    for (size_t i = 0; i < sections.size(); i++) {
         ImGui::PushID((int)i);
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(section_name(sec, (int)i).c_str());
+        ImGui::TextUnformatted(section_name(i).c_str());
         ImGui::SameLine(S(220));
-        if (accent_button("Teleport", {S(110), 0})) go_to(sec.pos);
+        if (accent_button("Teleport", {S(110), 0})) {
+            go_to(sections[i].pos);
+            cheats::next_section = (int)(i + 1) % (int)sections.size();
+        }
         ImGui::PopID();
     }
     ImGui::Dummy({0, S(2)});
@@ -965,6 +984,8 @@ inline void draw() {
     if (first) {
         first = false;
         if (const char* p = getenv("DLT_PAGE")) g_page = p;
+        if (getenv("DLT_SECTIONS"))
+            for (int type : {1, 2, 2, 2, 2, 2, 3, 4}) cheats::prison_sections.push_back({0, type, (int)cheats::prison_sections.size(), false, {1, 2, 3}});
     }
     ImGui::SetNextWindowSize({S(1040), S(700)}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_FirstUseEver, {0.5f, 0.5f});

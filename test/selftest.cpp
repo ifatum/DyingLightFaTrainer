@@ -233,6 +233,13 @@ int main(int argc, char** argv) {
         game::g.equipment = {equipment};
         game::g.prison_data = {prison};
         CHECK(game::g.vt_equipment && game::g.vt_prison_data && game::g.vt_prison_sensor);
+        {
+            std::vector<cheats::Section> run = {{0, cheats::SENSOR_EVAC, 0}, {0, cheats::SENSOR_STAGE, 3}, {0, 0, -1}, {0, cheats::SENSOR_START, 0},
+                                                {0, cheats::SENSOR_REWARD, 0}, {0, cheats::SENSOR_STAGE, 1}};
+            std::sort(run.begin(), run.end(), [](auto& a, auto& b) { return cheats::run_order(a) < cheats::run_order(b); });
+            CHECK(run[0].type == cheats::SENSOR_START && run[1].stage == 1 && run[2].stage == 3 && run[3].type == cheats::SENSOR_REWARD);
+            CHECK(run[4].type == cheats::SENSOR_EVAC && run[5].type == 0);
+        }
         CHECK(game::g.player_control == 0x18 && game::g.sensor_control == 0 && game::g.sensor_rtti == 0x10);
         cheats::find("uv")->on = true;
         cheats::find("prison_pause")->on = true;

@@ -680,6 +680,12 @@ inline DWORD last_prison_tick = 0;
 inline bool reflected(uintptr_t object) { return float_field_editor && slot(object, SLOT_FLOAT_FIELD_EDITOR) == float_field_editor; }
 
 inline std::atomic<bool> sections_wanted{false};
+inline int next_section = 0;
+
+inline std::pair<int, int> run_order(const Section& s) {
+    bool known = s.type >= SENSOR_START && s.type <= SENSOR_EVAC;
+    return {known ? s.type : SENSOR_EVAC + 1, s.stage};
+}
 
 inline void read_sections() {
     if (!alive(player)) return;
@@ -695,13 +701,17 @@ inline void read_sections() {
             bool b = false;
             if (field_int(r, "m_Stage", &v)) sec.stage = v;
             if (field_bool(r, "m_IsLastStage", &b)) sec.last = b;
-            for (const char* name : {"m_Type", "m_SensorType", "m_PrisonSensorType"})
-                if (field_enum(r, name, &v)) { sec.type = v; break; }
+            if (field_enum(r, "m_SensorType", &v)) sec.type = v;
         }
-        if (std::isfinite(sec.pos.x)) out.push_back(sec);
+        auto same = [&](const Section& o) {
+            return o.type == sec.type && o.stage == sec.stage && std::fabs(o.pos.x - sec.pos.x) + std::fabs(o.pos.y - sec.pos.y) + std::fabs(o.pos.z - sec.pos.z) < 1;
+        };
+        if (std::isfinite(sec.pos.x) && std::none_of(out.begin(), out.end(), same)) out.push_back(sec);
     }
-    std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.type != b.type ? a.type < b.type : a.stage < b.stage; });
+    std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return run_order(a) < run_order(b); });
     prison_sections = out;
+    for (auto& sec : out)
+        logf_hook("section: type %d stage %d last %d at %.1f %.1f %.1f", sec.type, sec.stage, sec.last, sec.pos.x, sec.pos.y, sec.pos.z);
 }
 
 inline Vec3 player_position() {
