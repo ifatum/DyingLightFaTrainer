@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
     CHECK(cheats::var_root > (uintptr_t)m && cheats::var_root < (uintptr_t)m + 0x4000000);
     CHECK(cheats::level_from_xp_fn && cheats::cache_get_fn);
     uintptr_t lockpick_code = cheats::lockpick_patch;
+    CHECK(cheats::profile_root > (uintptr_t)m && cheats::profile_root < (uintptr_t)m + 0x4000000);
     CHECK(cheats::forced_damage_jump == (uintptr_t)m + 0xbae6c3);
     {
         static uint8_t fake_jump[6] = {0x0F, 0x84, 1, 2, 3, 4};
@@ -302,6 +303,48 @@ int main(int argc, char** argv) {
         cheats::replay_route();
         cheats::replay_route();
         CHECK(cheats::route_mode == cheats::ROUTE_IDLE && cheats::route_at == 0);
+    }
+
+    {
+        uintptr_t equipment = w.alloc(0x80);
+        w.put<uintptr_t>(equipment, game::g.vt_equipment);
+        w.put<float>(equipment + 0x50, 0.8f);
+        game::g.equipment = {equipment};
+        cheats::find_tweak("uv_slow")->factor = 10.0f;
+        cheats::tick();
+        w.put<float>(equipment + 0x50, 0.7f);
+        cheats::tick();
+        CHECK(std::fabs(game::rdv<float>(equipment + 0x50) - 0.79f) < 1e-4f);
+        w.put<float>(equipment + 0x50, 0.9f);
+        cheats::tick();
+        CHECK(game::rdv<float>(equipment + 0x50) == 0.9f);
+        cheats::find_tweak("uv_slow")->factor = 1.0f;
+        cheats::tick();
+        game::g.equipment.clear();
+    }
+
+    {
+        uintptr_t profile = w.alloc(0x3000), mine = w.alloc(0x800), other = w.alloc(0x800), game = w.alloc(0x600);
+        w.put<uintptr_t>(game + 0x540, profile);
+        auto real_root = cheats::profile_root;
+        static uintptr_t root_value;
+        root_value = game;
+        cheats::profile_root = (uintptr_t)&root_value;
+        w.put<int>(profile + 0x2d98, 4);
+        w.put<int>(profile + 0x2dd0, 7);
+        for (uintptr_t lp : {mine, other}) w.put<uintptr_t>(lp, game::g.vt_logical_player);
+        w.put<int>(mine + 0x74c, 4);
+        w.put<int>(other + 0x74c, 9);
+        w.put<uint8_t>(mine + 0x28, 1);
+        w.put<uint8_t>(other + 0x28, 1);
+        game::g.logical_players = {mine, other};
+        CHECK(game::g.vt_logical_player && cheats::pvp_rank(false) == 4 && cheats::pvp_rank(true) == 7);
+        cheats::set_pvp_rank(false, 14);
+        CHECK(cheats::pvp_rank(false) == 14 && game::rdv<int>(mine + 0x74c) == 14 && game::rdv<int>(other + 0x74c) == 9);
+        cheats::set_pvp_rank(true, -3);
+        CHECK(cheats::pvp_rank(true) == 0);
+        cheats::profile_root = real_root;
+        game::g.logical_players.clear();
     }
 
     {

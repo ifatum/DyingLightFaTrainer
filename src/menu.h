@@ -558,6 +558,7 @@ inline void player_page() {
     begin_card("gear", "GEAR");
     cheat_switch("hook");
     cheat_switch("uv");
+    tweak_sliders(cheats::G_GEAR);
     cheat_switch("lockpick");
     end_card();
     begin_card("movement", "MOVEMENT");
@@ -613,6 +614,52 @@ inline void zombie_page() {
     note("Attack ranges and aim angles are on the PvP page.");
 }
 
+inline const char* SURVIVOR_RANKS[] = {"Prey", "Casualty", "Endangered", "Underdog", "Runner", "Contender",
+                                       "Challenger", "Fighter", "Dominant", "Ruthless", "Indomitable", "Ultimate Survivor"};
+inline const char* HUNTER_RANKS[] = {"Walker", "Runner", "Biter", "Bolter", "Stalker", "Beast",
+                                     "Mauler", "Juggernaut", "Widow Maker", "Carnivore", "Hunter", "Apex Predator"};
+
+inline void rank_row(const char* label, bool zombie, const char* const* names) {
+    int rank = cheats::pvp_rank(zombie);
+    if (rank < 0) return;
+    ImGui::PushID(label);
+    ImGui::TableNextRow(0, S(44));
+    ImGui::TableNextColumn();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::TableNextColumn();
+    ImGui::AlignTextToFramePadding();
+    if (rank < 12) ImGui::Text("%s", names[rank]);
+    else ImGui::Text("%d", rank);
+    ImGui::TableNextColumn();
+    struct Step { const char* text; int delta; };
+    for (Step st : {Step{"-10", -10}, Step{"-1", -1}, Step{"+1", 1}, Step{"+10", 10}}) {
+        if (ImGui::Button(st.text, {S(56), 0})) {
+            int target = rank + st.delta;
+            on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_pvp_rank(zombie, target); });
+        }
+        ImGui::SameLine(0, S(6));
+    }
+    ImGui::NewLine();
+    ImGui::PopID();
+}
+
+inline void ranks_card() {
+    if (cheats::pvp_rank(false) < 0 && cheats::pvp_rank(true) < 0) return;
+    begin_card("ranks", "BE THE ZOMBIE RANKS");
+    note("Your PvP rank as a survivor and as the Night Hunter. The game may adjust it again after your next Be The Zombie match.");
+    ImGui::Dummy({0, S(4)});
+    if (ImGui::BeginTable("ranks", 3, ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(130));
+        ImGui::TableSetupColumn("rank", ImGuiTableColumnFlags_WidthFixed, S(210));
+        ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthStretch);
+        rank_row("Survivor", false, SURVIVOR_RANKS);
+        rank_row("Night Hunter", true, HUNTER_RANKS);
+        ImGui::EndTable();
+    }
+    end_card();
+}
+
 inline void skills_page() {
     begin_card("xp", "EXPERIENCE");
     tweak_sliders(cheats::G_PROGRESS);
@@ -665,6 +712,7 @@ inline void skills_page() {
         ImGui::EndTable();
     }
     end_card();
+    ranks_card();
 }
 
 inline void pvp_page() {
@@ -842,7 +890,7 @@ inline bool always() { return true; }
 inline void settings_page();
 inline bool has_tools() { return game::find_inventory(game::K_TOOLS) != nullptr; }
 inline const Page PAGES[] = {
-    {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS", {"god", "stamina", "hook", "uv", "lockpick", "no_fall", "speed", "jump"}},
+    {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS", {"god", "stamina", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "MODES", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},

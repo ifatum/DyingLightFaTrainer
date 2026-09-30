@@ -21,6 +21,7 @@ const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_XP = 8, TREE_LEVEL_START 
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
 const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
 const int UV_CHARGE = 0x50, UV_EXHAUSTED = 0x55;
+const int GAME_PROFILE = 0x540, PROFILE_RANK_HUMAN = 0x2d98, PROFILE_RANK_ZOMBIE = 0x2dd0, PLAYER_RANK_HUMAN = 0x74c, PLAYER_RANK_ZOMBIE = 0x750;
 const int PRISON_START_TIME = 0x44, PRISON_END_TIME = 0x48, PRISON_REWARD_TIER = 0x4c, PRISON_STATE = 0x54;
 const int SLOT_FLOAT_FIELD_EDITOR = 34, SLOT_PHYSICS_POSITION = 52, SLOT_KILL = 295;
 const float KILL_RADIUS = 80.0f;
@@ -70,7 +71,7 @@ inline Cheat CHEATS[] = {
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
 };
 
-enum Group { G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN };
+enum Group { G_GEAR, G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN };
 
 struct ScriptVar { const char* name; float at_max; };
 
@@ -86,6 +87,8 @@ struct Tweak {
 };
 
 inline Tweak TWEAKS[] = {
+    {"uv_slow", "Slow down UV flashlight", "The UV light uses its charge slower. x10 lasts ten times longer. Infinite UV flashlight overrides it.", G_GEAR, {}, {},
+     20.0f},
     {"speed", "Movement speed", "Walk, sprint and wall run faster.", G_MOVEMENT,
      {"MoveSprintSpeed", "MoveForwardMaxSpeed", "MoveStrafeMaxSpeed", "MoveBackwardMaxSpeed", "WallrunSpeed"}, {}, 3.0f},
     {"jump", "Jump height", "Jump higher.", G_MOVEMENT, {"JumpMaxHeight", "JumpMinHeight"}, {}, 4.0f},
@@ -116,7 +119,7 @@ inline Tweak* find_tweak(const std::string& key) {
 }
 
 struct Tree { int type; const char* name; };
-inline const Tree TREES[] = {{3, "Survivor"}, {1, "Agility"}, {2, "Power"}, {5, "Legend"}, {6, "Driver"}, {7, "Hellraid"}, {4, "Reputation"}, {0, "Other"}};
+inline const Tree TREES[] = {{3, "Survivor"}, {1, "Agility"}, {2, "Power"}, {5, "Legend"}, {6, "Driver"}, {7, "Hellraid"}, {4, "Reputation"}, {0, "Night Hunter"}};
 
 inline Cheat* find(const std::string& key) {
     for (auto& c : CHEATS)
@@ -126,7 +129,7 @@ inline Cheat* find(const std::string& key) {
 inline bool is_on(const char* key) { return find(key) && find(key)->on; }
 
 inline uintptr_t player = 0;
-inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0;
+inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, profile_root = 0;
 inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 inline VarFloatFn original_var_float = nullptr;
@@ -225,6 +228,9 @@ inline void locate(uintptr_t base) {
     const int CLAMP_AT = 0x2e;
     auto spot = game::find_code(base, "F3 0F 10 56 50 B1 01 F3 0F 5C 90 18 01 00 00 F3 0F 10 4E 54 F3 0F 59 0D ? ? ? ? 0F 54 15 ? ? ? ? 0F 54 0D ? ? ? ? F3 0F 5C D1");
     if (!spot.empty() && !memcmp((const void*)(spot[0] + CLAMP_AT), SPOT_DISTANCE_CLAMP, 4)) lockpick_patch = spot[0] + CLAMP_AT;
+    if (auto hits = game::find_code(base, "4C 8B 35 ? ? ? ? 4D 85 F6 0F 84 ? ? ? ? 4D 8B B6 40 05 00 00 4D 85 F6 0F 84 ? ? ? ? F3 41 0F 10 86 68 2D 00 00");
+        !hits.empty())
+        profile_root = game::rip_target(hits[0], 3, 7);
     const int FORCED_DAMAGE_AT = 16;
     if (auto hits = game::find_code(base, "0F 2F B3 64 09 00 00 73 0D 80 BB 2E 07 00 00 00 0F 84"); !hits.empty())
         forced_damage_jump = hits[0] + FORCED_DAMAGE_AT;
@@ -785,6 +791,29 @@ inline void replay_route() {
     if (route[route_at++].stop) route_mode = ROUTE_PAUSED;
 }
 
+inline uintptr_t game_profile() { return profile_root ? rdv<uintptr_t>(rdv<uintptr_t>(profile_root) + GAME_PROFILE) : 0; }
+
+inline int pvp_rank(bool zombie) {
+    uintptr_t p = game_profile();
+    return p ? rdv<int>(p + (zombie ? PROFILE_RANK_ZOMBIE : PROFILE_RANK_HUMAN), -1) : -1;
+}
+
+inline void set_pvp_rank(bool zombie, int rank) {
+    uintptr_t p = game_profile();
+    if (!p) return;
+    rank = std::max(rank, 0);
+    int old = pvp_rank(zombie), mirrored = 0;
+    wr<int>(p + (zombie ? PROFILE_RANK_ZOMBIE : PROFILE_RANK_HUMAN), rank);
+    int field = zombie ? PLAYER_RANK_ZOMBIE : PLAYER_RANK_HUMAN;
+    for (uintptr_t lp : g.logical_players) {
+        if (rdv<uintptr_t>(lp) != g.vt_logical_player || rdv<int>(lp + field, INT32_MIN) != old) continue;
+        if (!rdv<uint8_t>(lp + REPL_OWNED) && request_ownership) request_ownership(lp);
+        wr<int>(lp + field, rank);
+        mirrored++;
+    }
+    logf_hook("pvp rank %s: %d -> %d (%d player copies)", zombie ? "night hunter" : "survivor", old, rank, mirrored);
+}
+
 inline int kill_enemies(float radius) {
     Vec3 me = player_position();
     if (!std::isfinite(me.x) || !get_position || g.human_control < 0) return 0;
@@ -848,6 +877,22 @@ inline int pause_prison() {
     return live;
 }
 
+inline std::map<uintptr_t, float> uv_last_charge;
+
+inline void slow_uv_drain(float factor) {
+    for (uintptr_t e : g.equipment) {
+        if (rdv<uintptr_t>(e) != g.vt_equipment) continue;
+        float charge = rdv<float>(e + UV_CHARGE, NAN);
+        if (!(charge >= 0 && charge <= 1)) continue;
+        auto last = uv_last_charge.find(e);
+        if (last != uv_last_charge.end() && charge < last->second) {
+            charge = last->second - (last->second - charge) / factor;
+            wr<float>(e + UV_CHARGE, charge);
+        }
+        uv_last_charge[e] = charge;
+    }
+}
+
 inline int keep_uv_charge() {
     int kept = 0;
     for (uintptr_t e : g.equipment) {
@@ -882,6 +927,9 @@ inline void tick() {
     std::lock_guard<std::mutex> l(game::mx);
     bool prison_missing = !pause_prison() && is_on("prison_pause");
     bool uv_missing = is_on("uv") && !keep_uv_charge();
+    float uv_slow = find_tweak("uv_slow")->factor;
+    if (!is_on("uv") && uv_slow > 1.0f) slow_uv_drain(uv_slow);
+    else uv_last_charge.clear();
     bool rope_missing = is_on("hook") && !keep_rope_energy();
     patch_lockpick(is_on("lockpick"));
     block_forced_damage(is_on("god"));
@@ -904,17 +952,24 @@ inline uint32_t reads_of(const char* name) {
     return it == param_ids.end() || it->second + 1 >= PARAM_SLOTS ? 0 : cached[it->second + 1].reads.load();
 }
 
+inline std::string tree_report() {
+    std::string out;
+    for (auto& t : TREES) out += std::to_string(t.type) + ":" + std::to_string(tree_level(t.type)) + "/" + std::to_string(tree_max(t.type)) + " ";
+    return out;
+}
+
 inline std::string describe() {
-    char b[800];
+    char b[1000];
     snprintf(b, sizeof b,
              "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
-             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
+             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, pvp rank survivor %d hunter %d, trees %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
              "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s (player +%x, sensor +%x/+%x)",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
              level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", !lockpick_patch ? "missing" : lockpick_patched() ? "on" : "ready",
-             !forced_damage_jump ? "missing" : forced_damage_blocked() ? "on" : "ready", enemy_modules.size(), saved_bytes.size(),
+             !forced_damage_jump ? "missing" : forced_damage_blocked() ? "on" : "ready", pvp_rank(false), pvp_rank(true), tree_report().c_str(),
+             enemy_modules.size(), saved_bytes.size(),
              g.equipment.size(), g.ropes.size(), g.prison_data.size(), g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_START_TIME, NAN),
              g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_END_TIME, NAN), g.prison_sensors.size(),
              get_position && set_position ? "ok" : "missing", game::g.player_control, game::g.sensor_control, game::g.sensor_rtti);
