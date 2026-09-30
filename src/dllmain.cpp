@@ -15,6 +15,7 @@
 #include "backends/imgui_impl_win32.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
+ImGuiKey ImGui_ImplWin32_KeyEventToImGuiKey(WPARAM wParam, LPARAM lParam);
 
 void dlt_assert_fail(const char* expr, const char* file, int line) {
     static std::atomic<int> n{0};
@@ -75,7 +76,6 @@ static LRESULT CALLBACK hkWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         switch (m) {
             case WM_INPUT: on_raw_input(l); return DefWindowProcW(h, m, w, l);
             case WM_KEYDOWN: case WM_KEYUP: case WM_SYSKEYDOWN: case WM_SYSKEYUP: case WM_CHAR:
-                ImGui_ImplWin32_WndProcHandler(h, m, w, l);
                 return 0;
             case WM_MOUSEWHEEL:
                 g_wheel += GET_WHEEL_DELTA_WPARAM(w);
@@ -122,6 +122,36 @@ static void feed_mouse() {
     if (wh) io.AddMouseWheelEvent(0, wh / (float)WHEEL_DELTA);
 }
 
+static bool typing_key(int vk) {
+    return (vk >= '0' && vk <= '9') || (vk >= 'A' && vk <= 'Z') || (vk >= VK_NUMPAD0 && vk <= VK_DIVIDE) || (vk >= VK_OEM_1 && vk <= VK_OEM_3) ||
+           (vk >= VK_OEM_4 && vk <= VK_OEM_8) || vk == VK_SPACE || vk == VK_BACK || vk == VK_DELETE || vk == VK_RETURN ||
+           vk == VK_ESCAPE || vk == VK_TAB || (vk >= VK_PRIOR && vk <= VK_DOWN);
+}
+
+static void feed_keyboard() {
+    ImGuiIO& io = ImGui::GetIO();
+    static bool down[256];
+    bool shift = GetAsyncKeyState(VK_SHIFT) & 0x8000, ctrl = GetAsyncKeyState(VK_CONTROL) & 0x8000;
+    io.AddKeyEvent(ImGuiMod_Shift, shift);
+    io.AddKeyEvent(ImGuiMod_Ctrl, ctrl);
+    for (int vk = 8; vk < 256; vk++) {
+        if (!typing_key(vk)) continue;
+        bool d = GetAsyncKeyState(vk) & 0x8000;
+        if (d == down[vk]) continue;
+        down[vk] = d;
+        UINT scan = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
+        ImGuiKey key = ImGui_ImplWin32_KeyEventToImGuiKey(vk, (LPARAM)scan << 16);
+        if (key != ImGuiKey_None) io.AddKeyEvent(key, d);
+        if (!d || ctrl) continue;
+        BYTE state[256] = {};
+        if (shift) state[VK_SHIFT] = 0x80;
+        WCHAR text[4];
+        int n = ToUnicode(vk, scan, state, text, 4, 0);
+        for (int i = 0; i < n; i++)
+            if (text[i] >= 32) io.AddInputCharacterUTF16(text[i]);
+    }
+}
+
 static void init_imgui(IDXGISwapChain* sc) {
     if (FAILED(sc->GetDevice(__uuidof(ID3D11Device), (void**)&g_dev))) return;
     g_dev->GetImmediateContext(&g_ctx);
@@ -162,6 +192,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         feed_mouse();
+        feed_keyboard();
         ImGui::NewFrame();
         menu::draw();
         ImGui::Render();

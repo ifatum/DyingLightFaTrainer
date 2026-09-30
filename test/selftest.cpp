@@ -84,6 +84,7 @@ int main(int argc, char** argv) {
     uintptr_t added = game::rdv<uintptr_t>(arr);
     CHECK(game::rdv<int>(added + 0x40) == 5 && game::rdv<uintptr_t>(added + 0x60) == medkit);
     CHECK(game::default_target("Craft_Gauze") == game::K_MATERIALS && game::default_target("Melee_MacheteAGen") == game::K_BACKPACK);
+    CHECK(game::default_target("Ammo_PistolBig") == game::K_AMMO);
 
     CHECK(game::g.vt_player && game::g.vt_human && game::g.vt_health[0]);
     CHECK(game::g.players.size() == 1);

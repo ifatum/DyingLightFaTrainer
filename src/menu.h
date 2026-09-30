@@ -402,11 +402,15 @@ inline void give_item(const ItemInfo* info, int amount, int target) {
         {
             std::lock_guard<std::mutex> l(game::mx);
             auto* i = game::find_inventory(k);
+            if (!i && k == game::K_AMMO) i = game::find_inventory(game::K_MATERIALS);
             if (!i) i = game::find_inventory(game::K_BACKPACK);
             inv = i ? i->obj : 0;
             tmpl = game::pick_template(i);
         }
-        if (!inv || !tmpl) return toast("No inventory found yet: load your save and press Refresh");
+        if (!inv || !tmpl) {
+            logf("give %s: no inventory (%s) or template", info->id, game::KIND_NAMES[k]);
+            return toast("No inventory found yet: load your save and press Refresh");
+        }
         bool ok = game::give(inv, tmpl, desc, amount);
         logf("give %s x%d -> %s: %s", info->id, amount, game::KIND_NAMES[k], ok ? "ok" : "refused");
         toast(ok ? "Added " + std::to_string(amount) + " x " + name : "The game refused " + name + " (inventory full?)");

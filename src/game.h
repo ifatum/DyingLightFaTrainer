@@ -412,7 +412,8 @@ inline std::string stat_report() {
 }
 
 inline Kind default_target(const char* id) {
-    for (const char* p : {"Craft_", "Medkit_", "LockpickItem", "misc_", "Ammo_"})
+    if (!strncmp(id, "Ammo_", 5)) return K_AMMO;
+    for (const char* p : {"Craft_", "Medkit_", "LockpickItem", "misc_"})
         if (!strncmp(id, p, strlen(p))) return K_MATERIALS;
     return K_BACKPACK;
 }

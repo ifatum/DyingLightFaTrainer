@@ -43,6 +43,7 @@ inline std::string g_toast;
 inline DWORD g_toast_at = 0;
 
 inline void toast(const std::string& s) {
+    logf("toast: %s", s.c_str());
     std::lock_guard<std::mutex> l(g_qmx);
     g_toast = s;
     g_toast_at = GetTickCount();
