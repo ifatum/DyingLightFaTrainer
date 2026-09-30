@@ -2,6 +2,8 @@
 
 ## 1.8
 
+- Fixed: zombies and NPCs standing still. Cheats that change game settings (for example the grappling hook) also changed a different setting of every zombie and NPC. They now only change your own settings.
+- Fixed: giving an item could crash the game when the trainer tried it in the ammo inventory. Only ammo goes there now.
 - Fixed a crash that could happen after turning a cheat off. The trainer wrote to game memory that the game had already freed, for example after a level load.
 - Infinite UV flashlight: fixed. The trainer was filling the normal flashlight's battery instead of the UV charge.
 - Instant lockpicking: fixed. The game now treats every pick position as the sweet spot, so the lock always turns all the way.

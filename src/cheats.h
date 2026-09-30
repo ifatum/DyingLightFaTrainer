@@ -16,7 +16,7 @@ const int HEALTH_OBJECT = 0x8f8, STAMINA_OBJECTS[] = {0x1340, 0x1348};
 const int STAMINA_CURRENT = 0x10, STAMINA_FULL = 0x14;
 const int ROPE_ENERGY = 0x40, ROPE_DEPLETED = 0x44;
 const int REPL_OWNED = 0x28;
-const int PARAM_SLOTS = 1100, CACHED_VALUE = 8, CACHED_FLAGS = 0x18, CACHED_VERSION = -8;
+const int PARAM_SLOTS = 1100, CACHED_VALUE = 8, CACHED_FLAGS = 0x18, CACHED_VERSION = -8, PARAM_PROVIDER = 0x9c0;
 const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_XP = 8, TREE_LEVEL_START = 0xc, TREE_SPAN = 0x10, TREE_LEVEL = 0x14, TREE_MAX = 0x16;
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
 const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
@@ -150,6 +150,7 @@ enum { CACHED_NONE, CACHED_FLOAT, CACHED_SWITCH };
 inline CachedParam cached[PARAM_SLOTS];
 inline std::mutex cached_mx;
 inline std::map<int, std::set<uintptr_t>> overridden_providers;
+inline std::atomic<uintptr_t> player_provider{0};
 inline std::vector<uintptr_t> saved_containers;
 
 inline bool in_game_module(uintptr_t p) {
@@ -402,10 +403,11 @@ inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
     uintptr_t param = cache_get_original(provider, id);
     if (id < 0 || id >= PARAM_SLOTS || !param) return param;
     auto& c = cached[id];
-    c.reads++;
     uint8_t kind = c.kind;
+    bool mine = provider == player_provider.load();
+    if (mine) c.reads++;
     if (!kind && !c.stale) return param;
-    if (!kind) {
+    if (!kind || !mine) {
         {
             std::lock_guard<std::mutex> l(cached_mx);
             auto& providers = overridden_providers[id];
@@ -939,6 +941,7 @@ inline void tick() {
     keep_stacks(is_on("ammo"), is_on("supplies"));
     if (is_on("one_hit")) weaken_enemies();
     player = find_player();
+    player_provider = alive(player) ? rdv<uintptr_t>(player + PARAM_PROVIDER) : 0;
     install_var_hook();
     apply_overrides();
     if (!player) return;
@@ -953,7 +956,10 @@ inline uint32_t reads_of(const char* name) {
 }
 
 inline std::string tree_report() {
-    std::string out;
+    uintptr_t container = alive(player) ? rdv<uintptr_t>(player + PARAM_CONTAINER) : 0;
+    char head[64];
+    snprintf(head, sizeof head, "container %llx trees %llx ", (unsigned long long)container, (unsigned long long)rdv<uintptr_t>(container + SKILL_TREES));
+    std::string out = head;
     for (auto& t : TREES) out += std::to_string(t.type) + ":" + std::to_string(tree_level(t.type)) + "/" + std::to_string(tree_max(t.type)) + " ";
     return out;
 }

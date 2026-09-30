@@ -94,6 +94,11 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<int>(added + 0x40) == 5 && game::rdv<uintptr_t>(added + 0x60) == medkit);
     CHECK(game::default_target("Craft_Gauze") == game::K_MATERIALS && game::default_target("Melee_MacheteAGen") == game::K_BACKPACK);
     CHECK(game::default_target("Ammo_PistolBig") == game::K_AMMO);
+    {
+        auto order = game::give_order(game::K_BACKPACK);
+        CHECK(std::find(order.begin(), order.end(), game::K_AMMO) == order.end());
+        CHECK(game::give_order(game::K_AMMO)[0] == game::K_AMMO);
+    }
 
     CHECK(game::g.vt_player && game::g.vt_human && game::g.vt_health[0]);
     CHECK(!memcmp((const void*)game::rdv<uintptr_t>(game::g.vt_player + cheats::SLOT_PHYSICS_POSITION * 8), cheats::PHYSICS_POSITION_START, sizeof cheats::PHYSICS_POSITION_START));
@@ -157,8 +162,17 @@ int main(int argc, char** argv) {
     CHECK(game::count(mat->items[0]) == 999);
     auto param = [&](const char* n) { return w.params + cheats::param_ids[n] * 16 + 8; };
     auto cached = [&](const char* n) { return w.cache + (cheats::param_ids[n] + 1) * 40; };
-    for (auto* n : {"RopeEnergyRegenTime", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(0, cheats::param_ids[n] + 1);
+    uintptr_t my_provider = game::rdv<uintptr_t>(w.player + 0x9c0);
+    for (auto* n : {"RopeEnergyRegenTime", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(my_provider, cheats::param_ids[n] + 1);
     CHECK(cheats::reads_of("RopeEnergyRegenTime") == 1);
+    {
+        int id = cheats::param_ids["RopeEnergyRegenTime"] + 1;
+        game::wr<float>(cached("RopeEnergyRegenTime") + 0x10, 7.0f);
+        cheats::cache_get_hook(0x5000, id);
+        CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 7.0f && cheats::reads_of("RopeEnergyRegenTime") == 1);
+        cheats::cache_get_hook(my_provider, id);
+        CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 0.01f && cheats::reads_of("RopeEnergyRegenTime") == 2);
+    }
     CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 0.01f && (game::rdv<uint8_t>(cached("RopeEnergyRegenTime") + 0x20) & 1));
     CHECK(game::rdv<uintptr_t>(cached("RopeEnergyRegenTime") + 8) == cheats::vt_param_float && cheats::vt_param_float);
     CHECK(game::rdv<uint8_t>(cached("CanUseHook") + 0x10) == 1 && game::rdv<uintptr_t>(cached("CanUseHook") + 8) == cheats::vt_param_bool);
@@ -182,11 +196,11 @@ int main(int argc, char** argv) {
     cheats::find_tweak("h_dropkick")->factor = 1.0f;
     cheats::tick();
     CHECK(game::rdv<float>(param("AirKickRangeMul")) == 1.0f && game::rdv<uint64_t>(cached("AirKickRangeMul")) != ~0ull);
-    for (auto* n : {"RopeEnergyRegenTime", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(0, cheats::param_ids[n] + 1);
+    for (auto* n : {"RopeEnergyRegenTime", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(my_provider, cheats::param_ids[n] + 1);
     CHECK(game::rdv<uint64_t>(cached("AirKickRangeMul")) == ~0ull);
     CHECK(game::rdv<uint64_t>(cached("RopeEnergyRegenTime")) == ~0ull && game::rdv<uint64_t>(cached("CanUseHook")) == ~0ull);
     game::wr<uint64_t>(cached("CanUseHook"), 5);
-    cheats::cache_get_hook(0, cheats::param_ids["CanUseHook"] + 1);
+    cheats::cache_get_hook(my_provider, cheats::param_ids["CanUseHook"] + 1);
     CHECK(game::rdv<uint64_t>(cached("CanUseHook")) == 5 && cheats::overridden_providers[cheats::param_ids["CanUseHook"] + 1].empty());
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 8 && game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 10.0f);
     CHECK(game::rdv<float>(param("RopeEnergyRegenTime")) == 12.5f && game::rdv<uint8_t>(param("CanUseHook")) == 0 && fake_rules[0] == 0);

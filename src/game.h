@@ -532,7 +532,7 @@ inline bool give(uintptr_t inv, uintptr_t tmpl_item, uintptr_t desc, int amount)
 
 inline std::vector<Kind> give_order(Kind first) {
     std::vector<Kind> order = {first};
-    for (Kind k : {K_MATERIALS, K_BACKPACK, K_AMMO, K_TOOLS, K_COLLECTABLES, K_STASH})
+    for (Kind k : {K_MATERIALS, K_BACKPACK, K_TOOLS, K_COLLECTABLES, K_STASH})
         if (k != first) order.push_back(k);
     return order;
 }
