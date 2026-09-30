@@ -42,6 +42,10 @@ static void __fastcall refuse_add(uintptr_t, void*, int, bool) {}
 static uintptr_t fake_cache_base;
 static uintptr_t fake_cache_get(uintptr_t, int id) { return fake_cache_base + id * 40 + 8; }
 static int fake_level_calls = 0;
+static float fake_health_set = -1;
+static void __fastcall fake_set_health(uintptr_t, float v, bool) { fake_health_set = v; }
+static int ownership_requests = 0;
+static void fake_request_ownership(uintptr_t repl) { ownership_requests++; *(uint8_t*)(repl + 0x28) = 1; }
 static void __fastcall fake_level_from_xp(uintptr_t, int) { fake_level_calls++; }
 
 int main(int argc, char** argv) {
@@ -137,6 +141,18 @@ int main(int argc, char** argv) {
     CHECK(cheats::player == w.player && cheats::health() == 87);
     CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == (uintptr_t)&cheats::immortal_vtable[1]);
     CHECK(((bool(__fastcall*)(uintptr_t))cheats::slot(w.player + 0x8f8, cheats::SLOT_IS_IMMORTAL))(0));
+    CHECK(cheats::slot(w.player + 0x8f8, cheats::SLOT_SET_HEALTH) == (uintptr_t)&cheats::set_health_without_damage);
+    {
+        auto real = cheats::original_set_health;
+        cheats::original_set_health = fake_set_health;
+        uintptr_t health_object = w.alloc(0xa00);
+        w.put<float>(health_object + 0x964, 100.0f);
+        cheats::set_health_without_damage(health_object, 40.0f, true);
+        CHECK(fake_health_set == -1);
+        cheats::set_health_without_damage(health_object, 150.0f, true);
+        CHECK(fake_health_set == 150.0f);
+        cheats::original_set_health = real;
+    }
     CHECK(game::rdv<float>(w.stamina + 0x10) == 100);
     CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
     CHECK(game::count(mat->items[0]) == 999);
@@ -204,6 +220,15 @@ int main(int argc, char** argv) {
         w.put<uintptr_t>(prison, game::g.vt_prison_data);
         w.put<float>(prison + 0x44, 100.0f);
         w.put<float>(prison + 0x48, 160.0f);
+        uintptr_t rope = w.alloc(0x80);
+        CHECK(game::g.vt_rope);
+        w.put<uintptr_t>(rope, game::g.vt_rope);
+        w.put<float>(rope + 0x40, 0.2f);
+        w.put<uint8_t>(rope + 0x44, 1);
+        game::wr<float>(w.params + cheats::param_ids["RopeMaxEnergy"] * 16 + 8, 1.0f);
+        game::g.ropes = {rope};
+        cheats::request_ownership = fake_request_ownership;
+        cheats::find("hook")->on = true;
         game::g.equipment = {equipment};
         game::g.prison_data = {prison};
         CHECK(game::g.vt_equipment && game::g.vt_prison_data && game::g.vt_prison_sensor);
@@ -215,6 +240,12 @@ int main(int argc, char** argv) {
         CHECK(game::rdv<float>(equipment + 0x50) == 1.0f && game::rdv<uint8_t>(equipment + 0x55) == 0 && !cheats::objects_missing);
         float start = game::rdv<float>(prison + 0x44), end = game::rdv<float>(prison + 0x48);
         CHECK(start > 100.2f && start < 101.0f && std::fabs(end - start - 60.0f) < 0.01f);
+        CHECK(ownership_requests == 1 && game::rdv<uint8_t>(prison + 0x28) == 1);
+        CHECK(game::rdv<float>(rope + 0x40) == 1.0f && game::rdv<uint8_t>(rope + 0x44) == 0);
+        game::g.ropes.clear();
+        cheats::tick();
+        CHECK(cheats::objects_missing);
+        cheats::find("hook")->on = false;
         cheats::find("uv")->on = false;
         cheats::find("prison_pause")->on = false;
         cheats::tick();

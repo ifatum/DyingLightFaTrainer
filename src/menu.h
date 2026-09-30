@@ -703,7 +703,10 @@ inline void prison_page() {
     }
     ImGui::Dummy({0, S(2)});
     ImGui::BeginDisabled(game::g.scanning);
-    if (ImGui::Button("Find sections")) request_refresh();
+    if (ImGui::Button("Find sections")) {
+        cheats::sections_wanted = true;
+        request_refresh();
+    }
     ImGui::EndDisabled();
     end_card();
     begin_card("position", "YOUR POSITION");

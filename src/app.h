@@ -76,10 +76,11 @@ inline void request_refresh() {
         cheats::player = cheats::find_player();
         logf("refresh: %s", game::g.status.c_str());
         logf("inventories:%s", game::inventory_report().c_str());
-        on_game_thread([] {
-            std::lock_guard<std::mutex> l(game::mx);
-            cheats::read_sections();
-        });
+        if (cheats::sections_wanted.exchange(false))
+            on_game_thread([] {
+                std::lock_guard<std::mutex> l(game::mx);
+                cheats::read_sections();
+            });
         logf("stats: %s", game::stat_report().c_str());
         logf("cheats: %s", cheats::describe().c_str());
     }).detach();

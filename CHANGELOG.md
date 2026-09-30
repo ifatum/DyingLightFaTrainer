@@ -5,7 +5,11 @@
 - Fixed a crash that could happen after turning a cheat off. The trainer wrote to game memory that the game had already freed, for example after a level load.
 - Infinite UV flashlight: fixed. The trainer was filling the normal flashlight's battery instead of the UV charge.
 - Instant lockpicking: fixed. The game now treats every pick position as the sweet spot, so the lock always turns all the way.
-- Cheats that need game objects (UV flashlight, prison timers) find them again on their own after a level load, even when the menu stays closed.
+- Fixed a crash while loading into a save: prison sections are now read only when you press Find sections, never while the game is still building the level.
+- God mode also works in Harran Prison, where the game could apply damage past the normal immortality check.
+- Infinite grappling hook keeps the rope energy full directly, so the hook is ready every time, also while you are still hanging on the rope.
+- Pause prison timers: the trainer now takes ownership of the prison timer data like the game does, so the paused time is no longer overwritten.
+- Cheats that need game objects (UV flashlight, grappling hook, prison timers) find them again on their own after a level load, even when the menu stays closed.
 - Turning a cheat off restores a value only if the game has not changed it since.
 - Ignores stray stash objects with garbage capacity.
 
