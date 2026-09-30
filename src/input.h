@@ -9,6 +9,7 @@
 namespace input {
 
 inline std::atomic<bool> blocked{false};
+inline std::atomic<long> wheel{0};
 
 using GetStateFn = HRESULT(WINAPI*)(void*, DWORD, void*);
 using GetDataFn = HRESULT(WINAPI*)(void*, DWORD, DIDEVICEOBJECTDATA*, DWORD*, DWORD);
@@ -41,7 +42,9 @@ inline bool mouse_device(void* device) {
 
 inline HRESULT WINAPI blocked_state(void* device, DWORD size, void* data) {
     HRESULT r = patch_for(device)->get_state(device, size, data);
-    if (blocked && SUCCEEDED(r) && data) memset(data, 0, size);
+    if (!blocked || FAILED(r) || !data) return r;
+    if (size >= sizeof(DIMOUSESTATE) && mouse_device(device)) wheel += ((DIMOUSESTATE*)data)->lZ;
+    memset(data, 0, size);
     return r;
 }
 
@@ -52,6 +55,7 @@ inline HRESULT WINAPI blocked_data(void* device, DWORD size, DIDEVICEOBJECTDATA*
     DWORD kept = 0;
     for (DWORD i = 0; i < *count; i++) {
         auto* e = (DIDEVICEOBJECTDATA*)((BYTE*)data + i * size);
+        if (mouse && e->dwOfs == DIMOFS_Z) wheel += (LONG)e->dwData;
         bool release = !(e->dwData & 0x80) && (!mouse || e->dwOfs >= DIMOFS_BUTTON0);
         if (release) memmove((BYTE*)data + kept++ * size, e, size);
     }

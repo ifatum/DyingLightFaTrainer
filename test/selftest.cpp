@@ -22,6 +22,22 @@ static void __fastcall fake_add(uintptr_t inv, void* data, int, bool) {
     w.put<uint32_t>(inv + 0x48, n + 1);
 }
 
+static float fake_var_float(uintptr_t, uintptr_t name, uintptr_t, uintptr_t) {
+    const char* s = *(const char**)name;
+    if (!strcmp(s, "f_btz_zombie_grab_range")) return 10;
+    if (!strcmp(s, "f_btz_wrestling_kick_angle_max")) return 22;
+    if (!strcmp(s, "f_btz_pvp_grab_below_angle_threshold")) return -50;
+    return 7;
+}
+static uintptr_t fake_var_vtable[1100];
+static uintptr_t fake_var_object = (uintptr_t)&fake_var_vtable[1];
+static uintptr_t fake_var_holder = (uintptr_t)&fake_var_object;
+
+static float read_var(const char* name) {
+    auto fn = (cheats::VarFloatFn)cheats::slot((uintptr_t)&fake_var_object, cheats::SLOT_VAR_FLOAT);
+    return fn((uintptr_t)&fake_var_object, (uintptr_t)&name, 0, 0);
+}
+
 int main(int argc, char** argv) {
     HMODULE m = LoadLibraryExA(argv[1], nullptr, DONT_RESOLVE_DLL_REFERENCES);
     CHECK(m);
@@ -82,12 +98,17 @@ int main(int argc, char** argv) {
         for (auto& n : c.numbers) CHECK(cheats::param_ids.count(n.first));
         for (auto* n : c.switches) CHECK(cheats::param_ids.count(n));
     }
-    CHECK(cheats::local_player_root && cheats::params_root && cheats::unlimited_ammo_flag);
+    CHECK(cheats::local_player_root && cheats::params_root && cheats::unlimited_ammo_flag && cheats::var_root);
+    CHECK(cheats::var_root - (uintptr_t)m == 0x1c109d0);
+    fake_var_vtable[1 + cheats::SLOT_VAR_FLOAT] = (uintptr_t)&fake_var_float;
+    cheats::var_root = (uintptr_t)&fake_var_holder;
     cheats::local_player_root = cheats::params_root = 0;
     uintptr_t flag = cheats::unlimited_ammo_flag;
     static uint8_t fake_rules[4];
     cheats::unlimited_ammo_flag = (uintptr_t)fake_rules;
-    for (auto* k : {"god", "stamina", "supplies", "one_hit", "hook", "uv", "ammo", "z_spits"}) cheats::find(k)->on = true;
+    for (auto* k : {"god", "stamina", "supplies", "one_hit", "hook", "uv", "ammo", "z_spits", "no_fall", "durability"}) cheats::find(k)->on = true;
+    for (auto& t : cheats::TWEAKS)
+        for (auto* n : t.params) CHECK(cheats::param_ids.count(n));
     game::wr<float>(w.params + cheats::param_ids["GrapplingHookCooldown"] * 16 + 8, 12.5f);
     game::wr<float>(w.params + cheats::param_ids["AirKickRangeMul"] * 16 + 8, 1.0f);
     cheats::find("no_reload")->on = true;
@@ -131,6 +152,17 @@ int main(int argc, char** argv) {
     (void)flag;
     CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == game::g.vt_human);
     printf("cheats: %s\n", cheats::describe().c_str());
+
+    CHECK(read_var("f_btz_zombie_grab_range") == 10);
+    cheats::find_tweak("z_pounce")->factor = 3.0f;
+    cheats::find_tweak("h_angle")->factor = 10.0f;
+    cheats::tick();
+    CHECK(fake_var_object == (uintptr_t)&cheats::var_vtable[1]);
+    CHECK(read_var("f_btz_zombie_grab_range") == 30 && read_var("f_btz_wrestling_kick_angle_max") == 180);
+    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_other") == 7 && read_var("i_other") == 7);
+    CHECK(cheats::active_count() == 2);
+    cheats::all_off();
+    CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
 
     config::cfg.accent[0] = 0.25f;
     config::cfg.pages = {{"combat", false}, {"player", true}};

@@ -14,11 +14,11 @@
 
 ### Features
 
-- **Player**: god mode, infinite stamina, infinite grappling hook, infinite UV flashlight, instant refill
-- **Combat**: one hit kill, infinite ammo, no reload, infinite consumables
-- **Be The Zombie**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, long camouflage
-- **Skills**: raise or lower any skill tree level (+1, +10, max, -1, -10)
-- **PvP**: range sliders for pounce slam, ground pound, tackle, claws, spit, death from above, dropkick, kicks and melee
+- **Player**: god mode, infinite stamina, infinite grappling hook, infinite UV flashlight, no fall damage, movement speed, jump height, instant refill
+- **Combat**: one hit kill, infinite ammo, no reload, infinite consumables, unbreakable weapons
+- **Skills**: XP multiplier, raise or lower any skill tree level (+1, +10, max, -1, -10)
+- **Night Hunter**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, long camouflage
+- **PvP**: range and aim angle sliders for pounce, ground pound, tackle, claws, spit, death from above, dropkick, kicks and melee
 - **Cash / Backpack / Stash / Materials**: set money and any stack count
 - **Give items**: spawn any weapon, consumable, material or blueprint
 - **Weapon editor**: damage, durability, crits, knockback, stamina, reach, magazine, reload time, upgrades, repairs, rarity
@@ -35,7 +35,7 @@ Build `xinput1_3.dll` with `./build.sh` (needs mingw-w64 through nix) and copy i
 WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 ```
 
-Press **Insert** or **F8** in game to open the menu. While it is open the game ignores your mouse and keyboard.
+Press **Insert** or **F8** in game to open the menu. While it is open the game ignores your mouse and keyboard. A dot in the sidebar marks pages with something turned on, and **Turn all off** resets every cheat and slider at once.
 
 ### Notes
 

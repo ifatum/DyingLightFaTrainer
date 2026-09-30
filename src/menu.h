@@ -505,6 +505,28 @@ inline void cash_page() {
     if (game::g.wallets.size() > 1) note("Several wallets found: yours shows the same amount as the game's inventory screen.");
 }
 
+inline void tweak_slider(cheats::Tweak& t) {
+    ImGui::PushID(t.key);
+    float v = t.factor;
+    ImGui::TextUnformatted(t.label);
+    if (v != 1.0f) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Reset")) v = 1.0f, t.factor = v, save_config();
+    }
+    note(t.hint);
+    ImGui::SetNextItemWidth(-1);
+    const char* fmt = v == 1.0f ? "Normal" : v >= t.max ? "Max" : "x%.1f";
+    if (ImGui::SliderFloat("##f", &v, 1.0f, t.max, fmt)) t.factor = v;
+    if (ImGui::IsItemDeactivatedAfterEdit()) save_config();
+    ImGui::Dummy({0, S(6)});
+    ImGui::PopID();
+}
+
+inline void tweak_sliders(cheats::Group group) {
+    for (auto& t : cheats::TWEAKS)
+        if (t.group == group) tweak_slider(t);
+}
+
 inline void player_page() {
     if (!cheats::player) {
         begin_card("missing");
@@ -529,6 +551,11 @@ inline void player_page() {
     cheat_switch("hook");
     cheat_switch("uv");
     end_card();
+    begin_card("movement", "MOVEMENT");
+    cheat_switch("no_fall");
+    ImGui::Dummy({0, S(4)});
+    tweak_sliders(cheats::G_MOVEMENT);
+    end_card();
 }
 
 inline void combat_page() {
@@ -540,12 +567,15 @@ inline void combat_page() {
     cheat_switch("no_reload");
     cheat_switch("supplies");
     end_card();
-    note("Weapon stat edits from the Backpack and Stash pages stay applied while the trainer runs.");
+    begin_card("weapons", "WEAPONS");
+    cheat_switch("durability");
+    end_card();
+    note("To change damage, durability, rarity and more of one weapon, press Edit next to it on the Backpack or Stash page. Weapon stat edits from the Backpack and Stash pages stay applied while the trainer runs.");
 }
 
 inline void zombie_page() {
     begin_card("about");
-    note("For the Be The Zombie mode, where you play the Night Hunter and invade another player's game. Turn these on before or during a match. Effects on your own hunter work as the invader; effects on the humans are decided by the host.");
+    note("For Be The Zombie matches, where you play the Night Hunter and invade another player's game. Turn these on before or during a match.");
     end_card();
     begin_card("hunter", "HUNTER");
     cheat_switch("god", "Hunter god mode");
@@ -556,10 +586,13 @@ inline void zombie_page() {
     cheat_switch("z_spits");
     cheat_switch("z_camo");
     end_card();
-    note("Leveling and PvP ranges have their own pages: Skills and PvP.");
+    note("Attack ranges and aim angles are on the PvP page.");
 }
 
 inline void skills_page() {
+    begin_card("xp", "EXPERIENCE");
+    tweak_sliders(cheats::G_PROGRESS);
+    end_card();
     if (!cheats::player) return empty_state("Your character was not found yet. Load into your save, then press Refresh.");
     if (!cheats::set_level_fn) return empty_state("The game's level function was not found. Check fatrainer.log.");
     begin_card("trees", "SKILL TREES");
@@ -602,32 +635,16 @@ inline void skills_page() {
     end_card();
 }
 
-inline void tweak_slider(cheats::Tweak& t) {
-    ImGui::PushID(t.key);
-    float v = t.factor;
-    ImGui::TextUnformatted(t.label);
-    if (v != 1.0f) {
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Reset")) v = 1.0f, t.factor = v, save_config();
-    }
-    note(t.hint);
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##f", &v, 1.0f, 10.0f, v == 1.0f ? "Normal" : "x%.1f")) t.factor = v;
-    if (ImGui::IsItemDeactivatedAfterEdit()) save_config();
-    ImGui::Dummy({0, S(6)});
-    ImGui::PopID();
-}
-
 inline void pvp_page() {
+    begin_card("about");
+    note("Slide right to multiply the game's own values. Set a range and its aim angle to Max to reach targets that are far away and not in front of you. Each side of the match decides its own attacks.");
+    end_card();
     begin_card("zombie", "AS THE NIGHT HUNTER");
-    for (auto& t : cheats::TWEAKS)
-        if (t.zombie) tweak_slider(t);
+    tweak_sliders(cheats::G_ZOMBIE);
     end_card();
-    begin_card("human", "AS A HUMAN");
-    for (auto& t : cheats::TWEAKS)
-        if (!t.zombie) tweak_slider(t);
+    begin_card("human", "AS A SURVIVOR");
+    tweak_sliders(cheats::G_HUMAN);
     end_card();
-    note("Ranges multiply the game's own values and only change what your side of the match decides. Pounce leap distance and leapfrog have no setting in the game.");
 }
 
 struct Key { int vk; const char* name; };
@@ -636,23 +653,42 @@ inline const Key KEYS[] = {{VK_INSERT, "Insert"}, {VK_F8, "F8"},   {VK_HOME, "Ho
                            {VK_F4, "F4"},         {VK_F5, "F5"},   {VK_F6, "F6"},     {VK_F7, "F7"},     {VK_F9, "F9"},
                            {VK_F10, "F10"},       {VK_F11, "F11"}, {VK_F12, "F12"}};
 
-struct Page { const char* id; const char* title; const char* subtitle; void (*draw)(); bool (*shown)(); };
+struct Page {
+    const char* id;
+    const char* title;
+    const char* subtitle;
+    void (*draw)();
+    bool (*shown)();
+    const char* section;
+    std::vector<const char*> keys;
+};
 inline bool always() { return true; }
 inline void settings_page();
+inline bool has_tools() { return game::find_inventory(game::K_TOOLS) != nullptr; }
 inline const Page PAGES[] = {
-    {"player", "Player", "Health, stamina and gear", player_page, always},
-    {"combat", "Combat", "Enemies, ammo and supplies", combat_page, always},
-    {"zombie", "Be The Zombie", "Night Hunter abilities", zombie_page, always},
-    {"skills", "Skills", "Skill tree levels", skills_page, always},
-    {"pvp", "PvP", "Attack ranges for Be The Zombie matches", pvp_page, always},
-    {"cash", "Cash", "Your money", cash_page, always},
-    {"backpack", "Backpack", "Items you carry", [] { inventory_page(game::K_BACKPACK); }, always},
-    {"stash", "Stash", "Items stored in your stash", [] { inventory_page(game::K_STASH); }, always},
-    {"materials", "Materials", "Crafting parts and consumables", [] { inventory_page(game::K_MATERIALS); }, always},
-    {"tools", "Tools", "Special items", [] { inventory_page(game::K_TOOLS); }, [] { return game::find_inventory(game::K_TOOLS) != nullptr; }},
-    {"give", "Give items", "Spawn any item in the game", give_page, always},
-    {"settings", "Settings", "Look, controls and sidebar", settings_page, always},
+    {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS", {"god", "stamina", "hook", "uv", "no_fall", "speed", "jump"}},
+    {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability"}},
+    {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
+    {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "BE THE ZOMBIE", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
+    {"pvp", "PvP", "Attack ranges and aim angles", pvp_page, always, "BE THE ZOMBIE",
+     {"z_pounce", "z_aim", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dropkick", "h_kicks", "h_melee", "h_angle"}},
+    {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
+    {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},
+    {"stash", "Stash", "Items stored in your stash. Press Edit to change a weapon", [] { inventory_page(game::K_STASH); }, always, "ITEMS", {}},
+    {"materials", "Materials", "Crafting parts and consumables", [] { inventory_page(game::K_MATERIALS); }, always, "ITEMS", {}},
+    {"tools", "Tools", "Special items", [] { inventory_page(game::K_TOOLS); }, has_tools, "ITEMS", {}},
+    {"give", "Give items", "Spawn any item in the game", give_page, always, "ITEMS", {}},
+    {"settings", "Settings", "Look, controls and sidebar", settings_page, always, "", {}},
 };
+
+inline int active_on(const Page& p) {
+    int n = 0;
+    for (const char* k : p.keys) {
+        if (auto* c = cheats::find(k)) n += c->on;
+        if (auto* t = cheats::find_tweak(k)) n += t->factor != 1.0f;
+    }
+    return n;
+}
 
 inline const Page* page_by_id(const std::string& id) {
     for (auto& p : PAGES)
@@ -767,9 +803,9 @@ inline void settings_page() {
 
 inline std::string g_page = "player";
 
-inline bool nav_item(const Page& p, bool active) {
+inline bool nav_item(const Page& p, bool active, bool marked) {
     ImGui::PushID(p.id);
-    float w = ImGui::GetContentRegionAvail().x, h = S(36);
+    float w = ImGui::GetContentRegionAvail().x, h = S(31);
     ImVec2 at = ImGui::GetCursorScreenPos();
     bool clicked = ImGui::InvisibleButton("nav", {w, h});
     float hover = animate(ImGui::GetID("h"), ImGui::IsItemHovered() ? 1.0f : 0.0f);
@@ -782,6 +818,7 @@ inline bool nav_item(const Page& p, bool active) {
     }
     float fs = ImGui::GetFontSize();
     dl->AddText(f_body, fs, {at.x + S(18), at.y + (h - fs) / 2}, col(mix(T.dim, T.text, std::max(on, hover * 0.6f))), p.title);
+    if (marked) dl->AddCircleFilled({at.x + w - S(14), at.y + h / 2}, S(4), col(T.accent));
     ImGui::PopID();
     return clicked;
 }
@@ -795,16 +832,30 @@ inline void sidebar() {
     ImGui::TextColored(T.accent, "FaTrainer");
     ImGui::PopFont();
     ImGui::SetCursorPosX(S(19));
-    label("DYING LIGHT");
+    label(("DYING LIGHT   v" + std::string(VERSION)).c_str());
     ImGui::Dummy({0, S(10)});
-    float footer = ImGui::GetFrameHeight() + S(34);
+    int active = cheats::active_count();
+    float footer = ImGui::GetFrameHeight() * (active ? 2 : 1) + S(active ? 64 : 52);
     ImGui::BeginChild("nav", {0, ImGui::GetContentRegionAvail().y - footer}, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {S(10), S(2)});
+    std::string section;
     for (auto& e : config::cfg.pages) {
         auto* p = page_by_id(e.id);
         if (!p || !e.visible || !p->shown()) continue;
-        if (nav_item(*p, g_page == p->id)) g_page = p->id;
+        if (*p->section && p->section != section) {
+            ImGui::Dummy({0, section.empty() ? 0 : S(6)});
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + S(18));
+            label(p->section);
+        }
+        section = p->section;
+        if (nav_item(*p, g_page == p->id, active_on(*p) > 0)) g_page = p->id;
     }
+    ImGui::PopStyleVar();
     ImGui::EndChild();
+    if (active) {
+        ImGui::Dummy({0, S(2)});
+        if (ImGui::Button(("Turn all off (" + std::to_string(active) + ")").c_str(), {-1, 0})) cheats::all_off(), save_config();
+    }
     ImGui::Dummy({0, S(4)});
     const char* st = game::g.scanning ? "Scanning..." : game::g.vt_money ? (cheats::player ? "Connected" : "Waiting for save") : "Game not ready";
     ImVec4 sc = game::g.scanning ? T.accent : game::g.vt_money ? (cheats::player ? T.ok : T.accent) : T.bad;
@@ -890,7 +941,7 @@ inline void startup() {
         for (auto& key : config::cfg.cheats_on)
             if (auto* c = cheats::find(key)) c->on = true;
     for (auto& [key, factor] : config::cfg.tweaks)
-        if (auto* t = cheats::find_tweak(key)) t->factor = std::clamp(factor, 1.0f, 10.0f);
+        if (auto* t = cheats::find_tweak(key)) t->factor = std::clamp(factor, 1.0f, t->max);
 }
 
 }

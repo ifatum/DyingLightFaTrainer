@@ -17,7 +17,7 @@ const int PARAM_CACHE = 0x9c0, CACHE_ARRAY = 0x28, CACHE_ENTRY = 40, CACHE_FLAGS
 const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_LEVEL = 0x14, TREE_MAX = 0x16;
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
 const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MODULE_UPDATE = 245;
-const int COPIED_SLOTS = 64;
+const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, VAR_SLOTS = 1024;
 const float ONE_HIT_HEALTH = 1.0f;
 
 struct Cheat {
@@ -41,6 +41,10 @@ inline Cheat CHEATS[] = {
     {"one_hit", "One hit kill", "Zombies and humans drop to 1 health. Works when you are the host.", {}, {}},
     {"ammo", "Infinite ammo", "Magazines never empty and reserve ammo stays full.", {}, {}},
     {"supplies", "Infinite consumables", "Medkits, throwables and crafting materials never run out.", {}, {}},
+    {"durability", "Unbreakable weapons", "Melee weapons stop losing durability when you hit things.",
+     {{"BluntWpnDurabilityLoss", 0}, {"CutWpnDurabilityLoss", 0}}, {}},
+    {"no_fall", "No fall damage", "Land safely from any height.", {{"FallDamageReduction", 1}, {"FallHeightMedium", 9999}, {"FallHeightHigh", 9999}},
+     {"FallDampingEnabled", "AutomaticFallDamping"}},
     {"no_reload", "No reload", "999 round magazines and instant reloads. Best together with infinite ammo.",
      {{"FirearmsPistolReloadTimeMul", 0.05f}, {"FirearmsRevolverReloadTimeMul", 0.05f}, {"FirearmsRifleReloadTimeMul", 0.05f},
       {"FirearmsShotgunReloadTimeMul", 0.05f}, {"FirearmsHeavyReloadTimeMul", 0.05f}},
@@ -56,28 +60,44 @@ inline Cheat CHEATS[] = {
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
 };
 
+enum Group { G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN };
+
+struct ScriptVar { const char* name; float limit; };
+
 struct Tweak {
     const char* key;
     const char* label;
     const char* hint;
-    bool zombie;
+    Group group;
     std::vector<const char*> params;
+    std::vector<ScriptVar> vars = {};
+    float max = 10.0f;
     std::atomic<float> factor{1.0f};
 };
 
 inline Tweak TWEAKS[] = {
-    {"z_pounce", "Pounce slam range", "Blast radius when a pounce slam lands.", true, {"ZombiePounceHighRageExplosionRange"}},
-    {"z_pound", "Ground pound range", "Reach of the ground pound and the aerial ground pound.", true, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}},
-    {"z_tackle", "Tackle range", "How far away the charge tackle still connects.", true, {"ZombieChargeAttackRange"}},
-    {"z_claws", "Claws range", "Reach of your claw swipes.", true, {"RangeMeleeMul", "BestTargetMeleeRange"}},
-    {"z_spit", "Spit range", "Spits fly faster and further.", true, {"ZombieSpitControlTheHordeVelocityMul", "ZombieSpitLightDisableVelocityMul"}},
-    {"h_dfa", "Death from above range", "How far below you a target can be, and the size of the landing shockwave.", false,
-     {"JumpAttackRange", "JumpAttackShockwaveRadius"}},
-    {"h_dropkick", "Dropkick range", "How far away the dropkick still connects.", false, {"AirKickRangeMul"}},
-    {"h_kicks", "Other kicks & ground pound range", "Wrestling kick and ground pound reach.", false, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
-    {"h_melee", "Melee range", "Reach of melee attacks and how far the game looks for a target.", false, {"RangeMeleeMul", "BestTargetMeleeRange"}},
-    {"h_angle", "Attack angle", "How far above or below your aim an attack still locks on. The game has no setting for hitting behind you.",
-     false, {"MaxVerticalAngleForRangeMeleeCorrection"}},
+    {"speed", "Movement speed", "Walk, sprint and wall run faster.", G_MOVEMENT,
+     {"MoveSprintSpeed", "MoveForwardMaxSpeed", "MoveStrafeMaxSpeed", "MoveBackwardMaxSpeed", "WallrunSpeed"}, {}, 3.0f},
+    {"jump", "Jump height", "Jump higher.", G_MOVEMENT, {"JumpMaxHeight", "JumpMinHeight"}, {}, 4.0f},
+    {"xp", "XP gain", "Agility, Power and Driver experience.", G_PROGRESS, {"RunnerXPFactor", "FighterXPFactor", "DriverXPFactor"}},
+    {"z_pounce", "Pounce range", "How far away you can pounce a survivor from. Also grows the pounce slam blast.", G_ZOMBIE,
+     {"ZombiePounceHighRageExplosionRange"}, {{"f_btz_zombie_grab_range", 0}, {"f_btz_zombie_grab_range_velocity_factor", 0}}},
+    {"z_aim", "Pounce aim angle", "How far from your crosshair a survivor can be. At Max you pounce targets that are not in front of you.",
+     G_ZOMBIE, {}, {{"f_btz_zombie_grab_angle_max", 180}, {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", 90}}},
+    {"z_pound", "Ground pound range", "Reach of the ground pound and the aerial ground pound.", G_ZOMBIE, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}},
+    {"z_tackle", "Tackle range", "How far away the charge tackle still connects.", G_ZOMBIE, {"ZombieChargeAttackRange"}},
+    {"z_claws", "Claws range", "Reach of your claw swipes.", G_ZOMBIE, {"RangeMeleeMul", "BestTargetMeleeRange"}},
+    {"z_spit", "Spit range", "Spits fly faster and further.", G_ZOMBIE, {"ZombieSpitControlTheHordeVelocityMul", "ZombieSpitLightDisableVelocityMul"}},
+    {"h_dfa", "Death from above range", "How far away the hunter can be when you drop on him, and the size of the landing shockwave.", G_HUMAN,
+     {"JumpAttackRange", "JumpAttackShockwaveRadius"}, {{"f_btz_jump_attack_range", 0}, {"f_btz_jump_attack_range_velocity_factor", 0}}},
+    {"h_dropkick", "Dropkick range", "How far away the dropkick still grabs the hunter.", G_HUMAN, {"AirKickRangeMul"},
+     {{"f_btz_wrestling_kick_range", 0}, {"f_btz_wrestling_kick_range_velocity_factor", 0}}},
+    {"h_kicks", "Other kicks & ground pound range", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
+    {"h_melee", "Melee range", "Reach of melee attacks and how far the game looks for a target.", G_HUMAN, {"RangeMeleeMul", "BestTargetMeleeRange"}},
+    {"h_angle", "Attack aim angle", "How far from your crosshair the hunter can be for dropkicks and death from above. At Max you hit him without facing him.",
+     G_HUMAN, {"MaxVerticalAngleForRangeMeleeCorrection"},
+     {{"f_btz_wrestling_kick_angle_max", 180}, {"f_btz_jump_attack_angle_max", 180}, {"f_btz_pvp_grab_above_angle_threshold", 90},
+      {"f_btz_pvp_grab_below_angle_threshold", 90}}},
 };
 
 inline Tweak* find_tweak(const std::string& key) {
@@ -98,7 +118,10 @@ inline bool is_on(const char* key) { return find(key) && find(key)->on; }
 
 inline uintptr_t player = 0;
 inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0;
-inline uintptr_t vt_param_float = 0, vt_param_bool = 0;
+inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0;
+using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+inline VarFloatFn original_var_float = nullptr;
+inline uintptr_t var_vtable[VAR_SLOTS + 1];
 inline std::map<std::string, int> param_ids;
 inline uintptr_t immortal_vtable[COPIED_SLOTS + 1];
 inline uintptr_t original_vtable = 0;
@@ -179,6 +202,9 @@ inline void locate(uintptr_t base) {
     if (auto hits = game::find_code(base, "48 89 5C 24 18 48 89 74 24 20 57 48 83 EC 20 49 63 F0 48 8B D9 48 8B 49 40 48 8B FE 48 C1 E7 05 44 0F BF C2");
         !hits.empty())
         set_level_fn = hits[0];
+    if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 8B 0D ? ? ? ? 48 8B 18 48 8B 01 FF 90 90 01 00 00 48 8B 0D ? ? ? ? 48 8D 55 ? 4C 8B C0 FF 93 90 03 00 00");
+        !hits.empty())
+        var_root = game::rip_target(hits[0], 3, 7);
     vt_param_float = game::find_vtable(base, "?$Param@M");
     vt_param_bool = game::find_vtable(base, "?$Param@_N");
     read_param_names();
@@ -361,6 +387,49 @@ inline void apply_overrides() {
     }
 }
 
+inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, uintptr_t extra) {
+    float v = original_var_float(self, name, scope, extra);
+    const char* s = name ? *(const char**)name : nullptr;
+    if (!s || strncmp(s, "f_btz_", 6)) return v;
+    float factor = 1.0f, limit = 0;
+    for (auto& t : TWEAKS)
+        for (auto& var : t.vars)
+            if (!strcmp(s, var.name) && t.factor > factor) factor = t.factor, limit = var.limit;
+    float scaled = v * factor;
+    return limit > 0 ? std::clamp(scaled, -limit, limit) : scaled;
+}
+
+inline bool var_tweaks_active() {
+    for (auto& t : TWEAKS)
+        if (!t.vars.empty() && t.factor != 1.0f) return true;
+    return false;
+}
+
+inline void install_var_hook() {
+    uintptr_t object = rdv<uintptr_t>(var_root), current = rdv<uintptr_t>(object);
+    uintptr_t ours = (uintptr_t)&var_vtable[1];
+    if (!current || current == ours || !var_tweaks_active()) return;
+    for (size_t n = VAR_SLOTS + 1; n > SLOT_VAR_FLOAT + 1; n /= 2)
+        if (rd(current - 8, var_vtable, n * 8)) {
+            original_var_float = (VarFloatFn)var_vtable[1 + SLOT_VAR_FLOAT];
+            var_vtable[1 + SLOT_VAR_FLOAT] = (uintptr_t)&scaled_var_float;
+            wr<uintptr_t>(object, ours);
+            return;
+        }
+}
+
+inline void all_off() {
+    for (auto& c : CHEATS) c.on = false;
+    for (auto& t : TWEAKS) t.factor = 1.0f;
+}
+
+inline int active_count() {
+    int n = 0;
+    for (auto& c : CHEATS) n += c.on;
+    for (auto& t : TWEAKS) n += t.factor != 1.0f;
+    return n;
+}
+
 inline uintptr_t tree_record(int type) {
     uintptr_t trees = alive(player) ? rdv<uintptr_t>(rdv<uintptr_t>(player + PARAM_CONTAINER) + SKILL_TREES) : 0;
     return trees ? trees + type * TREE_RECORD : 0;
@@ -455,6 +524,7 @@ inline void tick() {
     keep_stacks(is_on("ammo"), is_on("supplies"));
     if (is_on("one_hit")) weaken_enemies();
     player = find_player();
+    install_var_hook();
     apply_overrides();
     if (!player) return;
     set_immortal(is_on("god"));
@@ -463,13 +533,13 @@ inline void tick() {
 }
 
 inline std::string describe() {
-    char b[256];
+    char b[320];
     snprintf(b, sizeof b,
              "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache %s, ammo flag %s, "
-             "set level %s, enemies %zu, overrides %zu",
+             "set level %s, script vars %s, enemies %zu, overrides %zu",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", health(), stamina(),
              param_ids.size(), param_cache("GrapplingHookCooldown") ? "ok" : "missing", unlimited_ammo_flag ? "ok" : "missing",
-             set_level_fn ? "ok" : "missing", enemy_modules.size(), saved_bytes.size());
+             set_level_fn ? "ok" : "missing", var_root ? "ok" : "missing", enemy_modules.size(), saved_bytes.size());
     return b;
 }
 

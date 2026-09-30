@@ -117,7 +117,9 @@ static void feed_mouse() {
         bool down = GetAsyncKeyState(vk[i]) & 0x8000;
         if (down != btn[i]) io.AddMouseButtonEvent(i, btn[i] = down);
     }
-    if (long wh = g_wheel.exchange(0)) io.AddMouseWheelEvent(0, wh / (float)WHEEL_DELTA);
+    long wh = g_wheel.exchange(0), direct = input::wheel.exchange(0);
+    if (!wh) wh = direct;
+    if (wh) io.AddMouseWheelEvent(0, wh / (float)WHEEL_DELTA);
 }
 
 static void init_imgui(IDXGISwapChain* sc) {
