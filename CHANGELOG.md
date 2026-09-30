@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.7.1
+## 1.8
 
 - Fixed a crash that could happen after turning a cheat off. The trainer wrote to game memory that the game had already freed, for example after a level load.
 - Infinite UV flashlight: fixed. The trainer was filling the normal flashlight's battery instead of the UV charge.

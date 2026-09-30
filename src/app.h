@@ -13,7 +13,7 @@
 #include "game.h"
 
 inline const char* TITLE = "FaTrainer | Dying Light";
-inline const char* VERSION = "1.7.1";
+inline const char* VERSION = "1.8";
 
 inline void logf(const char* fmt, ...) {
     static std::string path;
