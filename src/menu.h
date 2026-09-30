@@ -662,6 +662,64 @@ inline void pvp_page() {
     end_card();
 }
 
+inline std::string section_name(const cheats::Section& sec, int index) {
+    char b[64];
+    switch (sec.type) {
+        case cheats::SENSOR_START: return "Start";
+        case cheats::SENSOR_REWARD: return "Reward room";
+        case cheats::SENSOR_EVAC: return "Evacuation";
+    }
+    if (sec.stage >= 0) snprintf(b, sizeof b, "Stage %d%s", sec.stage, sec.last ? " (last)" : "");
+    else snprintf(b, sizeof b, "Section %d", index + 1);
+    return b;
+}
+
+inline void go_to(cheats::Vec3 to) {
+    on_game_thread([=] {
+        std::lock_guard<std::mutex> l(game::mx);
+        cheats::teleport(to);
+    });
+}
+
+inline void prison_page() {
+    begin_card("about");
+    note("For the Harran Prison mode. Load into the prison first. Timers and teleports are decided by the host, so use them in your own game.");
+    end_card();
+    begin_card("timers", "TIMERS");
+    cheat_switch("prison_pause");
+    end_card();
+    begin_card("sections", "TELEPORT TO A SECTION");
+    if (cheats::prison_sections.empty()) note("No prison sections found yet. Load into Harran Prison, then press Find sections.");
+    for (size_t i = 0; i < cheats::prison_sections.size(); i++) {
+        auto& sec = cheats::prison_sections[i];
+        ImGui::PushID((int)i);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(section_name(sec, (int)i).c_str());
+        ImGui::SameLine(S(220));
+        if (accent_button("Teleport", {S(110), 0})) go_to(sec.pos);
+        ImGui::PopID();
+    }
+    ImGui::Dummy({0, S(2)});
+    ImGui::BeginDisabled(game::g.scanning);
+    if (ImGui::Button("Find sections")) request_refresh();
+    ImGui::EndDisabled();
+    end_card();
+    begin_card("position", "YOUR POSITION");
+    note("Save where you stand and jump back to it later. Works everywhere, not only in the prison.");
+    ImGui::Dummy({0, S(2)});
+    if (ImGui::Button("Save position")) on_game_thread([] {
+        std::lock_guard<std::mutex> l(game::mx);
+        cheats::saved_position = cheats::player_position();
+        cheats::has_saved_position = std::isfinite(cheats::saved_position.x);
+        toast(cheats::has_saved_position ? "Position saved" : "Your position could not be read");
+    });
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!cheats::has_saved_position);
+    if (accent_button("Go to saved position")) go_to(cheats::saved_position);
+    ImGui::EndDisabled();
+    end_card();
+}
+
 struct Key { int vk; const char* name; };
 inline const Key KEYS[] = {{VK_INSERT, "Insert"}, {VK_F8, "F8"},   {VK_HOME, "Home"}, {VK_END, "End"},   {VK_DELETE, "Delete"},
                            {VK_PRIOR, "Page Up"}, {VK_NEXT, "Page Down"}, {VK_F1, "F1"}, {VK_F2, "F2"}, {VK_F3, "F3"},
@@ -684,9 +742,10 @@ inline const Page PAGES[] = {
     {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS", {"god", "stamina", "hook", "uv", "lockpick", "no_fall", "speed", "jump"}},
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
-    {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "BE THE ZOMBIE", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
-    {"pvp", "PvP", "How far your attacks reach", pvp_page, always, "BE THE ZOMBIE",
+    {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "MODES", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
+    {"pvp", "PvP", "How far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
      {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dfa_pull", "h_dropkick", "h_kicks", "h_melee"}},
+    {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},
     {"stash", "Stash", "Items stored in your stash. Press Edit to change a weapon", [] { inventory_page(game::K_STASH); }, always, "ITEMS", {}},

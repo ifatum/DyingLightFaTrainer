@@ -16,7 +16,10 @@ const int STAMINA_CURRENT = 0x10, STAMINA_FULL = 0x14;
 const int PARAM_SLOTS = 1100, CACHED_VALUE = 8, CACHED_FLAGS = 0x18, CACHED_VERSION = -8;
 const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_XP = 8, TREE_LEVEL_START = 0xc, TREE_SPAN = 0x10, TREE_LEVEL = 0x14, TREE_MAX = 0x16;
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
-const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MODULE_UPDATE = 245;
+const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
+const int EQUIPMENT_CHARGE = 0x20;
+const int PRISON_START_TIME = 0x44, PRISON_END_TIME = 0x48, PRISON_REWARD_TIER = 0x4c, PRISON_STATE = 0x54;
+const int CONTROL_OBJECT = 0x18, SLOT_FLOAT_FIELD_EDITOR = 34;
 const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, VAR_SLOTS = 1024;
 const float ONE_HIT_HEALTH = 1.0f;
 
@@ -35,8 +38,8 @@ inline const char* SPIT_REGEN[] = {"ZombieSpitControlTheHordeAmmoRegenTime", "Zo
 inline Cheat CHEATS[] = {
     {"god", "God mode", "You take no damage from anything.", {}, {}},
     {"stamina", "Infinite stamina", "Sprint, climb and fight without getting tired.", {}, {"InfiniteStamina"}},
-    {"hook", "Infinite grappling hook", "No cooldown between grapples, usable in the air.", {{"GrapplingHookCooldown", 0}},
-     {"CanUseHook", "ThrowHookCanUseInAir"}},
+    {"hook", "Infinite grappling hook", "The hook recharges instantly, so you can grapple again right away, also in the air.",
+     {{"RopeEnergyRegenTime", 0.01f}}, {"CanUseHook", "ThrowHookCanUseInAir"}},
     {"uv", "Infinite UV flashlight", "The UV light never drains.", {{"FlashlightDrainMul", 0}, {"FlashlightRechargeSpeed", 1000}}, {}},
     {"one_hit", "One hit kill", "Zombies and humans drop to 1 health. Works when you are the host.", {}, {}},
     {"ammo", "Infinite ammo", "Magazines never empty and reserve ammo stays full.", {}, {}},
@@ -57,6 +60,7 @@ inline Cheat CHEATS[] = {
       {"FastGrabBreakCooldown", 0}},
      {}},
     {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}},
+    {"prison_pause", "Pause prison timers", "The run timer and the reward room countdown stand still. Works when you are the host.", {}, {}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
 };
@@ -138,7 +142,8 @@ inline CachedParam cached[PARAM_SLOTS];
 inline std::mutex cached_mx;
 inline std::map<int, std::set<uintptr_t>> cached_entries;
 inline std::vector<uintptr_t> lock_records;
-inline const float LOCK_DIFFICULTIES[4][5] = {{1.9f, 40, 40, 90, 0}, {1.9f, 30, 29, 90, 0}, {1.9f, 16, 15, 90, 0}, {1.9f, 10, 5, 90, 0}};
+inline const float LOCK_DIFFICULTIES[8][5] = {{1.9f, 40, 40, 90, 0}, {1.9f, 30, 29, 90, 0}, {1.9f, 16, 15, 90, 0}, {1.9f, 10, 5, 90, 0},
+                                             {1.9f, 20, 10, 90, 0}, {1.9f, 15, 7.25f, 90, 0}, {1.9f, 8, 3.75f, 90, 0}, {1.9f, 5, 1.25f, 90, 0}};
 inline const float LOCK_OPEN[3] = {1000, 1000, 1000};
 inline std::vector<uintptr_t> saved_containers;
 
@@ -225,6 +230,9 @@ inline void locate(uintptr_t base) {
 
 inline bool alive(uintptr_t p) { return p && g.vt_player && rdv<uintptr_t>(p) == g.vt_player; }
 
+inline void no_log(const char*, ...) {}
+inline void (*logf_hook)(const char*, ...) = no_log;
+
 inline uintptr_t find_player() {
     uintptr_t local = local_player_root ? rdv<uintptr_t>(rdv<uintptr_t>(local_player_root) + LOCAL_PLAYER) : 0;
     if (alive(local)) return local;
@@ -259,11 +267,26 @@ inline void set_immortal(bool enable) {
     }
 }
 
+inline float max_health() {
+    auto fn = (float(__fastcall*)(uintptr_t, int))slot(player, SLOT_MAX_HEALTH);
+    return alive(player) && in_game_module((uintptr_t)fn) ? fn(player, -1) : NAN;
+}
+
 inline void refill() {
     if (!alive(player)) return;
+    float before = health();
     uintptr_t health_object = player + HEALTH_OBJECT;
     auto fn = (void(__fastcall*)(uintptr_t))slot(health_object, SLOT_REFILL);
     if (in_game_module((uintptr_t)fn)) fn(health_object);
+    int off = float_getter_offset(slot(player, SLOT_HEALTH));
+    float full = max_health();
+    if (off > 0 && full > 0 && full < 100000 && !(health() >= full)) wr<float>(player + off, full);
+    for (int i = 0; i < 2; i++) {
+        uintptr_t s = rdv<uintptr_t>(player + STAMINA_OBJECTS[i]);
+        float top = rdv<float>(s + STAMINA_FULL, NAN);
+        if (s && top > 0 && top < 100000) wr<float>(s + STAMINA_CURRENT, top);
+    }
+    logf_hook("refill: health %.0f -> %.0f (max %.0f), stamina %.0f", before, health(), full, stamina());
 }
 
 inline void keep_stamina() {
@@ -605,8 +628,96 @@ inline void install_update_hooks() {
     }
 }
 
+struct Vec3 { float x, y, z; };
+using GetPositionFn = Vec3* (*)(uintptr_t, Vec3*);
+using SetPositionFn = void (*)(uintptr_t, const Vec3*);
+using FieldIntFn = uintptr_t (*)(uintptr_t, const char*, int*);
+using FieldBoolFn = uintptr_t (*)(uintptr_t, const char*, bool*);
+inline GetPositionFn get_position = nullptr;
+inline SetPositionFn set_position = nullptr;
+inline FieldIntFn field_int = nullptr, field_enum = nullptr;
+inline FieldBoolFn field_bool = nullptr;
+inline uintptr_t float_field_editor = 0;
+
+inline void locate_engine(HMODULE engine) {
+    if (!engine) return;
+    get_position = (GetPositionFn)GetProcAddress(engine, "?GetWorldPosition@IControlObject@@QEBA?AVvec3@@XZ");
+    set_position = (SetPositionFn)GetProcAddress(engine, "?SetWorldPosition@IControlObject@@QEAAXAEBVvec3@@@Z");
+    field_int = (FieldIntFn)GetProcAddress(engine, "?GetFieldInt@CRTTIObject@@QEBAPEBVCRTTIFieldInt@@PEBDAEAH@Z");
+    field_enum = (FieldIntFn)GetProcAddress(engine, "?GetFieldEnum@CRTTIObject@@QEBAPEBVCRTTIFieldEnum@@PEBDAEAH@Z");
+    field_bool = (FieldBoolFn)GetProcAddress(engine, "?GetFieldBool@CRTTIObject@@QEBAPEBVCRTTIFieldBool@@PEBDAEA_N@Z");
+    float_field_editor = (uintptr_t)GetProcAddress(engine, "?GetFieldFloatEditor@CRTTIObject@@UEBAPEBVCRTTIFieldFloat@@PEBDAEAM@Z");
+}
+
+struct Section { uintptr_t sensor; int type; int stage; bool last; Vec3 pos; };
+enum { SENSOR_START = 1, SENSOR_STAGE = 2, SENSOR_REWARD = 3, SENSOR_EVAC = 4 };
+inline std::vector<Section> prison_sections;
+inline Vec3 saved_position{};
+inline bool has_saved_position = false;
+inline DWORD last_prison_tick = 0;
+
+inline bool reflected(uintptr_t object) { return float_field_editor && slot(object, SLOT_FLOAT_FIELD_EDITOR) == float_field_editor; }
+
+inline void read_sections() {
+    std::vector<Section> out;
+    for (uintptr_t s : g.prison_sensors) {
+        if (!get_position || rdv<uintptr_t>(s) != g.vt_prison_sensor) continue;
+        Section sec{s, 0, -1, false, {NAN, NAN, NAN}};
+        get_position(s + CONTROL_OBJECT, &sec.pos);
+        if (reflected(s) && field_int && field_bool && field_enum) {
+            int v = 0;
+            bool b = false;
+            if (field_int(s, "m_Stage", &v)) sec.stage = v;
+            if (field_bool(s, "m_IsLastStage", &b)) sec.last = b;
+            for (const char* name : {"m_Type", "m_SensorType", "m_PrisonSensorType"})
+                if (field_enum(s, name, &v)) { sec.type = v; break; }
+        }
+        if (std::isfinite(sec.pos.x)) out.push_back(sec);
+    }
+    std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.type != b.type ? a.type < b.type : a.stage < b.stage; });
+    prison_sections = out;
+}
+
+inline Vec3 player_position() {
+    Vec3 p{NAN, NAN, NAN};
+    if (alive(player) && get_position) get_position(player + CONTROL_OBJECT, &p);
+    return p;
+}
+
+inline void teleport(Vec3 to) {
+    if (!alive(player) || !set_position || !std::isfinite(to.x)) return;
+    Vec3 from = player_position();
+    set_position(player + CONTROL_OBJECT, &to);
+    Vec3 now = player_position();
+    logf_hook("teleport: from %.1f %.1f %.1f to %.1f %.1f %.1f, now %.1f %.1f %.1f", from.x, from.y, from.z, to.x, to.y, to.z, now.x, now.y,
+              now.z);
+}
+
+inline void pause_prison() {
+    DWORD now = GetTickCount();
+    float dt = last_prison_tick ? (now - last_prison_tick) / 1000.0f : 0;
+    last_prison_tick = is_on("prison_pause") ? now : 0;
+    if (!last_prison_tick || dt <= 0 || dt > 1) return;
+    for (uintptr_t d : g.prison_data) {
+        if (rdv<uintptr_t>(d) != g.vt_prison_data) continue;
+        float start = rdv<float>(d + PRISON_START_TIME, NAN), end = rdv<float>(d + PRISON_END_TIME, NAN);
+        if (start > 0) wr<float>(d + PRISON_START_TIME, start + dt);
+        if (end > 0) wr<float>(d + PRISON_END_TIME, end + dt);
+    }
+}
+
+inline void keep_uv_charge() {
+    for (uintptr_t e : g.equipment) {
+        if (rdv<uintptr_t>(e) != g.vt_equipment) continue;
+        float charge = rdv<float>(e + EQUIPMENT_CHARGE, NAN);
+        if (charge >= 0 && charge < 1) wr<float>(e + EQUIPMENT_CHARGE, 1.0f);
+    }
+}
+
 inline void tick() {
     std::lock_guard<std::mutex> l(game::mx);
+    pause_prison();
+    if (is_on("uv")) keep_uv_charge();
     game::reapply_stats();
     keep_stacks(is_on("ammo"), is_on("supplies"));
     if (is_on("one_hit")) weaken_enemies();
@@ -625,14 +736,18 @@ inline uint32_t reads_of(const char* name) {
 }
 
 inline std::string describe() {
-    char b[480];
+    char b[700];
     snprintf(b, sizeof b,
              "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
-             "ammo flag %s, set level %s, xp level %s, script vars %s, lock records %zu, enemies %zu, overrides %zu",
+             "ammo flag %s, set level %s, xp level %s, script vars %s, lock records %zu, enemies %zu, overrides %zu, equipment %zu, "
+             "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
-             level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", lock_records.size(), enemy_modules.size(), saved_bytes.size());
+             level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", lock_records.size(), enemy_modules.size(), saved_bytes.size(),
+             g.equipment.size(), g.prison_data.size(), g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_START_TIME, NAN),
+             g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_END_TIME, NAN), g.prison_sensors.size(),
+             get_position && set_position ? "ok" : "missing");
     return b;
 }
 

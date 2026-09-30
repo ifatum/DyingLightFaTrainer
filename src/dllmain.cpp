@@ -336,6 +336,7 @@ static void main_thread() {
     logf("settings cache hook: %s", cheats::install_cache_hook() ? "ok" : cheats::cache_get_fn ? "unexpected code, skipped" : "not found");
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
+    cheats::locate_engine(engine);
     logf("input blocking: %d directinput vtables", input::install(engine));
     if (getenv("DLT_OPEN")) g_open = true;
     std::thread([] {

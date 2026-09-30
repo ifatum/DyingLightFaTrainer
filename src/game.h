@@ -99,7 +99,8 @@ template <class F> inline void each_heap_chunk(F visit) {
     MEMORY_BASIC_INFORMATION mbi;
     const uintptr_t STACK_AREA = 0x400000;
     uintptr_t stack_hi = (uintptr_t)((NT_TIB*)NtCurrentTeb())->StackBase, stack_lo = stack_hi - STACK_AREA;
-    for (uintptr_t a = 0x10000; a < 0x7FFFFFFF0000ULL && VirtualQuery((LPCVOID)a, &mbi, sizeof mbi); ) {
+    const uintptr_t SYSTEM_AREA = 0x7FFF00000000ULL;
+    for (uintptr_t a = 0x10000; a < SYSTEM_AREA && VirtualQuery((LPCVOID)a, &mbi, sizeof mbi); ) {
         uintptr_t s = (uintptr_t)mbi.BaseAddress, e = s + mbi.RegionSize;
         bool ok = mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && mbi.Protect == PAGE_READWRITE &&
                   mbi.RegionSize <= (1ULL << 30) && !(s < stack_hi && e > stack_lo);
@@ -124,9 +125,9 @@ inline std::vector<std::vector<uintptr_t>> scan(const std::vector<uintptr_t>& vt
     return out;
 }
 
-inline std::vector<uintptr_t> find_float_records(const std::vector<std::vector<float>>& patterns) {
+inline std::vector<uintptr_t> find_float_records(const std::vector<std::vector<float>>& patterns, uintptr_t module_base) {
     std::vector<uintptr_t> out;
-    each_heap_chunk([&](uintptr_t c, size_t n) {
+    auto visit = [&](uintptr_t c, size_t n) {
         const uint32_t* w = (const uint32_t*)c;
         for (auto& p : patterns) {
             uint32_t first;
@@ -135,7 +136,10 @@ inline std::vector<uintptr_t> find_float_records(const std::vector<std::vector<f
             for (size_t i = 0; i + p.size() <= n / 4; i++)
                 if (w[i] == first && !memcmp(w + i, p.data(), bytes) && (uintptr_t)(w + i) != (uintptr_t)p.data()) out.push_back(c + i * 4);
         }
-    });
+    };
+    each_heap_chunk(visit);
+    for (auto& s : sections(module_base))
+        if (s.name == ".data" && !IsBadReadPtr((const void*)s.start, s.end - s.start)) visit(s.start, s.end - s.start);
     return out;
 }
 
@@ -230,7 +234,8 @@ struct StatField { int off = -1; bool is_float = true; int votes = 0, samples = 
 struct State {
     uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {};
     uintptr_t vt_player = 0, vt_human = 0, vt_health[3] = {};
-    std::vector<uintptr_t> wallets, players;
+    uintptr_t vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0;
+    std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors;
     std::map<std::pair<uintptr_t, int>, float> stat_overrides;
     std::vector<Inventory> invs;
     std::map<std::string, uintptr_t> descs;
@@ -324,6 +329,9 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_human = find_vtable(base, "HumanAI");
     const char* health_classes[] = {"HealthModule", "ArmorHealthModule", "BodyPartsHealthModule"};
     for (int i = 0; i < 3; i++) g.vt_health[i] = find_vtable(base, health_classes[i]);
+    g.vt_equipment = find_vtable(base, "EquipmentController");
+    g.vt_prison_data = find_vtable(base, "ReplData@Prison");
+    g.vt_prison_sensor = find_vtable(base, "SensorPrisonRush");
     bool ok = g.vt_money && g.vt_inv[0];
     g.status = ok ? "ready" : "game classes not found (game updated?)";
     return ok;
@@ -338,6 +346,9 @@ inline void refresh() {
         vts = {g.vt_money, g.vt_manager};
         for (auto v : g.vt_inv) vts.push_back(v);
         vts.push_back(g.vt_player);
+        vts.push_back(g.vt_equipment);
+        vts.push_back(g.vt_prison_data);
+        vts.push_back(g.vt_prison_sensor);
     }
     DWORD t0 = GetTickCount();
     auto found = scan(vts);
@@ -361,7 +372,8 @@ inline void refresh() {
             uint32_t n = rdv<uint32_t>(o + 0x48);
             int cap = rdv<int>(o + 0x58);
             Kind k = INV_KINDS[c];
-            if (k == K_BACKPACK && cap < 0) k = K_STASH;
+            const int UNLIMITED = 100000;
+            if (k == K_BACKPACK && (cap < 0 || cap >= UNLIMITED)) k = K_STASH;
             if (n > 4000 || ((!arr || n == 0) && k != K_STASH)) continue;
             Inventory inv{o, k, cap, {}};
             for (uint32_t i = 0; i < n; i++) {
@@ -405,6 +417,9 @@ inline void refresh() {
 
     std::lock_guard<std::mutex> l(mx);
     g.players = found[2 + N_INV_CLASSES];
+    g.equipment = found[3 + N_INV_CLASSES];
+    g.prison_data = found[4 + N_INV_CLASSES];
+    g.prison_sensors = found[5 + N_INV_CLASSES];
     g.wallets = wallets;
     g.invs = std::move(invs);
     g.descs = std::move(descs);
@@ -499,16 +514,44 @@ inline std::vector<Kind> give_order(Kind first) {
     return order;
 }
 
+inline bool in_module(uintptr_t p) {
+    for (auto& s : sections(g.base))
+        if (p >= s.start && p < s.end) return true;
+    return false;
+}
+
+inline uintptr_t live_template(uintptr_t inv) {
+    uintptr_t arr = rdv<uintptr_t>(inv + 0x40);
+    uint32_t n = rdv<uint32_t>(inv + 0x48);
+    for (uint32_t i = 0; i < n && i < 4000; i++) {
+        uintptr_t it = rdv<uintptr_t>(arr + i * 8);
+        uintptr_t context_vt = rdv<uintptr_t>(it + 0x40 + 0x18), desc = rdv<uintptr_t>(it + 0x60);
+        if (in_module(context_vt) && desc && g.descs.size() && !rdv<uintptr_t>(it + 0xA0) && rdv<int>(it + 0x40) > 0) return it;
+    }
+    return 0;
+}
+
+inline bool live_inventory(uintptr_t inv) {
+    uintptr_t vt = rdv<uintptr_t>(inv);
+    for (uintptr_t v : g.vt_inv)
+        if (v && vt == v) return true;
+    return false;
+}
+
 inline int give_anywhere(Kind first, uintptr_t desc, int amount) {
-    for (Kind k : give_order(first)) {
-        uintptr_t inv, tmpl;
-        {
-            std::lock_guard<std::mutex> l(mx);
-            auto* i = find_inventory(k);
-            if (!i) continue;
-            inv = i->obj;
-            tmpl = pick_template(i);
-        }
+    uintptr_t fallback_template = 0;
+    std::vector<std::pair<Kind, uintptr_t>> targets;
+    {
+        std::lock_guard<std::mutex> l(mx);
+        for (Kind k : give_order(first))
+            if (auto* i = find_inventory(k)) targets.push_back({k, i->obj});
+        for (auto& inv : g.invs)
+            if (!fallback_template && live_inventory(inv.obj)) fallback_template = live_template(inv.obj);
+    }
+    for (auto [k, inv] : targets) {
+        if (!live_inventory(inv)) continue;
+        uintptr_t tmpl = live_template(inv);
+        if (!tmpl) tmpl = fallback_template;
         if (tmpl && give(inv, tmpl, desc, amount)) return k;
     }
     return -1;

@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
     for (auto* k : {"god", "stamina", "supplies", "one_hit", "hook", "uv", "ammo", "z_spits", "no_fall", "durability"}) cheats::find(k)->on = true;
     for (auto& t : cheats::TWEAKS)
         for (auto* n : t.params) CHECK(cheats::param_ids.count(n));
-    game::wr<float>(w.params + cheats::param_ids["GrapplingHookCooldown"] * 16 + 8, 12.5f);
+    game::wr<float>(w.params + cheats::param_ids["RopeEnergyRegenTime"] * 16 + 8, 12.5f);
     game::wr<float>(w.params + cheats::param_ids["AirKickRangeMul"] * 16 + 8, 1.0f);
     cheats::find("no_reload")->on = true;
     cheats::find_tweak("h_dropkick")->factor = 3.0f;
@@ -140,10 +140,10 @@ int main(int argc, char** argv) {
     CHECK(game::count(mat->items[0]) == 999);
     auto param = [&](const char* n) { return w.params + cheats::param_ids[n] * 16 + 8; };
     auto cached = [&](const char* n) { return w.cache + (cheats::param_ids[n] + 1) * 40; };
-    for (auto* n : {"GrapplingHookCooldown", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(0, cheats::param_ids[n] + 1);
-    CHECK(cheats::reads_of("GrapplingHookCooldown") == 1);
-    CHECK(game::rdv<float>(cached("GrapplingHookCooldown") + 0x10) == 0 && (game::rdv<uint8_t>(cached("GrapplingHookCooldown") + 0x20) & 1));
-    CHECK(game::rdv<uintptr_t>(cached("GrapplingHookCooldown") + 8) == cheats::vt_param_float && cheats::vt_param_float);
+    for (auto* n : {"RopeEnergyRegenTime", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(0, cheats::param_ids[n] + 1);
+    CHECK(cheats::reads_of("RopeEnergyRegenTime") == 1);
+    CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 0.01f && (game::rdv<uint8_t>(cached("RopeEnergyRegenTime") + 0x20) & 1));
+    CHECK(game::rdv<uintptr_t>(cached("RopeEnergyRegenTime") + 8) == cheats::vt_param_float && cheats::vt_param_float);
     CHECK(game::rdv<uint8_t>(cached("CanUseHook") + 0x10) == 1 && game::rdv<uintptr_t>(cached("CanUseHook") + 8) == cheats::vt_param_bool);
     CHECK(game::rdv<float>(param("AirKickRangeMul")) == 3.0f && game::rdv<float>(cached("AirKickRangeMul") + 0x10) == 3.0f);
     CHECK(game::g.stats[ST_AmmoCount].off == fake::AMMO_OFF && game::g.stats[ST_DepletionTime].off == fake::DEPLETION_OFF);
@@ -157,7 +157,7 @@ int main(int argc, char** argv) {
     game::wr<float>(w.enemy_health + 0x78, 300);
     fatrainer_module_update(w.enemy_health);
     CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
-    CHECK(game::rdv<float>(param("GrapplingHookCooldown")) == 0 && game::rdv<uint8_t>(param("CanUseHook")) == 1);
+    CHECK(game::rdv<float>(param("RopeEnergyRegenTime")) == 0.01f && game::rdv<uint8_t>(param("CanUseHook")) == 1);
     CHECK(game::rdv<uint8_t>(param("InfiniteStamina")) == 1 && game::rdv<float>(param("FlashlightRechargeSpeed")) == 1000);
     CHECK(game::rdv<uint8_t>(param("CanUseHook")) == 1 && game::rdv<float>(param("ZombieSpitLightDisableAmmoRegenTime3v1")) == 0.05f);
     CHECK(fake_rules[0] == 1);
@@ -165,9 +165,9 @@ int main(int argc, char** argv) {
     cheats::find_tweak("h_dropkick")->factor = 1.0f;
     cheats::tick();
     CHECK(game::rdv<float>(param("AirKickRangeMul")) == 1.0f && game::rdv<uint64_t>(cached("AirKickRangeMul")) == ~0ull);
-    CHECK(game::rdv<uint64_t>(cached("GrapplingHookCooldown")) == ~0ull && game::rdv<uint64_t>(cached("CanUseHook")) == ~0ull);
+    CHECK(game::rdv<uint64_t>(cached("RopeEnergyRegenTime")) == ~0ull && game::rdv<uint64_t>(cached("CanUseHook")) == ~0ull);
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 8 && game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 10.0f);
-    CHECK(game::rdv<float>(param("GrapplingHookCooldown")) == 12.5f && game::rdv<uint8_t>(param("CanUseHook")) == 0 && fake_rules[0] == 0);
+    CHECK(game::rdv<float>(param("RopeEnergyRegenTime")) == 12.5f && game::rdv<uint8_t>(param("CanUseHook")) == 0 && fake_rules[0] == 0);
     (void)flag;
     CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == game::g.vt_human);
     printf("cheats: %s\n", cheats::describe().c_str());
@@ -190,9 +190,32 @@ int main(int argc, char** argv) {
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
 
     {
+        uintptr_t equipment = w.alloc(0x80), prison = w.alloc(0x80);
+        w.put<uintptr_t>(equipment, game::g.vt_equipment);
+        w.put<float>(equipment + 0x20, 0.3f);
+        w.put<uintptr_t>(prison, game::g.vt_prison_data);
+        w.put<float>(prison + 0x44, 100.0f);
+        w.put<float>(prison + 0x48, 160.0f);
+        game::g.equipment = {equipment};
+        game::g.prison_data = {prison};
+        CHECK(game::g.vt_equipment && game::g.vt_prison_data && game::g.vt_prison_sensor);
+        cheats::find("uv")->on = true;
+        cheats::find("prison_pause")->on = true;
+        cheats::tick();
+        Sleep(300);
+        cheats::tick();
+        CHECK(game::rdv<float>(equipment + 0x20) == 1.0f);
+        float start = game::rdv<float>(prison + 0x44), end = game::rdv<float>(prison + 0x48);
+        CHECK(start > 100.2f && start < 101.0f && std::fabs(end - start - 60.0f) < 0.01f);
+        cheats::find("uv")->on = false;
+        cheats::find("prison_pause")->on = false;
+        cheats::tick();
+    }
+
+    {
         uintptr_t record = w.alloc(0x40);
         memcpy((void*)(record + 12), cheats::LOCK_DIFFICULTIES[2], sizeof cheats::LOCK_DIFFICULTIES[2]);
-        auto found = game::find_float_records(cheats::lock_patterns());
+        auto found = game::find_float_records(cheats::lock_patterns(), game::g.base);
         CHECK(found.size() == 1 && found[0] == record + 12);
         cheats::lock_records = found;
         cheats::find("lockpick")->on = true;
@@ -210,8 +233,14 @@ int main(int argc, char** argv) {
         uintptr_t refusing = w.alloc(0x80), accepting = w.alloc(0x80);
         w.put<uintptr_t>(refusing, (uintptr_t)refusing_vt);
         w.put<uintptr_t>(accepting, (uintptr_t)accepting_vt);
-        w.put<uintptr_t>(refusing + 0x40, w.alloc(8 * 16));
+        uintptr_t refusing_items = w.alloc(8 * 16);
+        w.put<uintptr_t>(refusing + 0x40, refusing_items);
         w.put<uintptr_t>(accepting + 0x40, w.alloc(8 * 16));
+        w.put<uintptr_t>(refusing_items, mat->items[0].addr);
+        w.put<uint32_t>(refusing + 0x48, 1);
+        uintptr_t saved_vts[2] = {game::g.vt_inv[2], game::g.vt_inv[3]};
+        game::g.vt_inv[2] = (uintptr_t)refusing_vt;
+        game::g.vt_inv[3] = (uintptr_t)accepting_vt;
         auto saved = game::g.invs;
         game::Item gauze = mat->items[0], alcohol = mat->items[1];
         game::g.invs = {{refusing, game::K_MATERIALS, -1, {gauze}}, {accepting, game::K_TOOLS, -1, {alcohol}}};
@@ -222,6 +251,8 @@ int main(int argc, char** argv) {
         game::g.invs = {{refusing, game::K_MATERIALS, -1, {gauze}}};
         CHECK(game::give_anywhere(game::K_MATERIALS, king, 3) == -1);
         game::g.invs = saved;
+        game::g.vt_inv[2] = saved_vts[0];
+        game::g.vt_inv[3] = saved_vts[1];
     }
 
     config::cfg.accent[0] = 0.25f;
@@ -240,7 +271,10 @@ int main(int argc, char** argv) {
     CHECK(config::cfg.pages[2].id == "settings" && config::cfg.pages[2].visible);
     CHECK(config::cfg.tweaks.size() == 1 && config::cfg.tweaks[0].second == 4.5f);
     config::normalize({"player", "combat", "skills", "settings"});
-    CHECK(config::cfg.pages[2].id == "skills" && config::cfg.pages[3].id == "settings");
+    CHECK(config::cfg.pages[1].id == "skills" && config::cfg.pages[3].id == "settings");
+    config::cfg.pages = {{"player", true}, {"combat", true}, {"give", true}, {"settings", true}};
+    config::normalize({"player", "combat", "prison", "give", "settings"});
+    CHECK(config::cfg.pages[2].id == "prison" && config::cfg.pages[3].id == "give");
     DeleteFileA(path.c_str());
 
     printf(fails ? "SELFTEST FAILED (%d)\n" : "SELFTEST OK\n", fails);

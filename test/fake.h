@@ -23,6 +23,7 @@ struct World {
         uintptr_t it = alloc(0x100);
         put<int>(it + 0x40, count);
         put<uintptr_t>(it + 0x60, desc[id]);
+        put<uintptr_t>(it + 0x58, game::g.base + 0x1000);
         return it;
     }
     uintptr_t inventory(uintptr_t vt, int cap, std::vector<std::pair<const char*, int>> items) {

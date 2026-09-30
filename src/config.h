@@ -37,11 +37,14 @@ inline void normalize(const std::vector<std::string>& known) {
         if (std::find(known.begin(), known.end(), p.id) != known.end() &&
             std::none_of(out.begin(), out.end(), [&](auto& o) { return o.id == p.id; }))
             out.push_back(p);
-    for (auto& id : known)
-        if (std::none_of(out.begin(), out.end(), [&](auto& o) { return o.id == id; })) {
-            auto settings = std::find_if(out.begin(), out.end(), [](auto& o) { return o.id == "settings"; });
-            out.insert(id == "settings" ? out.end() : settings, {id, true});
-        }
+    for (size_t k = 0; k < known.size(); k++) {
+        auto has = [&](const std::string& id) { return std::find_if(out.begin(), out.end(), [&](auto& o) { return o.id == id; }); };
+        if (has(known[k]) != out.end()) continue;
+        auto at = out.begin();
+        for (size_t j = k; j-- > 0;)
+            if (has(known[j]) != out.end()) { at = has(known[j]) + 1; break; }
+        out.insert(known[k] == "settings" ? out.end() : at, {known[k], true});
+    }
     for (auto& p : out)
         if (p.id == "settings") p.visible = true;
     cfg.pages = out;

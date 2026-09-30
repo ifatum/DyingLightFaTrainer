@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7
+
+- New: Prison page for Harran Prison. Pause the run timer and the reward room countdown, teleport to every prison section, and save and load your position anywhere.
+- Infinite grappling hook: the hook's wait comes from rope energy, not from a cooldown, so the rope now recharges instantly.
+- Infinite UV flashlight: the UV charge is held full directly on your equipment.
+- Refill health and stamina writes full health and stamina itself if the game's refill leaves them low.
+- Instant lockpicking also searches the game's own data for the lock difficulty settings.
+- Fixed: giving items could crash the game when the item used as a template had just been removed. The trainer now takes it from your live inventory and checks it first.
+- Fixed: the stash shows on the Stash page again (its capacity is unlimited, not -1).
+- Fixed: memory scans under Proton skip Wine's own thread memory, which showed extra wallets and players.
+- New pages are placed next to their group in the sidebar when you update.
+
 ## 1.6
 
 - Infinite grappling hook and infinite UV flashlight: the trainer now hooks the function the game uses to read these settings, so the new values reach every place that uses them.

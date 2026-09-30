@@ -17,6 +17,7 @@
 - **Player**: god mode, infinite stamina, infinite grappling hook, infinite UV flashlight, instant lockpicking, no fall damage, movement speed, jump height, instant refill
 - **Combat**: one hit kill, infinite ammo, no reload, infinite consumables, unbreakable weapons
 - **Skills**: XP multiplier, Level up with XP, or set any skill tree level (+1, +10, max, -1, -10)
+- **Prison**: pause the Harran Prison timers, teleport to every section, save and load your position
 - **Night Hunter**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, long camouflage
 - **PvP**: one reach slider per attack (pounce, ground pound, tackle, claws, spit, death from above, dropkick, kicks, melee). At Max the pounce, dropkick and death from above also hit targets that are not in front of you
 - **Cash / Backpack / Stash / Materials**: set your money and any stack count
