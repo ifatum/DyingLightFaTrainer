@@ -689,6 +689,64 @@ inline void go_to(cheats::Vec3 to) {
     });
 }
 
+inline void route_action(std::function<void()> f) {
+    on_game_thread([f] {
+        std::lock_guard<std::mutex> l(game::mx);
+        f();
+    });
+}
+
+inline void route_card() {
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        route_action([] { cheats::load_route(route_path()); });
+    }
+    begin_card("route", "ROUTE");
+    note("Record your route once: press Record, play the prison normally, press Stop at the end. Replay then teleports you along it in small "
+         "steps, so every quest trigger fires in order. It pauses where you stood still while recording (fights, doors): clear the wave, "
+         "then press Continue.");
+    ImGui::Dummy({0, S(2)});
+    int mode = cheats::route_mode;
+    size_t stops = 0;
+    for (auto& p : cheats::route) stops += p.stop;
+    char status[160];
+    if (mode == cheats::ROUTE_RECORDING) snprintf(status, sizeof status, "Recording: %zu points, %zu stops", cheats::route.size(), stops);
+    else if (mode == cheats::ROUTE_REPLAYING) snprintf(status, sizeof status, "Replaying: point %zu of %zu", cheats::route_at, cheats::route.size());
+    else if (mode == cheats::ROUTE_PAUSED) snprintf(status, sizeof status, "Paused at a stop (point %zu of %zu). Clear the fight, then Continue.", cheats::route_at, cheats::route.size());
+    else if (cheats::route.empty()) snprintf(status, sizeof status, "No route recorded yet.");
+    else snprintf(status, sizeof status, "Saved route: %zu points, %zu stops.", cheats::route.size(), stops);
+    label(status);
+    ImGui::Dummy({0, S(2)});
+    if (mode == cheats::ROUTE_RECORDING) {
+        if (accent_button("Stop recording")) route_action([] {
+            cheats::route_mode = cheats::ROUTE_IDLE;
+            toast(cheats::save_route(route_path()) ? "Route saved" : "Route could not be saved");
+        });
+    } else if (mode == cheats::ROUTE_IDLE) {
+        if (ImGui::Button("Record")) route_action([] {
+            cheats::route.clear();
+            cheats::route_at = 0;
+            cheats::route_mode = cheats::ROUTE_RECORDING;
+        });
+        ImGui::SameLine();
+        ImGui::BeginDisabled(cheats::route.empty());
+        if (accent_button("Replay")) route_action([] {
+            cheats::route_at = 0;
+            cheats::route_mode = cheats::ROUTE_REPLAYING;
+        });
+        ImGui::EndDisabled();
+    } else {
+        if (mode == cheats::ROUTE_PAUSED && accent_button("Continue")) route_action([] { cheats::route_mode = cheats::ROUTE_REPLAYING; });
+        if (mode == cheats::ROUTE_PAUSED) ImGui::SameLine();
+        if (ImGui::Button("Stop replay")) route_action([] {
+            cheats::route_mode = cheats::ROUTE_IDLE;
+            cheats::route_at = 0;
+        });
+    }
+    end_card();
+}
+
 inline void prison_page() {
     begin_card("about");
     note("For the Harran Prison mode. Load into the prison first. Timers and teleports are decided by the host, so use them in your own game.");
@@ -728,6 +786,7 @@ inline void prison_page() {
     }
     ImGui::EndDisabled();
     end_card();
+    route_card();
     begin_card("position", "YOUR POSITION");
     note("Save where you stand and jump back to it later. Works everywhere, not only in the prison.");
     ImGui::Dummy({0, S(2)});

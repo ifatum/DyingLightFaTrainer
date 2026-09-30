@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <cstdio>
 #include <set>
 #include "game.h"
 
@@ -736,14 +737,74 @@ inline bool move_body(Vec3 to) {
     return true;
 }
 
-inline void teleport(Vec3 to) {
+inline void teleport(Vec3 to, bool quiet = false) {
     if (!alive(player) || !set_position || g.player_control < 0 || !std::isfinite(to.x)) return;
     Vec3 from = player_position();
     bool body = move_body(to);
     set_position(player + g.player_control, &to);
     Vec3 now = player_position();
-    logf_hook("teleport: from %.1f %.1f %.1f to %.1f %.1f %.1f, now %.1f %.1f %.1f, body %s", from.x, from.y, from.z, to.x, to.y, to.z, now.x, now.y,
+    if (!quiet) logf_hook("teleport: from %.1f %.1f %.1f to %.1f %.1f %.1f, now %.1f %.1f %.1f, body %s", from.x, from.y, from.z, to.x, to.y, to.z, now.x, now.y,
               now.z, body ? "moved" : "missing");
+}
+
+struct RoutePoint { Vec3 pos; bool stop; };
+enum RouteMode { ROUTE_IDLE, ROUTE_RECORDING, ROUTE_REPLAYING, ROUTE_PAUSED };
+const float ROUTE_STEP = 2.0f;
+const DWORD ROUTE_STOP_AFTER = 4000;
+inline std::vector<RoutePoint> route;
+inline std::atomic<int> route_mode{ROUTE_IDLE};
+inline size_t route_at = 0;
+inline DWORD route_still_since = 0;
+
+inline float distance(Vec3 a, Vec3 b) { return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)); }
+
+inline void record_route(Vec3 here, DWORD now) {
+    if (!std::isfinite(here.x)) return;
+    if (route.empty() || distance(route.back().pos, here) >= ROUTE_STEP) {
+        route.push_back({here, false});
+        route_still_since = now;
+    } else if (now - route_still_since >= ROUTE_STOP_AFTER) {
+        route.back().stop = true;
+    }
+}
+
+inline void replay_route() {
+    if (route_at >= route.size()) {
+        route_mode = ROUTE_IDLE;
+        route_at = 0;
+        return;
+    }
+    teleport(route[route_at].pos, true);
+    if (route[route_at++].stop) route_mode = ROUTE_PAUSED;
+}
+
+inline void route_tick() {
+    if (!alive(player)) return;
+    if (route_mode == ROUTE_RECORDING) record_route(player_position(), GetTickCount());
+    else if (route_mode == ROUTE_REPLAYING) replay_route();
+}
+
+inline bool save_route(const std::string& path) {
+    FILE* f = fopen(path.c_str(), "w");
+    if (!f) return false;
+    for (auto& p : route) fprintf(f, "%.2f %.2f %.2f %d\n", p.pos.x, p.pos.y, p.pos.z, (int)p.stop);
+    fclose(f);
+    return true;
+}
+
+inline bool load_route(const std::string& path) {
+    FILE* f = fopen(path.c_str(), "r");
+    if (!f) return false;
+    std::vector<RoutePoint> out;
+    RoutePoint p;
+    int stop;
+    while (fscanf(f, "%f %f %f %d", &p.pos.x, &p.pos.y, &p.pos.z, &stop) == 4) {
+        p.stop = stop != 0;
+        out.push_back(p);
+    }
+    fclose(f);
+    route = out;
+    return true;
 }
 
 inline int pause_prison() {
@@ -799,6 +860,7 @@ inline void tick() {
     bool uv_missing = is_on("uv") && !keep_uv_charge();
     bool rope_missing = is_on("hook") && !keep_rope_energy();
     patch_lockpick(is_on("lockpick"));
+    route_tick();
     objects_missing = prison_missing || uv_missing || rope_missing;
     game::reapply_stats();
     keep_stacks(is_on("ammo"), is_on("supplies"));

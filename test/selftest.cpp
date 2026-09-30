@@ -280,6 +280,32 @@ int main(int argc, char** argv) {
     }
 
     {
+        cheats::route.clear();
+        cheats::record_route({0, 0, 0}, 1000);
+        cheats::record_route({1, 0, 0}, 1100);
+        cheats::record_route({3, 0, 0}, 1200);
+        cheats::record_route({3.5f, 0, 0}, 3000);
+        CHECK(cheats::route.size() == 2 && !cheats::route[1].stop);
+        cheats::record_route({3.5f, 0, 0}, 5300);
+        cheats::record_route({10, 0, 0}, 5400);
+        CHECK(cheats::route.size() == 3 && cheats::route[1].stop && !cheats::route[2].stop);
+        std::string file = "selftest_route.txt";
+        CHECK(cheats::save_route(file));
+        cheats::route.clear();
+        CHECK(cheats::load_route(file) && cheats::route.size() == 3 && cheats::route[1].stop && cheats::route[2].pos.x == 10);
+        DeleteFileA(file.c_str());
+        cheats::route_at = 0;
+        cheats::route_mode = cheats::ROUTE_REPLAYING;
+        cheats::replay_route();
+        cheats::replay_route();
+        CHECK(cheats::route_mode == cheats::ROUTE_PAUSED && cheats::route_at == 2);
+        cheats::route_mode = cheats::ROUTE_REPLAYING;
+        cheats::replay_route();
+        cheats::replay_route();
+        CHECK(cheats::route_mode == cheats::ROUTE_IDLE && cheats::route_at == 0);
+    }
+
+    {
         static uintptr_t refusing_vt[8] = {}, accepting_vt[8] = {};
         refusing_vt[6] = (uintptr_t)&refuse_add;
         accepting_vt[6] = (uintptr_t)&fake_add;

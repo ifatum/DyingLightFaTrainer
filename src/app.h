@@ -86,6 +86,11 @@ inline void request_refresh() {
     }).detach();
 }
 
+inline std::string route_path() {
+    std::string ini = config::default_path();
+    return ini.substr(0, ini.find_last_of("\\/") + 1) + "fatrainer_route.txt";
+}
+
 inline void save_config() {
     auto& c = config::cfg;
     c.cheats_on.clear();
