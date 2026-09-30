@@ -643,6 +643,8 @@ inline void pvp_page() {
     tweak_sliders(cheats::G_ZOMBIE);
     end_card();
     begin_card("human", "AS A SURVIVOR");
+    cheat_switch("dfa_assist");
+    ImGui::Dummy({0, S(4)});
     tweak_sliders(cheats::G_HUMAN);
     end_card();
 }
@@ -671,7 +673,7 @@ inline const Page PAGES[] = {
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "BE THE ZOMBIE", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
     {"pvp", "PvP", "Attack ranges and aim angles", pvp_page, always, "BE THE ZOMBIE",
-     {"z_pounce", "z_aim", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dropkick", "h_kicks", "h_melee", "h_angle"}},
+     {"dfa_assist", "z_pounce", "z_aim", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dropkick", "h_kicks", "h_melee", "h_angle"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},
     {"stash", "Stash", "Items stored in your stash. Press Edit to change a weapon", [] { inventory_page(game::K_STASH); }, always, "ITEMS", {}},
@@ -900,6 +902,8 @@ inline void draw() {
         label(page->subtitle);
         ImGui::Dummy({0, S(8)});
         ImGui::BeginChild("page", {0, 0});
+        static const char* preview_scroll = getenv("DLT_SCROLL");
+        if (preview_scroll && ImGui::GetFrameCount() > 5 && ImGui::GetFrameCount() < 30) ImGui::SetScrollY((float)atof(preview_scroll));
         page->draw();
         ImGui::EndChild();
         ImGui::EndChild();

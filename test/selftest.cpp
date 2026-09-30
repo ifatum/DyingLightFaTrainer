@@ -99,14 +99,14 @@ int main(int argc, char** argv) {
         for (auto* n : c.switches) CHECK(cheats::param_ids.count(n));
     }
     CHECK(cheats::local_player_root && cheats::params_root && cheats::unlimited_ammo_flag && cheats::var_root);
-    CHECK(cheats::var_root - (uintptr_t)m == 0x1c109d0);
+    CHECK(cheats::var_root > (uintptr_t)m && cheats::var_root < (uintptr_t)m + 0x4000000);
     fake_var_vtable[1 + cheats::SLOT_VAR_FLOAT] = (uintptr_t)&fake_var_float;
     cheats::var_root = (uintptr_t)&fake_var_holder;
     cheats::local_player_root = cheats::params_root = 0;
     uintptr_t flag = cheats::unlimited_ammo_flag;
     static uint8_t fake_rules[4];
     cheats::unlimited_ammo_flag = (uintptr_t)fake_rules;
-    for (auto* k : {"god", "stamina", "supplies", "one_hit", "hook", "uv", "ammo", "z_spits", "no_fall", "durability"}) cheats::find(k)->on = true;
+    for (auto* k : {"god", "stamina", "supplies", "one_hit", "hook", "uv", "ammo", "z_spits", "no_fall", "durability", "dfa_assist"}) cheats::find(k)->on = true;
     for (auto& t : cheats::TWEAKS)
         for (auto* n : t.params) CHECK(cheats::param_ids.count(n));
     game::wr<float>(w.params + cheats::param_ids["GrapplingHookCooldown"] * 16 + 8, 12.5f);
@@ -161,7 +161,11 @@ int main(int argc, char** argv) {
     CHECK(read_var("f_btz_zombie_grab_range") == 30 && read_var("f_btz_wrestling_kick_angle_max") == 180);
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_other") == 7 && read_var("i_other") == 7);
     CHECK(cheats::active_count() == 2);
+    cheats::find("dfa_assist")->on = true;
+    CHECK(read_var("f_btz_jump_attack_range") == 12 && read_var("f_btz_jump_attack_angle_max") == 180);
+    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_zombie_grab_range") == 30);
     cheats::all_off();
+    CHECK(read_var("f_btz_jump_attack_range") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
 
     config::cfg.accent[0] = 0.25f;

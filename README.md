@@ -18,7 +18,7 @@
 - **Combat**: one hit kill, infinite ammo, no reload, infinite consumables, unbreakable weapons
 - **Skills**: XP multiplier, raise or lower any skill tree level (+1, +10, max, -1, -10)
 - **Night Hunter**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, long camouflage
-- **PvP**: range and aim angle sliders for pounce, ground pound, tackle, claws, spit, death from above, dropkick, kicks and melee
+- **PvP**: death from above assist, range and aim angle sliders for pounce, ground pound, tackle, claws, spit, death from above, dropkick, kicks and melee
 - **Cash / Backpack / Stash / Materials**: set money and any stack count
 - **Give items**: spawn any weapon, consumable, material or blueprint
 - **Weapon editor**: damage, durability, crits, knockback, stamina, reach, magazine, reload time, upgrades, repairs, rarity

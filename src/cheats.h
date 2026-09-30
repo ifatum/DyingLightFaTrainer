@@ -26,6 +26,7 @@ struct Cheat {
     const char* hint;
     std::vector<std::pair<const char*, float>> numbers;
     std::vector<const char*> switches;
+    std::vector<std::pair<const char*, float>> vars = {};
     std::atomic<bool> on{false};
 };
 
@@ -56,6 +57,10 @@ inline Cheat CHEATS[] = {
       {"FastGrabBreakCooldown", 0}},
      {}},
     {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}},
+    {"dfa_assist", "Death from above assist", "Start a death from above from far away and at any angle. The attack pulls you onto the hunter.",
+     {{"JumpAttackRange", 30}}, {},
+     {{"f_btz_jump_attack_range", 12}, {"f_btz_jump_attack_range_velocity_factor", 0.5f}, {"f_btz_jump_attack_angle_max", 180},
+      {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
 };
@@ -391,6 +396,10 @@ inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, u
     float v = original_var_float(self, name, scope, extra);
     const char* s = name ? *(const char**)name : nullptr;
     if (!s || strncmp(s, "f_btz_", 6)) return v;
+    for (auto& c : CHEATS)
+        if (c.on)
+            for (auto& [var, value] : c.vars)
+                if (!strcmp(s, var)) return value;
     float factor = 1.0f, limit = 0;
     for (auto& t : TWEAKS)
         for (auto& var : t.vars)
@@ -399,16 +408,18 @@ inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, u
     return limit > 0 ? std::clamp(scaled, -limit, limit) : scaled;
 }
 
-inline bool var_tweaks_active() {
+inline bool var_hook_needed() {
     for (auto& t : TWEAKS)
         if (!t.vars.empty() && t.factor != 1.0f) return true;
+    for (auto& c : CHEATS)
+        if (!c.vars.empty() && c.on) return true;
     return false;
 }
 
 inline void install_var_hook() {
     uintptr_t object = rdv<uintptr_t>(var_root), current = rdv<uintptr_t>(object);
     uintptr_t ours = (uintptr_t)&var_vtable[1];
-    if (!current || current == ours || !var_tweaks_active()) return;
+    if (!current || current == ours || !var_hook_needed()) return;
     for (size_t n = VAR_SLOTS + 1; n > SLOT_VAR_FLOAT + 1; n /= 2)
         if (rd(current - 8, var_vtable, n * 8)) {
             original_var_float = (VarFloatFn)var_vtable[1 + SLOT_VAR_FLOAT];
