@@ -6,6 +6,7 @@
 - Infinite UV flashlight: fixed. The trainer was filling the normal flashlight's battery instead of the UV charge.
 - Instant lockpicking: fixed. The game now treats every pick position as the sweet spot, so the lock always turns all the way.
 - Fixed a crash while loading into a save and when pressing Find sections: the trainer read prison section positions through the wrong part of the object. Positions are now looked up the way the game's own class layout describes, and only when you press Find sections.
+- New: Kill all enemies nearby (Combat and Prison pages). Kills every zombie and human within 80 m through the game's own kill, so quest objectives like killing the bandits or a final wave count them.
 - New: route recorder on the Prison page. Record your route once while playing normally; Replay teleports you along it in small steps so every quest trigger fires, and pauses where you stood still (fights, doors) until you press Continue. Saved in fatrainer_route.txt next to the game.
 - Prison sections are recognised again (they all showed as unnamed sections before) and listed in run order: Start, every split checkpoint (Split 1, 2, ...), the reward room and the evacuation. A Next section button jumps to them one after another.
 - Teleporting moves your physics body too, so the game no longer pulls you back to where you stood.

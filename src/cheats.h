@@ -22,7 +22,8 @@ const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
 const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
 const int UV_CHARGE = 0x50, UV_EXHAUSTED = 0x55;
 const int PRISON_START_TIME = 0x44, PRISON_END_TIME = 0x48, PRISON_REWARD_TIER = 0x4c, PRISON_STATE = 0x54;
-const int SLOT_FLOAT_FIELD_EDITOR = 34, SLOT_PHYSICS_POSITION = 52;
+const int SLOT_FLOAT_FIELD_EDITOR = 34, SLOT_PHYSICS_POSITION = 52, SLOT_KILL = 295;
+const float KILL_RADIUS = 80.0f;
 const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, VAR_SLOTS = 1024;
 const float ONE_HIT_HEALTH = 1.0f;
 inline const uint8_t SPOT_DISTANCE_CLAMP[4] = {0xF3, 0x0F, 0x5F, 0xD3}, SPOT_DISTANCE_ZERO[4] = {0x0F, 0x57, 0xD2, 0x90};
@@ -776,6 +777,23 @@ inline void replay_route() {
     }
     teleport(route[route_at].pos, true);
     if (route[route_at++].stop) route_mode = ROUTE_PAUSED;
+}
+
+inline int kill_enemies(float radius) {
+    Vec3 me = player_position();
+    if (!std::isfinite(me.x) || !get_position || g.human_control < 0) return 0;
+    int killed = 0;
+    std::lock_guard<std::mutex> l(modules_mx);
+    for (uintptr_t m : enemy_modules) {
+        if (!is_enemy_module(m) || !(rdv<float>(m + MODULE_HEALTH, NAN) > 0)) continue;
+        uintptr_t owner = rdv<uintptr_t>(m + MODULE_OWNER), kill = slot(owner, SLOT_KILL);
+        Vec3 at{NAN, NAN, NAN};
+        get_position(owner + g.human_control, &at);
+        if (!in_game_module(kill) || !(distance(me, at) <= radius)) continue;
+        ((void (*)(uintptr_t))kill)(owner);
+        killed++;
+    }
+    return killed;
 }
 
 inline void route_tick() {

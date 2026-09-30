@@ -246,6 +246,8 @@ int main(int argc, char** argv) {
             memcpy(stub + 6, &target, 8);
             CHECK(cheats::follow_jump((uintptr_t)stub) == target && cheats::follow_jump((uintptr_t)&fake_set_health) == (uintptr_t)&fake_set_health);
         }
+        CHECK(game::g.human_control == 0x18);
+        CHECK(!memcmp((const void*)(game::rdv<uintptr_t>(game::g.vt_human + cheats::SLOT_KILL * 8) + 6), "\x48\x8B\x81\xE8\x0C\x00\x00", 7));
         CHECK(game::g.player_control == 0x18 && game::g.sensor_control == 0 && game::g.sensor_rtti == 0x10);
         cheats::find("uv")->on = true;
         cheats::find("prison_pause")->on = true;

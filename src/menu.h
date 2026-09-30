@@ -567,9 +567,24 @@ inline void player_page() {
     end_card();
 }
 
+inline void kill_all_button() {
+    if (!accent_button("Kill all enemies nearby", {ImGui::GetContentRegionAvail().x, S(38)})) return;
+    std::thread([] {
+        cheats::scan_enemies();
+        on_game_thread([] {
+            std::lock_guard<std::mutex> l(game::mx);
+            int n = cheats::kill_enemies(cheats::KILL_RADIUS);
+            toast(n ? "Killed " + std::to_string(n) + (n == 1 ? " enemy" : " enemies") : std::string("No living enemies within 80 m"));
+        });
+    }).detach();
+}
+
 inline void combat_page() {
     begin_card("enemies", "ENEMIES");
     cheat_switch("one_hit");
+    ImGui::Dummy({0, S(4)});
+    kill_all_button();
+    note("Kills every zombie and human within 80 m the way the game's own scripts do, so quest objectives count them. Friendly NPCs nearby die too.");
     end_card();
     begin_card("supplies", "AMMO & SUPPLIES");
     cheat_switch("ammo");
@@ -704,7 +719,7 @@ inline void route_card() {
     }
     begin_card("route", "ROUTE");
     note("Record your route once: press Record, play the prison normally, press Stop at the end. Replay then teleports you along it in small "
-         "steps, so every quest trigger fires in order. It pauses where you stood still while recording (fights, doors): clear the wave, "
+         "steps, so every quest trigger fires in order. It pauses where you stood still while recording (fights, doors): clear the wave (Kill all enemies nearby), "
          "then press Continue.");
     ImGui::Dummy({0, S(2)});
     int mode = cheats::route_mode;
@@ -754,11 +769,16 @@ inline void prison_page() {
     begin_card("timers", "TIMERS");
     cheat_switch("prison_pause");
     end_card();
+    begin_card("fights", "FIGHTS");
+    note("Objectives like killing the bandits or a final wave need those enemies dead before the quest moves on.");
+    ImGui::Dummy({0, S(2)});
+    kill_all_button();
+    end_card();
     begin_card("sections", "TELEPORT TO A SECTION");
     auto& sections = cheats::prison_sections;
     if (sections.empty()) note("No prison sections found yet. Load into Harran Prison, then press Find sections.");
     else {
-        note("In run order: the start, every split checkpoint, the reward room and the evacuation. The prison is scripted: when an objective asks you to kill infected or a final wave, finish it where you are (One hit kill helps) and wait for the objective to change before you press Next section. Skipping a fight leaves the objective stuck.");
+        note("In run order: the start, every split checkpoint, the reward room and the evacuation. The prison is scripted: when an objective asks you to kill infected or a final wave, finish it where you are (Kill all enemies nearby above) and wait for the objective to change before you press Next section. Skipping a fight leaves the objective stuck.");
         cheats::next_section = std::clamp(cheats::next_section, 0, (int)sections.size() - 1);
         std::string next = "Next section: " + section_name(cheats::next_section);
         if (accent_button(next.c_str(), {ImGui::GetContentRegionAvail().x, S(38)})) {
