@@ -328,7 +328,7 @@ static void watch_first_frame() {
 }
 
 static void main_thread() {
-    logf("--- %s loaded", TITLE);
+    logf("--- %s %s loaded", TITLE, VERSION);
     log_environment();
     HMODULE gamedll = nullptr;
     while (!(gamedll = GetModuleHandleA("gamedll_x64_rwdi.dll"))) Sleep(200);

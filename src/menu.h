@@ -256,6 +256,11 @@ inline void open_editor(const game::Item& it, const std::string& id) {
     g_edit_request = true;
 }
 
+inline void edit_stat(int stat, float v) {
+    logf("edit: %s %s %g -> %g", g_edit_id.c_str(), STAT_KEYS[stat], game::get_stat(g_edit_desc, stat), v);
+    game::set_stat(g_edit_desc, stat, v);
+}
+
 inline void editor_popup() {
     if (g_edit_request) {
         ImGui::OpenPopup("Edit weapon");
@@ -300,11 +305,11 @@ inline void editor_popup() {
             ImGui::SetNextItemWidth(S(170));
             float e = v;
             ImGui::InputFloat("##v", &e, 0, 0, r.fmt);
-            if (ImGui::IsItemDeactivatedAfterEdit()) game::set_stat(g_edit_desc, r.stat, e);
+            if (ImGui::IsItemDeactivatedAfterEdit()) edit_stat(r.stat, e);
             ImGui::TableNextColumn();
             char b[16];
             snprintf(b, sizeof b, r.mul > 0 ? "x%g" : "+1", r.mul);
-            if (ImGui::Button(b, {S(64), 0})) game::set_stat(g_edit_desc, r.stat, r.mul > 0 ? v * r.mul : v + 1);
+            if (ImGui::Button(b, {S(64), 0})) edit_stat(r.stat, r.mul > 0 ? v * r.mul : v + 1);
             ImGui::PopID();
         }
         {
@@ -317,7 +322,10 @@ inline void editor_popup() {
                 ImGui::TextUnformatted("Rarity");
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(S(170));
-                if (ImGui::Combo("##rarity", &cur, RARITY, 6)) game::set_rarity(g_edit_item, g_edit_desc, cur);
+                if (ImGui::Combo("##rarity", &cur, RARITY, 6)) {
+                    logf("edit: %s rarity -> %s", g_edit_id.c_str(), RARITY[cur]);
+                    game::set_rarity(g_edit_item, g_edit_desc, cur);
+                }
             }
         }
         ImGui::EndTable();
