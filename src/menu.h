@@ -240,7 +240,7 @@ inline void item_label(const char* name, const char* id) {
     ImGui::PopFont();
 }
 
-inline uintptr_t g_edit_desc = 0;
+inline uintptr_t g_edit_desc = 0, g_edit_item = 0;
 inline std::string g_edit_name, g_edit_id;
 inline bool g_edit_request = false;
 inline const char* RARITY[] = {"Gray", "Green", "Blue", "Purple", "Orange", "Gold"};
@@ -251,8 +251,8 @@ inline bool editable(const game::Item& it) {
     return c == C_WEAPONS || c == C_THROWABLE;
 }
 
-inline void open_editor(uintptr_t desc, const std::string& name, const std::string& id) {
-    g_edit_desc = desc, g_edit_name = name, g_edit_id = id;
+inline void open_editor(const game::Item& it, const std::string& id) {
+    g_edit_desc = game::item_desc(it), g_edit_item = it.addr, g_edit_name = it.name, g_edit_id = id;
     g_edit_request = true;
 }
 
@@ -271,7 +271,7 @@ inline void editor_popup() {
     ImGui::PushFont(f_head);
     ImGui::TextUnformatted(g_edit_name.c_str());
     ImGui::PopFont();
-    label((g_edit_id + "  -  applies to every item of this type and stays while the trainer runs").c_str());
+    label((g_edit_id + "  -  stats apply to every item of this type while the trainer runs, rarity to this weapon").c_str());
     ImGui::Dummy({0, S(4)});
     struct Row { int stat; const char* name; const char* fmt; float mul; };
     const Row rows[] = {{ST_Damage, "Damage", "%.1f", 2},          {ST_Condition, "Durability", "%.0f", 10},
@@ -307,8 +307,8 @@ inline void editor_popup() {
             if (ImGui::Button(b, {S(64), 0})) game::set_stat(g_edit_desc, r.stat, r.mul > 0 ? v * r.mul : v + 1);
             ImGui::PopID();
         }
-        if (game::has_stat(ST_Color)) {
-            int cur = (int)game::get_stat(g_edit_desc, ST_Color);
+        {
+            int cur = game::rarity(g_edit_item, g_edit_desc);
             if (cur >= 0 && cur < 6) {
                 shown++;
                 ImGui::TableNextRow();
@@ -317,7 +317,7 @@ inline void editor_popup() {
                 ImGui::TextUnformatted("Rarity");
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(S(170));
-                if (ImGui::Combo("##rarity", &cur, RARITY, 6)) game::set_stat(g_edit_desc, ST_Color, (float)cur);
+                if (ImGui::Combo("##rarity", &cur, RARITY, 6)) game::set_rarity(g_edit_item, g_edit_desc, cur);
             }
         }
         ImGui::EndTable();
@@ -374,11 +374,11 @@ inline void inventory_page(game::Kind kind) {
             ImGui::SameLine(0, S(8));
             static bool auto_edit = getenv("DLT_EDIT") != nullptr;
             if (auto_edit && editable(it) && strstr(id, "Machete")) {
-                open_editor(game::item_desc(it), it.name, id);
+                open_editor(it, id);
                 auto_edit = false;
             }
             if (editable(it)) {
-                if (ImGui::Button("Edit", {S(64), 0})) open_editor(game::item_desc(it), it.name, id);
+                if (ImGui::Button("Edit", {S(64), 0})) open_editor(it, id);
             } else if (ImGui::Button("Set 99", {S(64), 0})) {
                 game::set_count(it, 99);
             }

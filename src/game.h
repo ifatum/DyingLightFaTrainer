@@ -273,6 +273,21 @@ inline bool set_stat(uintptr_t desc, int s, float v) {
     g.stat_overrides[{desc, s}] = v;
     return true;
 }
+const int ITEM_CONTEXT = 0x68, CONTEXT_LEVEL_SHIFT = 3;
+const uint32_t CONTEXT_COLOR = 7, CONTEXT_WHITE = 6, CONTEXT_LEVEL = 0x7f;
+inline bool own_rarity(uint32_t context) { return (context >> CONTEXT_LEVEL_SHIFT) & CONTEXT_LEVEL; }
+inline int rarity(uintptr_t item, uintptr_t desc) {
+    uint32_t c = rdv<uint32_t>(item + ITEM_CONTEXT);
+    if (own_rarity(c)) return (c & CONTEXT_COLOR) % CONTEXT_WHITE;
+    return has_stat(ST_Color) ? (int)get_stat(desc, ST_Color) : -1;
+}
+inline bool set_rarity(uintptr_t item, uintptr_t desc, int r) {
+    uint32_t c = rdv<uint32_t>(item + ITEM_CONTEXT);
+    bool ok = true;
+    if (c) ok = wr<uint32_t>(item + ITEM_CONTEXT, (c & ~CONTEXT_COLOR) | (r ? r : CONTEXT_WHITE));
+    if (!own_rarity(c)) ok = has_stat(ST_Color) && set_stat(desc, ST_Color, (float)r) && ok;
+    return ok;
+}
 inline void reapply_stats() {
     for (auto& [key, v] : g.stat_overrides)
         if (get_stat(key.first, key.second) != v) write_stat(key.first, key.second, v);

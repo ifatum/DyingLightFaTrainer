@@ -8,7 +8,7 @@
 - Infinite UV flashlight: fixed. The trainer was filling the normal flashlight's battery instead of the UV charge.
 - Instant lockpicking: fixed. The game now treats every pick position as the sweet spot, so the lock always turns all the way.
 - Fixed a crash while loading into a save and when pressing Find sections: the trainer read prison section positions through the wrong part of the object. Positions are now looked up the way the game's own class layout describes, and only when you press Find sections.
-- New: weapon rarity in the weapon editor (Gray, Green, Blue, Purple, Orange, Gold).
+- New: weapon rarity in the weapon editor (Gray, Green, Blue, Purple, Orange, Gold). Found and generated weapons keep their own rarity, so the editor changes that one weapon, and the game saves it with the weapon.
 - New: Slow down UV flashlight slider next to Infinite UV flashlight. x10 makes the charge last ten times longer.
 - New: Night Hunter level on the Skills page (-10, -1, +1, +10, Max), and a Be The Zombie ranks card to change your survivor and Night Hunter PvP rank.
 - New: Kill all enemies nearby (Combat and Prison pages). Kills every zombie and human within 80 m through the game's own kill, so quest objectives like killing the bandits or a final wave count them.

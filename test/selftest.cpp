@@ -76,6 +76,17 @@ int main(int argc, char** argv) {
     CHECK(game::get_stat(machete, ST_Damage) == 184.0f);
     CHECK(game::set_stat(machete, ST_Damage, 999.5f) && game::get_stat(machete, ST_Damage) == 999.5f);
     CHECK(game::set_stat(machete, ST_Condition, 500) && game::rdv<int>(machete + fake::CONDITION_OFF) == 500);
+    uintptr_t gen = w.item("Melee_MacheteAGen", 1), plain = w.item("Melee_MacheteAGen", 1);
+    game::wr<uint32_t>(gen + game::ITEM_CONTEXT, (3 << 3) | 2);
+    CHECK(game::rarity(gen, machete) == 2 && game::rarity(plain, machete) == 0);
+    CHECK(game::set_rarity(gen, machete, 4) && game::rdv<uint32_t>(gen + game::ITEM_CONTEXT) == ((3 << 3) | 4));
+    CHECK(game::set_rarity(gen, machete, 0) && game::rarity(gen, machete) == 0 && game::rdv<uint32_t>(gen + game::ITEM_CONTEXT) >> 3 == 3);
+    CHECK(game::get_stat(machete, ST_Color) == 0);
+    CHECK(game::set_rarity(plain, machete, 3) && game::get_stat(machete, ST_Color) == 3 && !game::rdv<uint32_t>(plain + game::ITEM_CONTEXT));
+    uintptr_t potion = w.item("Melee_MacheteAGen", 1);
+    game::wr<uint32_t>(potion + game::ITEM_CONTEXT, 0x62f69000);
+    CHECK(game::rarity(potion, machete) == 3);
+    game::set_stat(machete, ST_Color, 0);
 
     CHECK(game::money(game::g.wallets[0]) == 15855 && game::set_money(game::g.wallets[0], 30000) &&
           game::money(game::g.wallets[0]) == 30000);
