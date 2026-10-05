@@ -2,6 +2,7 @@
 #include "cheats.h"
 #include "config.h"
 #include "fake.h"
+#include "input.h"
 
 static int fails = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -519,6 +520,101 @@ int main(int argc, char** argv) {
         cheats::apply_dfa_fall_speed();
         CHECK(fall == 12.0f);
         cheats::dfa_fall_speed = real;
+    }
+
+    {
+        float m[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        float sx, sy;
+        CHECK(cheats::to_screen(m, {0, 0, 5}, 1000, 500, sx, sy) && sx == 500 && sy == 250);
+        CHECK(cheats::to_screen(m, {1, 1, 5}, 1000, 500, sx, sy) && sx == 1000 && sy == 0);
+        m[15] = -1;
+        CHECK(!cheats::to_screen(m, {0, 0, 5}, 1000, 500, sx, sy));
+
+        static float camera_matrix[0xb0 / 4 + 16];
+        for (int i = 0; i < 16; i++) camera_matrix[0xb0 / 4 + i] = (float)i;
+        static uintptr_t engine_camera_holder[2] = {0, (uintptr_t)camera_matrix};
+        static uintptr_t game_object = 0x1234;
+        auto real_root = cheats::profile_root;
+        auto real_level = cheats::active_level, real_camera = cheats::view_camera;
+        cheats::profile_root = (uintptr_t)&game_object;
+        cheats::active_level = [](uintptr_t game) -> uintptr_t { return game == 0x1234 ? 0x5678 : 0; };
+        cheats::view_camera = [](uintptr_t level) -> uintptr_t { return level == 0x5678 ? (uintptr_t)engine_camera_holder : 0; };
+        float got[16];
+        CHECK(cheats::view_matrix(got) && got[0] == 0 && got[15] == 15);
+        cheats::profile_root = real_root, cheats::active_level = real_level, cheats::view_camera = real_camera;
+        std::string engine_path = argv[1];
+        engine_path = engine_path.substr(0, engine_path.find_last_of("\\/") + 1) + "engine_x64_rwdi.dll";
+        HMODULE engine = LoadLibraryExA(engine_path.c_str(), nullptr, DONT_RESOLVE_DLL_REFERENCES);
+        auto get = cheats::get_position;
+        auto set = cheats::set_position;
+        auto fint = cheats::field_int, fenum = cheats::field_enum;
+        auto fbool = cheats::field_bool;
+        auto owner = cheats::request_ownership;
+        auto editor = cheats::float_field_editor;
+        cheats::locate_engine(engine);
+        CHECK(engine && cheats::active_level && cheats::view_camera && cheats::get_position);
+        cheats::active_level = real_level, cheats::view_camera = real_camera, cheats::get_position = get, cheats::set_position = set;
+        cheats::field_int = fint, cheats::field_enum = fenum, cheats::field_bool = fbool, cheats::request_ownership = owner;
+        cheats::float_field_editor = editor;
+    }
+    {
+        static uint8_t logical[0x800] = {};
+        *(uintptr_t*)logical = game::g.vt_logical_player;
+        *(int*)(logical + cheats::PLAYER_ROLE) = cheats::ROLE_HUNTER;
+        uintptr_t saved = game::rdv<uintptr_t>(w.player + cheats::LOGICAL_PLAYER);
+        game::wr<uintptr_t>(w.player + cheats::LOGICAL_PLAYER, (uintptr_t)logical);
+        CHECK(cheats::logical_player(w.player) == (uintptr_t)logical);
+        *(uintptr_t*)logical = 0;
+        CHECK(!cheats::logical_player(w.player));
+        game::wr<uintptr_t>(w.player + cheats::LOGICAL_PLAYER, saved);
+    }
+    {
+        uintptr_t uv = w.desc["Flashlight_Superlight"];
+        float full[3] = {50, 0, 255}, beam[3] = {32, 0, 64}, intensity = 3.5f;
+        game::wr_bytes(uv + 0x180, full, sizeof full);
+        game::wr_bytes(uv + 0x18c, full, sizeof full);
+        game::wr_bytes(uv + 0x198, beam, sizeof beam);
+        game::wr<float>(uv + 0x1bc, intensity);
+        float red[3] = {1, 0, 0};
+        cheats::apply_uv_light(true, red, 2.0f);
+        CHECK(game::rdv<float>(uv + 0x180) == 255 && game::rdv<float>(uv + 0x188) == 0 && game::rdv<float>(uv + 0x198) == 128);
+        CHECK(game::rdv<float>(uv + 0x1bc) == 7.0f && cheats::uv_originals.count(uv));
+        cheats::apply_uv_light(true, red, 2.0f);
+        CHECK(game::rdv<float>(uv + 0x1bc) == 7.0f);
+        cheats::apply_uv_light(false, red, 2.0f);
+        CHECK(game::rdv<float>(uv + 0x180) == 50 && game::rdv<float>(uv + 0x188) == 255 && game::rdv<float>(uv + 0x1bc) == 3.5f);
+    }
+    {
+        input::press(0x04, 60);
+        BYTE keys[256] = {};
+        input::add_injected_state(keys);
+        CHECK(keys[0x04] == 0x80 && keys[0x05] == 0);
+        DIDEVICEOBJECTDATA events[4] = {};
+        DWORD count = 1;
+        input::add_injected_events((BYTE*)events, sizeof events[0], &count, 4);
+        CHECK(count == 2 && events[1].dwOfs == 0x04 && events[1].dwData == 0x80);
+        Sleep(80);
+        count = 0;
+        input::add_injected_events((BYTE*)events, sizeof events[0], &count, 4);
+        CHECK(count == 1 && events[0].dwOfs == 0x04 && events[0].dwData == 0 && input::injected.empty());
+        memset(keys, 0, sizeof keys);
+        input::add_injected_state(keys);
+        CHECK(keys[0x04] == 0);
+    }
+    {
+        auto saved_cfg = config::cfg;
+        config::cfg.spit_keys[2] = 'G';
+        config::cfg.esp.on = true, config::cfg.esp.box = false, config::cfg.esp.max_distance = 450, config::cfg.esp.hunter[1] = 0.5f;
+        config::cfg.uv.on = true, config::cfg.uv.glow = 2.5f, config::cfg.uv.color[0] = 0.25f;
+        std::string ini = config::profile_dir() + "_test.ini";
+        CHECK(config::save(ini));
+        config::cfg = config::Config();
+        config::load(ini);
+        CHECK(config::cfg.spit_keys[2] == 'G' && config::cfg.spit_keys[0] == 0);
+        CHECK(config::cfg.esp.on && !config::cfg.esp.box && config::cfg.esp.max_distance == 450 && config::cfg.esp.hunter[1] == 0.5f);
+        CHECK(config::cfg.uv.on && config::cfg.uv.glow == 2.5f && config::cfg.uv.color[0] == 0.25f);
+        DeleteFileA(ini.c_str());
+        config::cfg = saved_cfg;
     }
 
     CHECK(config::profile_name("  PvP: hunter/../x  ") == "PvP hunterx");

@@ -12,6 +12,22 @@ namespace config {
 
 struct PageEntry { std::string id; bool visible = true; };
 
+struct Esp {
+    bool on = false, box = true, role = true, health_bar = true, health_text = false, distance = true, rank = false, rage = false,
+         snaplines = false, allies = true;
+    float max_distance = 300;
+    float hunter[3] = {0.95f, 0.30f, 0.25f};
+    float survivor[3] = {0.30f, 0.75f, 1.00f};
+};
+
+struct UvLight {
+    bool on = false;
+    float color[3] = {50 / 255.0f, 0, 1};
+    float glow = 1;
+};
+
+const int SPIT_KEYS = 4;
+
 struct Config {
     float accent[3] = {0.953f, 0.604f, 0.118f};
     float dim = 0.6f;
@@ -21,6 +37,9 @@ struct Config {
     std::vector<PageEntry> pages;
     std::vector<std::string> cheats_on;
     std::vector<std::pair<std::string, float>> tweaks;
+    int spit_keys[SPIT_KEYS] = {};
+    Esp esp;
+    UvLight uv;
 };
 
 inline Config cfg;
@@ -141,6 +160,26 @@ inline void load(const std::string& path) {
         else if (k == "dim") cfg.dim = (float)atof(v.c_str());
         else if (k == "scale") cfg.scale = (float)atof(v.c_str());
         else if (k == "menu_key") cfg.menu_key = atoi(v.c_str());
+        else if (k == "spit_key") {
+            int i = -1, vk = 0;
+            if (sscanf(v.c_str(), "%d,%d", &i, &vk) == 2 && i >= 0 && i < SPIT_KEYS) cfg.spit_keys[i] = vk;
+        }
+        else if (k == "esp") {
+            int f[10] = {};
+            auto& e = cfg.esp;
+            if (sscanf(v.c_str(), "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f", &f[0], &f[1], &f[2], &f[3], &f[4], &f[5], &f[6], &f[7], &f[8], &f[9],
+                       &e.max_distance) == 11) {
+                bool* flags[10] = {&e.on, &e.box, &e.role, &e.health_bar, &e.health_text, &e.distance, &e.rank, &e.rage, &e.snaplines, &e.allies};
+                for (int i = 0; i < 10; i++) *flags[i] = f[i] != 0;
+            }
+        }
+        else if (k == "esp_hunter") sscanf(v.c_str(), "%f,%f,%f", &cfg.esp.hunter[0], &cfg.esp.hunter[1], &cfg.esp.hunter[2]);
+        else if (k == "esp_survivor") sscanf(v.c_str(), "%f,%f,%f", &cfg.esp.survivor[0], &cfg.esp.survivor[1], &cfg.esp.survivor[2]);
+        else if (k == "uv_light") {
+            int on = 0;
+            auto& u = cfg.uv;
+            if (sscanf(v.c_str(), "%d,%f,%f,%f,%f", &on, &u.color[0], &u.color[1], &u.color[2], &u.glow) == 5) u.on = on != 0;
+        }
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
         else if (Profile p; read_cheat_line(k, v, p)) {
             cfg.cheats_on.insert(cfg.cheats_on.end(), p.cheats.begin(), p.cheats.end());
@@ -163,6 +202,14 @@ inline bool save(const std::string& path) {
     if (cfg.remember_cheats)
         for (auto& c : cfg.cheats_on) fprintf(f, "cheat=%s\n", c.c_str());
     for (auto& [k, v] : cfg.tweaks) fprintf(f, "tweak=%s,%.2f\n", k.c_str(), v);
+    for (int i = 0; i < SPIT_KEYS; i++)
+        if (cfg.spit_keys[i]) fprintf(f, "spit_key=%d,%d\n", i, cfg.spit_keys[i]);
+    auto& e = cfg.esp;
+    fprintf(f, "esp=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.0f\n", e.on, e.box, e.role, e.health_bar, e.health_text, e.distance, e.rank, e.rage,
+            e.snaplines, e.allies, e.max_distance);
+    fprintf(f, "esp_hunter=%.3f,%.3f,%.3f\nesp_survivor=%.3f,%.3f,%.3f\n", e.hunter[0], e.hunter[1], e.hunter[2], e.survivor[0],
+            e.survivor[1], e.survivor[2]);
+    fprintf(f, "uv_light=%d,%.3f,%.3f,%.3f,%.2f\n", cfg.uv.on, cfg.uv.color[0], cfg.uv.color[1], cfg.uv.color[2], cfg.uv.glow);
     fclose(f);
     return true;
 }

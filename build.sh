@@ -10,7 +10,7 @@ nix-shell -p pkgsCross.mingwW64.buildPackages.gcc --run "
     $IM/backends/imgui_impl_dx11.cpp $IM/backends/imgui_impl_win32.cpp src/xinput1_3.def \
     -I$IM -Isrc -DIMGUI_IMPL_WIN32_DISABLE_GAMEPAD -DIMGUI_USER_CONFIG=\\\"imconfig_dlt.h\\\" \
     -static -static-libgcc -static-libstdc++ -ld3d11 -ldxgi -ld3dcompiler -ldwmapi -lgdi32 -limm32 -luser32 -ldinput8 -ldxguid
-  x86_64-w64-mingw32-g++ -O2 -std=c++17 -o test/selftest.exe test/selftest.cpp -Isrc -static
+  x86_64-w64-mingw32-g++ -O2 -std=c++17 -o test/selftest.exe test/selftest.cpp -Isrc -static -ldinput8 -ldxguid
   x86_64-w64-mingw32-g++ -O2 -std=c++17 -o test/preview.exe test/preview.cpp -Isrc -static -ld3d11 -ldxgi
 "
 echo "built: $(pwd)/xinput1_3.dll"

@@ -5,6 +5,10 @@
 - New: configs on the Settings page. Save the cheats and sliders you have on under a name, then load or delete them with one click. Each config is a small file in fatrainer_configs next to the game.
 - New: Death from above height on the PvP page. The game only starts Death From Above once you are already falling fast (12 m/s, a long drop). At Max a normal jump is enough.
 - Fixed: PvP sliders, Slow down UV flashlight and other cheats stopping after you die. After a respawn the trainer now recognises your new character straight away and finds the game objects again on its own.
+- New: Visuals page with a player ESP for Be The Zombie and co-op: box, role (Night Hunter or survivor), health bar and number, distance, PvP rank, hunter rage, lines from the screen bottom, allies on or off, a range limit and separate colors for the Night Hunter and survivors. It keeps drawing with the menu closed.
+- New: custom UV light color and glow on the Visuals page.
+- New: spit keys on the Night Hunter page. Pick your own key for the Horde Summoner, UV Suppressor, Sense Suppressor and Toxic spit; the trainer presses the game's key for it.
+- Fixed: one hit kill no longer drops Be The Zombie nests to 1 health, so their health bar is not stuck on red.
 
 ## 1.8.1
 

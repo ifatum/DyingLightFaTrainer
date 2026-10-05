@@ -606,6 +606,67 @@ inline void combat_page() {
     note("To change damage, durability, rarity and more of one weapon, press Edit next to it on the Backpack or Stash page. Weapon stat edits from the Backpack and Stash pages stay applied while the trainer runs.");
 }
 
+inline std::string key_name(int vk) {
+    LONG code = MapVirtualKeyA(vk, MAPVK_VK_TO_VSC) << 16;
+    if ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE) code |= 1 << 24;
+    char b[64] = "";
+    if (!GetKeyNameTextA(code, b, sizeof b)) snprintf(b, sizeof b, "Key %d", vk);
+    return b;
+}
+
+inline bool pressed_key(int& vk) {
+    for (int k = 8; k < 255; k++) {
+        if (k == VK_LBUTTON || k == VK_RBUTTON || k == VK_MBUTTON || k == VK_XBUTTON1 || k == VK_XBUTTON2) continue;
+        if (k == VK_SHIFT || k == VK_CONTROL || k == VK_MENU) continue;
+        if (GetAsyncKeyState(k) & 0x8000) {
+            vk = k;
+            return true;
+        }
+    }
+    return false;
+}
+
+inline const char* SPIT_NAMES[config::SPIT_KEYS] = {"Horde Summoner spit", "UV Suppressor spit", "Sense Suppressor spit", "Toxic spit"};
+inline const char* SPIT_GAME_KEY_NAMES[config::SPIT_KEYS] = {"1", "2", "3", "4"};
+
+inline void spit_keys_card() {
+    static int capturing = -1;
+    static bool waiting_release = false;
+    begin_card("spit_keys", "SPIT KEYS");
+    note("Pick your own key for each spit type. The trainer presses the game's key for it (1 to 4) when you press yours while the menu is closed.");
+    if (capturing >= 0) {
+        int vk = 0;
+        bool any = pressed_key(vk);
+        if (waiting_release) waiting_release = any;
+        else if (any) {
+            if (vk == VK_ESCAPE) capturing = -1;
+            else {
+                config::cfg.spit_keys[capturing] = vk == VK_BACK || vk == VK_DELETE ? 0 : vk;
+                capturing = -1;
+                save_config();
+            }
+        }
+    }
+    for (int i = 0; i < config::SPIT_KEYS; i++) {
+        ImGui::PushID(i);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(SPIT_NAMES[i]);
+        ImGui::SameLine(S(220));
+        int vk = config::cfg.spit_keys[i];
+        std::string text = capturing == i ? "Press a key..." : vk ? key_name(vk) : "Not set";
+        if (ImGui::Button(text.c_str(), {S(170), 0})) capturing = i, waiting_release = true;
+        ImGui::SameLine(0, S(8));
+        ImGui::BeginDisabled(!vk);
+        if (ImGui::Button("Clear", {S(70), 0})) config::cfg.spit_keys[i] = 0, save_config();
+        ImGui::EndDisabled();
+        ImGui::SameLine(0, S(12));
+        label((std::string("game key ") + SPIT_GAME_KEY_NAMES[i]).c_str());
+        ImGui::PopID();
+    }
+    if (capturing >= 0) note("Esc cancels, Backspace or Delete removes the key.");
+    end_card();
+}
+
 inline void zombie_page() {
     begin_card("about");
     note("For Be The Zombie matches, where you play the Night Hunter and invade another player's game. Turn these on before or during a match.");
@@ -619,6 +680,7 @@ inline void zombie_page() {
     cheat_switch("z_spits");
     cheat_switch("z_camo");
     end_card();
+    spit_keys_card();
     note("Attack ranges and aim angles are on the PvP page.");
 }
 
@@ -733,6 +795,126 @@ inline void pvp_page() {
     begin_card("human", "AS A SURVIVOR");
     tweak_sliders(cheats::G_HUMAN);
     end_card();
+}
+
+inline ImU32 rgb(const float c[3], float alpha = 1.0f) { return IM_COL32((int)(c[0] * 255), (int)(c[1] * 255), (int)(c[2] * 255), (int)(alpha * 255)); }
+
+inline void outlined_text(ImDrawList* dl, ImVec2 at, ImU32 color, const char* text) {
+    for (auto d : {ImVec2{-1, 0}, ImVec2{1, 0}, ImVec2{0, -1}, ImVec2{0, 1}}) dl->AddText({at.x + d.x, at.y + d.y}, IM_COL32(0, 0, 0, 200), text);
+    dl->AddText(at, color, text);
+}
+
+inline void draw_esp() {
+    auto& e = config::cfg.esp;
+    static std::vector<cheats::EspTarget> targets;
+    float m[16];
+    static const bool sample = getenv("DLT_ESP") != nullptr;
+    if (sample) {
+        const float perspective[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0};
+        memcpy(m, perspective, sizeof m);
+        targets = {{{-1.2f, -1.0f, 6}, 180, 250, 23, 40, true, false, 7}, {{1.5f, -1.0f, 9}, 60, 175, 41, NAN, false, true, 3}};
+    } else {
+        std::unique_lock<std::mutex> l(game::mx, std::try_to_lock);
+        if (l.owns_lock()) {
+            if (!cheats::alive(cheats::player) || !cheats::view_matrix(m)) return targets.clear();
+            targets = cheats::esp_targets(e.max_distance);
+        } else if (!cheats::view_matrix(m)) {
+            return;
+        }
+    }
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    ImVec2 screen = ImGui::GetIO().DisplaySize;
+    const float BOX_WIDTH = 0.45f, BAR = 4.0f;
+    for (auto& t : targets) {
+        if (t.ally && !e.allies) continue;
+        cheats::Vec3 head{t.feet.x, t.feet.y + cheats::PLAYER_HEIGHT, t.feet.z};
+        float fx, fy, hx, hy;
+        if (!cheats::to_screen(m, t.feet, screen.x, screen.y, fx, fy) || !cheats::to_screen(m, head, screen.x, screen.y, hx, hy)) continue;
+        float h = fy - hy;
+        if (!(h > 4)) continue;
+        float w = h * BOX_WIDTH, left = fx - w / 2, right = fx + w / 2;
+        ImU32 color = rgb(t.hunter ? e.hunter : e.survivor);
+        if (e.snaplines) dl->AddLine({screen.x / 2, screen.y}, {fx, fy}, rgb(t.hunter ? e.hunter : e.survivor, 0.6f), 1.5f);
+        if (e.box) {
+            dl->AddRect({left - 1, hy - 1}, {right + 1, fy + 1}, IM_COL32(0, 0, 0, 160), 0, 0, 3.0f);
+            dl->AddRect({left, hy}, {right, fy}, color, 0, 0, 1.5f);
+        }
+        float fraction = t.max_health > 0 ? std::clamp(t.health / t.max_health, 0.0f, 1.0f) : NAN;
+        if (e.health_bar && std::isfinite(fraction)) {
+            float x = left - BAR - 3;
+            dl->AddRectFilled({x - 1, hy - 1}, {x + BAR + 1, fy + 1}, IM_COL32(0, 0, 0, 180));
+            ImU32 fill = IM_COL32((int)(255 * (1 - fraction)), (int)(220 * fraction), 60, 255);
+            dl->AddRectFilled({x, fy - h * fraction}, {x + BAR, fy}, fill);
+        }
+        if (e.role) {
+            std::string top = t.hunter ? "Night Hunter" : "Survivor";
+            if (t.ally) top += " (ally)";
+            ImVec2 size = ImGui::CalcTextSize(top.c_str());
+            outlined_text(dl, {fx - size.x / 2, hy - size.y - 2}, color, top.c_str());
+        }
+        std::vector<std::string> lines;
+        char b[64];
+        if (e.distance) snprintf(b, sizeof b, "%.0f m", t.distance), lines.push_back(b);
+        if (e.health_text && std::isfinite(t.health)) snprintf(b, sizeof b, "%.0f / %.0f HP", t.health, t.max_health), lines.push_back(b);
+        if (e.rank && t.rank >= 0) snprintf(b, sizeof b, "Rank %d", t.rank), lines.push_back(b);
+        if (e.rage && t.hunter && std::isfinite(t.rage)) snprintf(b, sizeof b, "Rage %.0f", t.rage), lines.push_back(b);
+        float y = fy + 2;
+        for (auto& line : lines) {
+            ImVec2 size = ImGui::CalcTextSize(line.c_str());
+            outlined_text(dl, {fx - size.x / 2, y}, IM_COL32(235, 235, 235, 255), line.c_str());
+            y += size.y;
+        }
+    }
+}
+
+inline void visuals_page() {
+    auto& e = config::cfg.esp;
+    bool changed = false;
+    begin_card("esp", "PLAYER ESP");
+    changed |= switch_row("Show players", "Draws every other player in your game through walls: survivors and the Night Hunter.", e.on);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##range", &e.max_distance, 25, 1000, "Up to %.0f m")) changed = true;
+    ImGui::Dummy({0, S(4)});
+    struct Option { const char* name; bool* value; };
+    Option options[] = {{"Box", &e.box}, {"Role", &e.role}, {"Health bar", &e.health_bar}, {"Health number", &e.health_text},
+                        {"Distance", &e.distance}, {"PvP rank", &e.rank}, {"Hunter rage", &e.rage}, {"Line from screen bottom", &e.snaplines},
+                        {"Show allies", &e.allies}};
+    if (ImGui::BeginTable("esp_options", 3)) {
+        for (auto& o : options) {
+            ImGui::TableNextColumn();
+            changed |= ImGui::Checkbox(o.name, o.value);
+        }
+        ImGui::EndTable();
+    }
+    ImGui::Dummy({0, S(4)});
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Night Hunter");
+    ImGui::SameLine(S(150));
+    changed |= ImGui::ColorEdit3("##hunter", e.hunter, ImGuiColorEditFlags_NoInputs);
+    ImGui::SameLine(0, S(30));
+    ImGui::TextUnformatted("Survivors");
+    ImGui::SameLine();
+    changed |= ImGui::ColorEdit3("##survivor", e.survivor, ImGuiColorEditFlags_NoInputs);
+    note("Allies and enemies come from the game's teams. The ESP keeps drawing when the menu is closed.");
+    end_card();
+
+    auto& u = config::cfg.uv;
+    begin_card("uv", "UV LIGHT");
+    changed |= switch_row("Custom UV light color", "Your UV flashlight shines in your own color.", u.on);
+    ImGui::BeginDisabled(!u.on);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Color");
+    ImGui::SameLine(S(150));
+    changed |= ImGui::ColorEdit3("##uvcolor", u.color, ImGuiColorEditFlags_NoInputs);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Glow");
+    ImGui::SameLine(S(150));
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##uvglow", &u.glow, 0.2f, 4.0f, "x%.1f")) changed = true;
+    ImGui::EndDisabled();
+    note("Glow scales the light's brightness and its visible beam. If the color does not change right away, switch the UV light off and on.");
+    end_card();
+    if (changed) save_config();
 }
 
 inline std::string section_name(size_t index) {
@@ -904,6 +1086,7 @@ inline const Page PAGES[] = {
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "MODES", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
     {"pvp", "PvP", "How far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
      {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_kicks", "h_melee"}},
+    {"visuals", "Visuals", "Player ESP and UV light color", visuals_page, always, "MODES", {}},
     {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},
@@ -1241,6 +1424,7 @@ inline void startup() {
     if (config::cfg.remember_cheats) p.cheats = config::cfg.cheats_on;
     p.tweaks = config::cfg.tweaks;
     cheats::apply_profile(p);
+    if (getenv("DLT_ESP")) config::cfg.esp.on = config::cfg.esp.health_text = config::cfg.esp.rank = config::cfg.esp.rage = true;
 }
 
 }

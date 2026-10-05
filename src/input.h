@@ -2,9 +2,11 @@
 #define DIRECTINPUT_VERSION 0x0800
 #include <windows.h>
 #include <dinput.h>
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <mutex>
+#include <vector>
 
 namespace input {
 
@@ -24,6 +26,45 @@ inline std::map<void*, bool> is_mouse;
 inline AsyncKeyFn real_async_key, real_key_state;
 inline KeyboardFn real_keyboard_state;
 
+struct Injected { BYTE dik; DWORD until; bool down_sent, up_sent; };
+inline std::mutex inject_mx;
+inline std::vector<Injected> injected;
+inline DWORD injected_sequence = 0x40000000;
+const DWORD INJECT_FORGET = 1000;
+
+inline void press(BYTE dik, DWORD ms) {
+    std::lock_guard<std::mutex> l(inject_mx);
+    injected.push_back({dik, GetTickCount() + ms, false, false});
+}
+
+inline void add_injected_state(BYTE* keys) {
+    std::lock_guard<std::mutex> l(inject_mx);
+    DWORD now = GetTickCount();
+    for (auto& k : injected)
+        if ((LONG)(k.until - now) > 0) keys[k.dik] = 0x80;
+}
+
+inline void add_injected_events(BYTE* data, DWORD size, DWORD* count, DWORD capacity) {
+    std::lock_guard<std::mutex> l(inject_mx);
+    DWORD now = GetTickCount();
+    auto emit = [&](BYTE dik, bool down) {
+        if (*count >= capacity || size < 16) return false;
+        BYTE* e = data + *count * size;
+        memset(e, 0, size);
+        DWORD fields[4] = {dik, down ? 0x80u : 0u, now, injected_sequence++};
+        memcpy(e, fields, sizeof fields);
+        ++*count;
+        return true;
+    };
+    for (auto& k : injected) {
+        if (!k.down_sent) k.down_sent = emit(k.dik, true);
+        if (k.down_sent && !k.up_sent && (LONG)(k.until - now) <= 0) k.up_sent = emit(k.dik, false);
+    }
+    injected.erase(std::remove_if(injected.begin(), injected.end(),
+                                  [&](const Injected& k) { return k.up_sent || (LONG)(now - k.until) > (LONG)INJECT_FORGET; }),
+                   injected.end());
+}
+
 inline Patched* patch_for(void* device) {
     void** vt = *(void***)device;
     for (int i = 0; i < patched_count; i++)
@@ -42,16 +83,25 @@ inline bool mouse_device(void* device) {
 
 inline HRESULT WINAPI blocked_state(void* device, DWORD size, void* data) {
     HRESULT r = patch_for(device)->get_state(device, size, data);
-    if (!blocked || FAILED(r) || !data) return r;
+    if (FAILED(r) || !data) return r;
+    if (!blocked) {
+        if (size == 256 && !mouse_device(device)) add_injected_state((BYTE*)data);
+        return r;
+    }
     if (size >= sizeof(DIMOUSESTATE) && mouse_device(device)) wheel += ((DIMOUSESTATE*)data)->lZ;
     memset(data, 0, size);
     return r;
 }
 
 inline HRESULT WINAPI blocked_data(void* device, DWORD size, DIDEVICEOBJECTDATA* data, DWORD* count, DWORD flags) {
+    DWORD capacity = count ? *count : 0;
     HRESULT r = patch_for(device)->get_data(device, size, data, count, flags);
-    if (!blocked || FAILED(r) || !data || !count || (flags & DIGDD_PEEK)) return r;
+    if (FAILED(r) || !data || !count || (flags & DIGDD_PEEK)) return r;
     bool mouse = mouse_device(device);
+    if (!blocked) {
+        if (!mouse) add_injected_events((BYTE*)data, size, count, capacity);
+        return r;
+    }
     DWORD kept = 0;
     for (DWORD i = 0; i < *count; i++) {
         auto* e = (DIDEVICEOBJECTDATA*)((BYTE*)data + i * size);

@@ -759,8 +759,13 @@ inline FieldIntFn field_int = nullptr, field_enum = nullptr;
 inline FieldBoolFn field_bool = nullptr;
 inline uintptr_t float_field_editor = 0;
 
+using EngineGetterFn = uintptr_t (*)(uintptr_t);
+inline EngineGetterFn active_level = nullptr, view_camera = nullptr;
+
 inline void locate_engine(HMODULE engine) {
     if (!engine) return;
+    active_level = (EngineGetterFn)GetProcAddress(engine, "?GetActiveLevel@IGame@@QEAAPEAVILevel@@XZ");
+    view_camera = (EngineGetterFn)GetProcAddress(engine, "?GetFirstActiveViewCamera@ILevel@@QEAAPEAVIBaseCamera@@XZ");
     get_position = (GetPositionFn)GetProcAddress(engine, "?GetWorldPosition@IControlObject@@QEBA?AVvec3@@XZ");
     set_position = (SetPositionFn)GetProcAddress(engine, "?SetWorldPosition@IControlObject@@QEAAXAEBVvec3@@@Z");
     field_int = (FieldIntFn)GetProcAddress(engine, "?GetFieldInt@CRTTIObject@@QEBAPEBVCRTTIFieldInt@@PEBDAEAH@Z");
@@ -991,6 +996,131 @@ inline int slow_uv_drain(float factor) {
     return live;
 }
 
+const int LOGICAL_PLAYER = 0x9d8, PLAYER_TEAM = 0x6dc, PLAYER_ROLE = 0x6e0, ROLE_HUNTER = 2, PLAYER_RAGE = 0x738;
+const int RANK_SURVIVOR = 0x74c, RANK_HUNTER = 0x750, CAMERA_ENGINE = 8, CAMERA_COMBINED = 0xb0;
+const float PLAYER_HEIGHT = 1.8f;
+
+struct EspTarget { Vec3 feet; float health, max_health, distance, rage; bool hunter, ally; int rank; };
+inline std::mutex esp_mx;
+inline std::vector<uintptr_t> esp_players;
+
+inline void scan_players() {
+    std::vector<uintptr_t> found;
+    for (auto& list : game::scan({g.vt_player}))
+        for (uintptr_t p : list)
+            if (alive(p) && in_game_module(rdv<uintptr_t>(p + HEALTH_OBJECT))) found.push_back(p);
+    std::lock_guard<std::mutex> l(esp_mx);
+    esp_players.swap(found);
+}
+
+inline uintptr_t logical_player(uintptr_t p) {
+    uintptr_t lp = rdv<uintptr_t>(p + LOGICAL_PLAYER);
+    return lp && g.vt_logical_player && rdv<uintptr_t>(lp) == g.vt_logical_player ? lp : 0;
+}
+
+inline bool view_matrix(float m[16]) {
+    uintptr_t game_object = profile_root ? rdv<uintptr_t>(profile_root) : 0;
+    if (!game_object || !active_level || !view_camera) return false;
+    uintptr_t level = active_level(game_object);
+    uintptr_t camera = level ? view_camera(level) : 0;
+    uintptr_t engine_camera = camera ? rdv<uintptr_t>(camera + CAMERA_ENGINE) : 0;
+    return engine_camera && rd(engine_camera + CAMERA_COMBINED, m, 16 * sizeof(float));
+}
+
+inline bool to_screen(const float m[16], Vec3 p, float width, float height, float& sx, float& sy) {
+    float w = p.x * m[12] + p.y * m[13] + p.z * m[14] + m[15];
+    if (!(w > 0.01f)) return false;
+    float x = (p.x * m[0] + p.y * m[1] + p.z * m[2] + m[3]) / w;
+    float y = (p.x * m[4] + p.y * m[5] + p.z * m[6] + m[7]) / w;
+    sx = (x + 1.0f) * width * 0.5f;
+    sy = (y - 1.0f) * height * -0.5f;
+    return std::isfinite(sx) && std::isfinite(sy);
+}
+
+inline float health_of(uintptr_t p) {
+    int off = float_getter_offset(slot(p, SLOT_HEALTH));
+    return off > 0 ? rdv<float>(p + off, NAN) : NAN;
+}
+
+inline float max_health_of(uintptr_t p) {
+    auto fn = (float(__fastcall*)(uintptr_t, int))slot(p, SLOT_MAX_HEALTH);
+    return in_game_module((uintptr_t)fn) ? fn(p, -1) : NAN;
+}
+
+inline std::vector<EspTarget> esp_targets(float max_distance) {
+    std::vector<EspTarget> out;
+    Vec3 me = player_position();
+    if (!std::isfinite(me.x) || g.player_control < 0) return out;
+    uintptr_t my_lp = logical_player(player);
+    int my_team = my_lp ? rdv<int>(my_lp + PLAYER_TEAM, -1) : -1;
+    std::vector<uintptr_t> players;
+    {
+        std::lock_guard<std::mutex> l(esp_mx);
+        players = esp_players;
+    }
+    for (uintptr_t p : players) {
+        if (p == player || !alive(p)) continue;
+        EspTarget t{};
+        if (!position_of(p + g.player_control, &t.feet)) continue;
+        t.distance = distance(me, t.feet);
+        if (!(t.distance <= max_distance)) continue;
+        t.health = health_of(p);
+        t.max_health = max_health_of(p);
+        uintptr_t lp = logical_player(p);
+        t.hunter = lp && rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER;
+        t.ally = lp && my_team >= 0 && rdv<int>(lp + PLAYER_TEAM, -2) == my_team;
+        t.rank = lp ? rdv<int>(lp + (t.hunter ? RANK_HUNTER : RANK_SURVIVOR), -1) : -1;
+        t.rage = lp ? rdv<float>(lp + PLAYER_RAGE, NAN) : NAN;
+        out.push_back(t);
+    }
+    return out;
+}
+
+const int FLASH_COLORS[] = {0x180, 0x18c, 0x198, 0x1a4, 0x1b0}, FLASH_BEAMS[] = {0x198, 0x1b0};
+const int FLASH_INTENSITIES[] = {0x1bc, 0x1c0};
+const int FLASH_PART_BYTES = 0x1c4 - 0x180;
+struct UvOriginal { uint8_t bytes[FLASH_PART_BYTES]; };
+inline std::map<uintptr_t, UvOriginal> uv_originals;
+inline bool uv_applied = false;
+
+inline bool uv_desc(uintptr_t desc) {
+    float c[3];
+    return rd(desc + FLASH_COLORS[0], c, sizeof c) && c[2] >= 200 && c[2] <= 260 && c[1] < 50 && c[0] < 120;
+}
+
+inline void apply_uv_light(bool on, const float color[3], float glow) {
+    if (!on) {
+        if (uv_applied)
+            for (auto& [desc, o] : uv_originals) game::wr_bytes(desc + FLASH_COLORS[0], o.bytes, sizeof o.bytes);
+        uv_applied = false;
+        return;
+    }
+    for (int i = 0; i < ITEM_COUNT; i++) {
+        if (std::isnan(ITEMS[i].st[ST_DepletionTime])) continue;
+        auto d = g.descs.find(ITEMS[i].id);
+        if (d == g.descs.end() || uv_originals.count(d->second) || !uv_desc(d->second)) continue;
+        UvOriginal o;
+        if (rd(d->second + FLASH_COLORS[0], o.bytes, sizeof o.bytes)) uv_originals[d->second] = o;
+    }
+    float peak = std::max({color[0], color[1], color[2], 0.001f});
+    for (auto& [desc, o] : uv_originals) {
+        uint8_t now[FLASH_PART_BYTES];
+        memcpy(now, o.bytes, sizeof now);
+        for (int at : FLASH_COLORS) {
+            float* c = (float*)(now + at - FLASH_COLORS[0]);
+            float bright = std::max({c[0], c[1], c[2]});
+            for (int k = 0; k < 3; k++) c[k] = color[k] / peak * bright;
+        }
+        for (int at : FLASH_BEAMS)
+            for (int k = 0; k < 3; k++) ((float*)(now + at - FLASH_COLORS[0]))[k] *= glow;
+        for (int at : FLASH_INTENSITIES) *(float*)(now + at - FLASH_COLORS[0]) *= glow;
+        uint8_t current[FLASH_PART_BYTES];
+        if (rd(desc + FLASH_COLORS[0], current, sizeof current) && memcmp(current, now, sizeof now))
+            game::wr_bytes(desc + FLASH_COLORS[0], now, sizeof now);
+    }
+    uv_applied = true;
+}
+
 inline void apply_dfa_fall_speed() {
     float cur = rdv<float>(dfa_fall_speed, NAN);
     if (std::isnan(dfa_fall_original)) {
@@ -1059,6 +1189,7 @@ inline void tick() {
     }
     install_var_hook();
     apply_dfa_fall_speed();
+    apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
     apply_overrides();
     if (!player) return;
     set_immortal(is_on("god"));

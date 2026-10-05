@@ -22,6 +22,11 @@ template <class T> inline T rdv(uintptr_t a, T def = T{}) {
     T v;
     return rd(a, &v, sizeof v) ? v : def;
 }
+inline bool wr_bytes(uintptr_t a, const void* v, size_t n) {
+    if (a < 0x10000 || IsBadWritePtr((void*)a, n)) return false;
+    memcpy((void*)a, v, n);
+    return true;
+}
 template <class T> inline bool wr(uintptr_t a, T v) {
     if (a < 0x10000 || IsBadWritePtr((void*)a, sizeof v)) return false;
     memcpy((void*)a, &v, sizeof v);

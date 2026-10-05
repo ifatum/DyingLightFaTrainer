@@ -176,6 +176,19 @@ static void init_imgui(IDXGISwapChain* sc) {
     logf("overlay ready (window %p, render thread %lu)", (void*)g_hwnd, (unsigned long)GetCurrentThreadId());
 }
 
+static const BYTE SPIT_GAME_KEYS[config::SPIT_KEYS] = {DIK_1, DIK_2, DIK_3, DIK_4};
+
+static void poll_spit_keys() {
+    static bool held[config::SPIT_KEYS] = {};
+    const DWORD SPIT_PRESS_MS = 120;
+    for (int i = 0; i < config::SPIT_KEYS; i++) {
+        int vk = config::cfg.spit_keys[i];
+        bool down = vk && (GetAsyncKeyState(vk) & 0x8000);
+        if (down && !held[i] && !g_open) input::press(SPIT_GAME_KEYS[i], SPIT_PRESS_MS);
+        held[i] = down;
+    }
+}
+
 static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (g_frames++ == 0) logf("first frame (thread %lu)", (unsigned long)GetCurrentThreadId());
     static bool prev = false;
@@ -204,14 +217,25 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         bool menu_needs = game::g.wallets.empty() || game::g.invs.empty() || game::g.descs.empty() || !cheats::player;
         if (!game::g.scanning && ((g_open && menu_needs) || (cheats::objects_missing && since_scan > CHEAT_RESCAN))) request_refresh();
     }
-    if (g_ready && g_open) {
-        ImGui::GetIO().MouseDrawCursor = true;
+    poll_spit_keys();
+    bool esp = config::cfg.esp.on;
+    if (g_ready && (g_open || esp)) {
+        ImGuiIO& io = ImGui::GetIO();
+        io.MouseDrawCursor = g_open;
         ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        feed_mouse();
-        feed_keyboard();
+        if (g_open) {
+            ImGui_ImplWin32_NewFrame();
+            feed_mouse();
+            feed_keyboard();
+        } else {
+            DXGI_SWAP_CHAIN_DESC d{};
+            sc->GetDesc(&d);
+            io.DisplaySize = {(float)d.BufferDesc.Width, (float)d.BufferDesc.Height};
+            io.DeltaTime = 1.0f / 60.0f;
+        }
         ImGui::NewFrame();
-        menu::draw();
+        if (esp) menu::draw_esp();
+        if (g_open) menu::draw();
         ImGui::Render();
         ID3D11Texture2D* bb = nullptr;
         if (SUCCEEDED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) {
@@ -353,6 +377,7 @@ static void main_thread() {
     std::thread([] {
         for (;;) {
             if (cheats::is_on("one_hit")) cheats::scan_enemies();
+            if (config::cfg.esp.on) cheats::scan_players();
             Sleep(3000);
         }
     }).detach();
