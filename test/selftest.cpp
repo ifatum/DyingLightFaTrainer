@@ -57,12 +57,18 @@ int main(int argc, char** argv) {
     CHECK(memcmp(f16 + 7, "\x8b\x41\x40", 3) == 0);
 
     w.build();
-    game::copy_heap_chunks = true;
     game::refresh();
-    std::string copied = game::g.status.substr(0, game::g.status.find(", scan"));
-    game::copy_heap_chunks = false;
-    game::refresh();
-    CHECK(copied == game::g.status.substr(0, game::g.status.find(", scan")));
+    {
+        uint64_t to[2] = {7, 7};
+        static uint64_t from[2] = {0x1111, 0x2222};
+        CHECK(game::safe_copy(to, (uintptr_t)from, sizeof from) && to[0] == 0x1111 && to[1] == 0x2222);
+        void* gone = VirtualAlloc(nullptr, 0x2000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        VirtualFree((char*)gone + 0x1000, 0x1000, MEM_DECOMMIT);
+        static uint64_t big[0x2000 / 8];
+        CHECK(!game::safe_copy(big, (uintptr_t)gone, 0x2000));
+        CHECK(game::safe_copy(to, (uintptr_t)from, sizeof from));
+        VirtualFree(gone, 0, MEM_RELEASE);
+    }
     printf("status: %s\nstats: %s\n", game::g.status.c_str(), game::stat_report().c_str());
     CHECK(game::g.wallets.size() == 1 && game::money(game::g.wallets[0]) == 15855);
     auto* bp = game::find_inventory(game::K_BACKPACK);
@@ -120,6 +126,7 @@ int main(int argc, char** argv) {
     CHECK(game::g.vt_player && game::g.vt_human && game::g.vt_health[0]);
     CHECK(!memcmp((const void*)game::rdv<uintptr_t>(game::g.vt_player + cheats::SLOT_PHYSICS_POSITION * 8), cheats::PHYSICS_POSITION_START, sizeof cheats::PHYSICS_POSITION_START));
     CHECK(game::g.players.size() == 1);
+    CHECK(game::class_name(w.player) == ".?AVPlayerDI@@" && game::class_name(0x1234) == "?");
     game::set_stat(machete, ST_Damage, 1234);
     game::write_stat(machete, ST_Damage, 5);
     cheats::locate((uintptr_t)m);

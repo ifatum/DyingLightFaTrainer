@@ -206,16 +206,22 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
             cheats::tick();
         });
     }
-    const DWORD MENU_RESCAN = 3000, CHEAT_RESCAN = 15000;
+    const DWORD MENU_RESCAN = 3000, CHEAT_RESCAN = 15000, CHEAT_RESCAN_MAX = 120000;
+    static DWORD cheat_rescan = CHEAT_RESCAN;
     DWORD since_scan = GetTickCount() - g_last_scan;
+    if (!cheats::objects_missing) cheat_rescan = CHEAT_RESCAN;
     if (cheats::respawned) {
         std::lock_guard<std::mutex> l(game::mx);
-        if (!game::g.scanning) cheats::respawned = false, request_refresh();
+        if (!game::g.scanning) cheats::respawned = false, cheat_rescan = CHEAT_RESCAN, request_refresh();
     }
-    if ((g_open && since_scan > MENU_RESCAN) || (cheats::objects_missing && since_scan > CHEAT_RESCAN)) {
+    if ((g_open && since_scan > MENU_RESCAN) || (cheats::objects_missing && since_scan > cheat_rescan)) {
         std::lock_guard<std::mutex> l(game::mx);
         bool menu_needs = game::g.wallets.empty() || game::g.invs.empty() || game::g.descs.empty() || !cheats::player;
-        if (!game::g.scanning && ((g_open && menu_needs) || (cheats::objects_missing && since_scan > CHEAT_RESCAN))) request_refresh();
+        bool cheats_need = cheats::objects_missing && since_scan > cheat_rescan;
+        if (!game::g.scanning && ((g_open && menu_needs) || cheats_need)) {
+            if (cheats_need) cheat_rescan = std::min(cheat_rescan * 2, CHEAT_RESCAN_MAX);
+            request_refresh();
+        }
     }
     poll_spit_keys();
     bool esp = config::cfg.esp.on;
@@ -381,10 +387,14 @@ static void main_thread() {
     logf("input blocking: %d directinput vtables", input::install(engine));
     if (getenv("DLT_OPEN")) g_open = true;
     std::thread([] {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+        const DWORD ENEMY_RESCAN = 3000, PLAYER_RESCAN = 10000;
+        DWORD last_players = 0;
         for (;;) {
-            if (cheats::is_on("one_hit")) cheats::scan_enemies();
-            if (config::cfg.esp.on || cheats::is_on("z_aim")) cheats::scan_players();
-            Sleep(3000);
+            bool players = (config::cfg.esp.on || cheats::is_on("z_aim")) && GetTickCount() - last_players >= PLAYER_RESCAN;
+            if (players) last_players = GetTickCount();
+            cheats::scan_targets(cheats::is_on("one_hit"), players);
+            Sleep(ENEMY_RESCAN);
         }
     }).detach();
     Sleep(4000);

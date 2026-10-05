@@ -258,7 +258,10 @@ inline void locate(uintptr_t base) {
     read_param_names();
 }
 
-inline bool alive(uintptr_t p) { return p && g.vt_player && rdv<uintptr_t>(p) == g.vt_player; }
+inline bool alive(uintptr_t p) {
+    uintptr_t vt = p && g.vt_player ? rdv<uintptr_t>(p) : 0;
+    return vt && (vt == g.vt_player || vt == g.vt_tutorial_player);
+}
 
 inline void no_log(const char*, ...) {}
 inline void (*logf_hook)(const char*, ...) = no_log;
@@ -416,7 +419,7 @@ inline void apply_cached(const std::map<std::string, std::pair<float, bool>>& wa
 
 inline uintptr_t local_provider() {
     uintptr_t local = local_player_root ? rdv<uintptr_t>(rdv<uintptr_t>(local_player_root) + LOCAL_PLAYER) : 0;
-    return local && g.vt_player && rdv<uintptr_t>(local) == g.vt_player ? rdv<uintptr_t>(local + PARAM_PROVIDER) : 0;
+    return alive(local) ? rdv<uintptr_t>(local + PARAM_PROVIDER) : 0;
 }
 
 inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
@@ -661,10 +664,10 @@ inline bool is_nest_module(uintptr_t m) {
     return nest;
 }
 
-inline void scan_enemies() {
-    std::vector<uintptr_t> vts(std::begin(g.vt_health), std::end(g.vt_health)), found;
+inline void keep_enemy_modules(const std::vector<std::vector<uintptr_t>>& lists) {
+    std::vector<uintptr_t> found;
     std::map<uintptr_t, bool> nests;
-    for (auto& list : game::scan(vts))
+    for (auto& list : lists)
         for (uintptr_t m : list)
             if (is_enemy_module(m)) {
                 found.push_back(m);
@@ -674,6 +677,8 @@ inline void scan_enemies() {
     enemy_modules.swap(found);
     nest_modules.swap(nests);
 }
+
+inline void scan_enemies() { keep_enemy_modules(game::scan({std::begin(g.vt_health), std::end(g.vt_health)})); }
 
 inline void weaken_enemies() {
     std::lock_guard<std::mutex> l(modules_mx);
@@ -1005,13 +1010,26 @@ struct EspTarget { Vec3 feet, velocity; float health, max_health, distance, rage
 inline std::mutex esp_mx;
 inline std::vector<uintptr_t> esp_players;
 
-inline void scan_players() {
+inline void keep_players(const std::vector<uintptr_t>& list) {
     std::vector<uintptr_t> found;
-    for (auto& list : game::scan({g.vt_player}))
-        for (uintptr_t p : list)
-            if (alive(p) && in_game_module(rdv<uintptr_t>(p + HEALTH_OBJECT))) found.push_back(p);
+    for (uintptr_t p : list)
+        if (alive(p) && in_game_module(rdv<uintptr_t>(p + HEALTH_OBJECT))) found.push_back(p);
     std::lock_guard<std::mutex> l(esp_mx);
     esp_players.swap(found);
+}
+
+inline void scan_targets(bool enemies, bool players) {
+    if (!enemies && !players) return;
+    std::vector<uintptr_t> vts(std::begin(g.vt_health), std::end(g.vt_health));
+    if (!enemies) std::fill(vts.begin(), vts.end(), 0);
+    vts.push_back(players ? g.vt_player : 0);
+    vts.push_back(players ? g.vt_tutorial_player : 0);
+    auto found = game::scan(vts);
+    if (enemies) keep_enemy_modules({found[0], found[1], found[2]});
+    if (players) {
+        found[3].insert(found[3].end(), found[4].begin(), found[4].end());
+        keep_players(found[3]);
+    }
 }
 
 inline uintptr_t logical_player(uintptr_t p) {
@@ -1444,13 +1462,18 @@ inline std::string tree_report() {
     return out;
 }
 
+inline std::string local_class() {
+    uintptr_t local = local_player_root ? rdv<uintptr_t>(rdv<uintptr_t>(local_player_root) + LOCAL_PLAYER) : 0;
+    return local ? game::class_name(local) : "none";
+}
+
 inline std::string describe() {
-    char b[1000];
+    char b[1600];
     snprintf(b, sizeof b,
-             "player %s (%zu scanned, local root %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
+             "player %s (%zu scanned, local root %s, local %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
              "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, pvp rank survivor %d hunter %d, trees %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
              "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s (player +%x, sensor +%x/+%x)",
-             player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", health(), stamina(),
+             player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", local_class().c_str(), health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
              level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", !lockpick_patch ? "missing" : lockpick_patched() ? "on" : "ready",

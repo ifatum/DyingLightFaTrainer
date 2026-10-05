@@ -118,32 +118,69 @@ inline bool on_wine() {
     static const bool wine = GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version") != nullptr;
     return wine;
 }
-inline bool copy_heap_chunks = !on_wine();
+
+extern "C" {
+int fatrainer_copy_qwords(void* to, const void* from, size_t qwords);
+void fatrainer_copy_fault();
+void fatrainer_copy_end();
+}
+
+asm(".text\n"
+    ".globl fatrainer_copy_qwords\n"
+    "fatrainer_copy_qwords:\n"
+    "push %rsi\npush %rdi\nmov %rcx, %rdi\nmov %rdx, %rsi\nmov %r8, %rcx\nrep movsq\npop %rdi\npop %rsi\nmov $1, %eax\nret\n"
+    ".globl fatrainer_copy_fault\n"
+    "fatrainer_copy_fault:\n"
+    "cld\npop %rdi\npop %rsi\nxor %eax, %eax\nret\n"
+    ".globl fatrainer_copy_end\n"
+    "fatrainer_copy_end:\n"
+    "ret\n");
+
+inline LONG CALLBACK skip_copy_fault(EXCEPTION_POINTERS* e) {
+    DWORD code = e->ExceptionRecord->ExceptionCode;
+    uintptr_t at = e->ContextRecord->Rip;
+    if ((code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_IN_PAGE_ERROR) || at < (uintptr_t)&fatrainer_copy_qwords ||
+        at >= (uintptr_t)&fatrainer_copy_fault)
+        return EXCEPTION_CONTINUE_SEARCH;
+    e->ContextRecord->Rip = (uintptr_t)&fatrainer_copy_fault;
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+inline bool safe_copy(void* to, uintptr_t from, size_t bytes) {
+    static PVOID handler = AddVectoredExceptionHandler(1, skip_copy_fault);
+    return handler && fatrainer_copy_qwords(to, (const void*)from, bytes / 8) == 1;
+}
+
+const size_t SCAN_CHUNK = 1 << 20, SCAN_PAUSE_EVERY = 64;
 
 template <class F> inline void each_heap_chunk(F visit) {
-    const size_t CH = 1 << 20;
     MEMORY_BASIC_INFORMATION mbi;
     const uintptr_t STACK_AREA = 0x400000;
     uintptr_t stack_hi = (uintptr_t)((NT_TIB*)NtCurrentTeb())->StackBase, stack_lo = stack_hi - STACK_AREA;
     const uintptr_t SYSTEM_AREA = 0x7FFF00000000ULL;
-    std::vector<uint64_t> copy(copy_heap_chunks ? CH / 8 : 0);
+    std::vector<uint64_t> copy(SCAN_CHUNK / 8);
     uintptr_t copy_lo = (uintptr_t)copy.data(), copy_hi = copy_lo + copy.size() * 8;
+    size_t chunks = 0;
     for (uintptr_t a = 0x10000; a < SYSTEM_AREA && VirtualQuery((LPCVOID)a, &mbi, sizeof mbi); ) {
         uintptr_t s = (uintptr_t)mbi.BaseAddress, e = s + mbi.RegionSize;
         bool ok = mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && mbi.Protect == PAGE_READWRITE &&
                   mbi.RegionSize <= (1ULL << 30) && !(s < stack_hi && e > stack_lo);
-        for (uintptr_t c = s; ok && c < e; c += CH) {
-            size_t n = std::min<uintptr_t>(CH, e - c);
-            SIZE_T got = 0;
+        for (uintptr_t c = s; ok && c < e; c += SCAN_CHUNK) {
+            size_t n = std::min<uintptr_t>(SCAN_CHUNK, e - c);
             if (c < copy_hi && c + n > copy_lo) continue;
-            if (copy.empty()) {
-                if (!IsBadReadPtr((const void*)c, n)) visit((const uint64_t*)c, c, n);
-            } else if (ReadProcessMemory(GetCurrentProcess(), (LPCVOID)c, copy.data(), n, &got) && got == n) {
-                visit(copy.data(), c, n);
-            }
+            if (safe_copy(copy.data(), c, n)) visit(copy.data(), c, n);
+            if (++chunks % SCAN_PAUSE_EVERY == 0) Sleep(1);
         }
         a = e > a ? e : a + 0x1000;
     }
+}
+
+inline std::string class_name(uintptr_t obj) {
+    uintptr_t col = rdv<uintptr_t>(rdv<uintptr_t>(obj) - 8);
+    uint32_t parts[6];
+    char name[96] = {};
+    if (!rd(col, parts, sizeof parts) || parts[0] != 1 || !rd(col - parts[5] + parts[3] + 0x10, name, sizeof name - 1)) return "?";
+    return name;
 }
 
 inline std::vector<std::vector<uintptr_t>> scan(const std::vector<uintptr_t>& vts) {
@@ -249,7 +286,7 @@ const uint32_t NIBBLE = 0xF;
 
 struct State {
     uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {};
-    uintptr_t vt_player = 0, vt_human = 0, vt_health[3] = {};
+    uintptr_t vt_player = 0, vt_tutorial_player = 0, vt_human = 0, vt_health[3] = {};
     uintptr_t vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_rope = 0, vt_logical_player = 0;
     int player_control = -1, human_control = -1, sensor_control = -1, sensor_rtti = -1;
     std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors, ropes, logical_players;
@@ -370,6 +407,7 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_manager = find_vtable(base, "ItemManager");
     for (int i = 0; i < N_INV_CLASSES; i++) g.vt_inv[i] = find_vtable(base, INV_CLASSES[i]);
     g.vt_player = find_vtable(base, "PlayerDI");
+    g.vt_tutorial_player = find_vtable(base, "TutorialPlayerDI");
     g.vt_human = find_vtable(base, "HumanAI");
     const char* health_classes[] = {"HealthModule", "ArmorHealthModule", "BodyPartsHealthModule"};
     for (int i = 0; i < 3; i++) g.vt_health[i] = find_vtable(base, health_classes[i]);

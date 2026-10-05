@@ -71,6 +71,7 @@ inline void drain_queue() {
 inline void request_refresh() {
     g_last_scan = GetTickCount();
     std::thread([] {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
         game::refresh();
         std::lock_guard<std::mutex> l(game::mx);
         cheats::player = cheats::find_player();
