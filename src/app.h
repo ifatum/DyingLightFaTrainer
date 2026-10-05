@@ -13,7 +13,7 @@
 #include "game.h"
 
 inline const char* TITLE = "FaTrainer | Dying Light";
-inline const char* VERSION = "1.8.1";
+inline const char* VERSION = "1.9";
 
 inline void logf(const char* fmt, ...) {
     static std::string path;
@@ -92,12 +92,8 @@ inline std::string route_path() {
 }
 
 inline void save_config() {
-    auto& c = config::cfg;
-    c.cheats_on.clear();
-    for (auto& ch : cheats::CHEATS)
-        if (ch.on) c.cheats_on.push_back(ch.key);
-    c.tweaks.clear();
-    for (auto& t : cheats::TWEAKS)
-        if (t.factor != 1.0f) c.tweaks.push_back({t.key, t.factor});
+    auto p = cheats::current_profile();
+    config::cfg.cheats_on = p.cheats;
+    config::cfg.tweaks = p.tweaks;
     config::save(config::default_path());
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9
+
+- New: configs on the Settings page. Save the cheats and sliders you have on under a name, then load or delete them with one click. Each config is a small file in fatrainer_configs next to the game.
+- New: Death from above height on the PvP page. The game only starts Death From Above once you are already falling fast (12 m/s, a long drop). At Max a normal jump is enough.
+- Fixed: PvP sliders, Slow down UV flashlight and other cheats stopping after you die. After a respawn the trainer now recognises your new character straight away and finds the game objects again on its own.
+
 ## 1.8.1
 
 - Fixed: the game could crash at start on Windows. The trainer's memory scan read game memory that the game was freeing at the same time; on Windows it now copies each block safely first.

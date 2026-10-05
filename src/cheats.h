@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cstdio>
 #include <set>
+#include "config.h"
 #include "game.h"
 
 namespace cheats {
@@ -105,6 +106,8 @@ inline Tweak TWEAKS[] = {
      G_HUMAN, {"JumpAttackRange", "JumpAttackShockwaveRadius"}, {{"f_btz_jump_attack_range", 12}, {"f_btz_jump_attack_range_velocity_factor", 0.5f}}},
     {"h_dfa_pull", "Death from above pull", "How far off target you can start it; the attack pulls you onto the hunter. At Max he can be beside or behind you.",
      G_HUMAN, {}, {{"f_btz_jump_attack_angle_max", 180}, {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
+    {"h_dfa_height", "Death from above height", "How fast you must already be falling to start it. Normally only after a long drop; at Max a normal jump is enough.",
+     G_HUMAN, {}},
     {"h_dropkick", "Dropkick", "At Max you dropkick the hunter from 12 m away, even when he is not in front of you.", G_HUMAN,
      {"AirKickRangeMul"}, {{"f_btz_wrestling_kick_range", 12}, {"f_btz_wrestling_kick_range_velocity_factor", 0.5f}, {"f_btz_wrestling_kick_angle_max", 180}}},
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
@@ -129,6 +132,9 @@ inline Cheat* find(const std::string& key) {
 inline bool is_on(const char* key) { return find(key) && find(key)->on; }
 
 inline uintptr_t player = 0;
+inline uintptr_t dfa_fall_speed = 0;
+inline float dfa_fall_original = NAN;
+const float DFA_FALL_SPEED_AT_MAX = 0.5f;
 inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, profile_root = 0;
 inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
@@ -240,6 +246,8 @@ inline void locate(uintptr_t base) {
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 8B 0D ? ? ? ? 48 8B 18 48 8B 01 FF 90 90 01 00 00 48 8B 0D ? ? ? ? 48 8D 55 ? 4C 8B C0 FF 93 90 03 00 00");
         !hits.empty())
         var_root = game::rip_target(hits[0], 3, 7);
+    if (auto hits = game::find_code(base, "F3 0F 10 05 ? ? ? ? F3 44 0F 10 15 ? ? ? ? 41 0F 57 C2 0F 2F 40 04"); !hits.empty())
+        dfa_fall_speed = game::rip_target(hits[0], 4, 8);
     vt_param_float = game::find_vtable(base, "?$Param@M");
     vt_param_bool = game::find_vtable(base, "?$Param@_N");
     read_param_names();
@@ -401,6 +409,11 @@ inline void apply_cached(const std::map<std::string, std::pair<float, bool>>& wa
     }
 }
 
+inline uintptr_t local_provider() {
+    uintptr_t local = local_player_root ? rdv<uintptr_t>(rdv<uintptr_t>(local_player_root) + LOCAL_PLAYER) : 0;
+    return local && g.vt_player && rdv<uintptr_t>(local) == g.vt_player ? rdv<uintptr_t>(local + PARAM_PROVIDER) : 0;
+}
+
 inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
     uintptr_t param = cache_get_original(provider, id);
     if (id < 0 || id >= PARAM_SLOTS || !param) return param;
@@ -409,6 +422,7 @@ inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
     bool mine = provider == player_provider.load();
     if (mine) c.reads++;
     if (!kind && !c.stale) return param;
+    if (kind && !mine) mine = provider == local_provider();
     if (!kind || !mine) {
         {
             std::lock_guard<std::mutex> l(cached_mx);
@@ -559,6 +573,23 @@ inline void install_var_hook() {
 inline void all_off() {
     for (auto& c : CHEATS) c.on = false;
     for (auto& t : TWEAKS) t.factor = 1.0f;
+}
+
+inline config::Profile current_profile() {
+    config::Profile p;
+    for (auto& ch : CHEATS)
+        if (ch.on) p.cheats.push_back(ch.key);
+    for (auto& t : TWEAKS)
+        if (t.factor != 1.0f) p.tweaks.push_back({t.key, t.factor});
+    return p;
+}
+
+inline void apply_profile(const config::Profile& p) {
+    all_off();
+    for (auto& key : p.cheats)
+        if (auto* c = find(key)) c->on = true;
+    for (auto& [key, factor] : p.tweaks)
+        if (auto* t = find_tweak(key)) t->factor = std::clamp(factor, 1.0f, t->max);
 }
 
 inline int active_count() {
@@ -913,9 +944,11 @@ inline int pause_prison() {
 
 inline std::map<uintptr_t, float> uv_last_charge;
 
-inline void slow_uv_drain(float factor) {
+inline int slow_uv_drain(float factor) {
+    int live = 0;
     for (uintptr_t e : g.equipment) {
         if (rdv<uintptr_t>(e) != g.vt_equipment) continue;
+        live++;
         float charge = rdv<float>(e + UV_CHARGE, NAN);
         if (!(charge >= 0 && charge <= 1)) continue;
         auto last = uv_last_charge.find(e);
@@ -925,6 +958,19 @@ inline void slow_uv_drain(float factor) {
         }
         uv_last_charge[e] = charge;
     }
+    return live;
+}
+
+inline void apply_dfa_fall_speed() {
+    float cur = rdv<float>(dfa_fall_speed, NAN);
+    if (std::isnan(dfa_fall_original)) {
+        if (!(cur > 0)) return;
+        dfa_fall_original = cur;
+    }
+    Tweak* t = find_tweak("h_dfa_height");
+    float strength = std::clamp((t->factor - 1.0f) / (t->max - 1.0f), 0.0f, 1.0f);
+    float want = dfa_fall_original + (DFA_FALL_SPEED_AT_MAX - dfa_fall_original) * strength;
+    if (cur != want) wr<float>(dfa_fall_speed, want);
 }
 
 inline int keep_uv_charge() {
@@ -940,7 +986,7 @@ inline int keep_uv_charge() {
     return kept;
 }
 
-inline std::atomic<bool> objects_missing{false};
+inline std::atomic<bool> objects_missing{false}, respawned{false};
 
 inline int keep_rope_energy() {
     int live = 0;
@@ -962,20 +1008,27 @@ inline void tick() {
     bool prison_missing = !pause_prison() && is_on("prison_pause");
     bool uv_missing = is_on("uv") && !keep_uv_charge();
     float uv_slow = find_tweak("uv_slow")->factor;
-    if (!is_on("uv") && uv_slow > 1.0f) slow_uv_drain(uv_slow);
+    bool uv_slow_missing = false;
+    if (!is_on("uv") && uv_slow > 1.0f) uv_slow_missing = !slow_uv_drain(uv_slow);
     else uv_last_charge.clear();
     bool rope_missing = is_on("hook") && !keep_rope_energy();
     patch_lockpick(is_on("lockpick"));
     block_forced_damage(is_on("god"));
     route_tick();
-    objects_missing = prison_missing || uv_missing || rope_missing;
+    objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing;
     game::reapply_stats();
     keep_stacks(is_on("ammo"), is_on("supplies"));
     keep_durability(is_on("durability"));
     if (is_on("one_hit")) weaken_enemies();
     player = find_player();
-    player_provider = alive(player) ? rdv<uintptr_t>(player + PARAM_PROVIDER) : 0;
+    uintptr_t provider = alive(player) ? rdv<uintptr_t>(player + PARAM_PROVIDER) : 0;
+    uintptr_t before = player_provider.exchange(provider);
+    if (provider && before && provider != before) {
+        logf_hook("player changed (respawn or level load), finding game objects again");
+        respawned = true;
+    }
     install_var_hook();
+    apply_dfa_fall_speed();
     apply_overrides();
     if (!player) return;
     set_immortal(is_on("god"));

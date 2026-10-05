@@ -903,7 +903,7 @@ inline const Page PAGES[] = {
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "MODES", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
     {"pvp", "PvP", "How far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
-     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dfa_pull", "h_dropkick", "h_kicks", "h_melee"}},
+     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_kicks", "h_melee"}},
     {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},
@@ -933,6 +933,61 @@ inline std::vector<std::string> page_ids() {
     std::vector<std::string> out;
     for (auto& p : PAGES) out.push_back(p.id);
     return out;
+}
+
+inline void profiles_card() {
+    static std::vector<std::string> names = config::list_profiles();
+    static char name[48] = "";
+    static std::string confirm_delete;
+    begin_card("profiles", "CONFIGS");
+    note("Save the cheats and sliders that are on right now under a name, and load them again with one click. Loading turns everything else off.");
+    ImGui::Dummy({0, S(2)});
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - S(130));
+    ImGui::InputTextWithHint("##name", "Config name, e.g. PvP hunter", name, sizeof name);
+    ImGui::SameLine(0, S(8));
+    std::string clean = config::profile_name(name);
+    ImGui::BeginDisabled(clean.empty());
+    if (accent_button("Save", {-1, 0})) {
+        bool replaced = std::find(names.begin(), names.end(), clean) != names.end();
+        bool ok = config::save_profile(clean, cheats::current_profile());
+        toast(ok ? (replaced ? "Updated config " : "Saved config ") + clean : std::string("Could not save the config"));
+        names = config::list_profiles();
+        name[0] = 0;
+    }
+    ImGui::EndDisabled();
+    if (names.empty()) note("No configs yet.");
+    for (auto& n : names) {
+        ImGui::PushID(n.c_str());
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(n.c_str());
+        float right = ImGui::GetWindowContentRegionMax().x;
+        ImGui::SameLine(right - S(150));
+        if (ImGui::Button("Load", {S(70), 0})) {
+            config::Profile p;
+            if (config::load_profile(n, p)) {
+                cheats::apply_profile(p);
+                save_config();
+                toast("Loaded config " + n);
+            } else {
+                toast("Could not read config " + n);
+            }
+        }
+        ImGui::SameLine(0, S(8));
+        bool sure = confirm_delete == n;
+        if (ImGui::Button(sure ? "Sure?" : "Delete", {S(72), 0})) {
+            if (sure) {
+                config::delete_profile(n);
+                confirm_delete.clear();
+                toast("Deleted config " + n);
+                ImGui::PopID();
+                names = config::list_profiles();
+                break;
+            }
+            confirm_delete = n;
+        }
+        ImGui::PopID();
+    }
+    end_card();
 }
 
 inline void settings_page() {
@@ -1022,7 +1077,9 @@ inline void settings_page() {
     }
     end_card();
 
-    begin_card("reset", "CONFIG");
+    profiles_card();
+
+    begin_card("reset", "SETTINGS FILE");
     note(("Saved automatically to " + config::default_path()).c_str());
     ImGui::Dummy({0, S(2)});
     if (ImGui::Button("Reset to defaults")) {
@@ -1180,11 +1237,10 @@ inline void load_fonts(const void* ttf, int size) {
 inline void startup() {
     config::load(config::default_path());
     config::normalize(page_ids());
-    if (config::cfg.remember_cheats)
-        for (auto& key : config::cfg.cheats_on)
-            if (auto* c = cheats::find(key)) c->on = true;
-    for (auto& [key, factor] : config::cfg.tweaks)
-        if (auto* t = cheats::find_tweak(key)) t->factor = std::clamp(factor, 1.0f, t->max);
+    config::Profile p;
+    if (config::cfg.remember_cheats) p.cheats = config::cfg.cheats_on;
+    p.tweaks = config::cfg.tweaks;
+    cheats::apply_profile(p);
 }
 
 }

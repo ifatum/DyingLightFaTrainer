@@ -189,6 +189,20 @@ int main(int argc, char** argv) {
         cheats::cache_get_hook(my_provider, id);
         CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 0.01f && cheats::reads_of("RopeEnergyRegenTime") == 2);
     }
+    {
+        int id = cheats::param_ids["RopeEnergyRegenTime"] + 1;
+        uintptr_t tick_provider = cheats::player_provider.exchange(0), saved_root = cheats::local_player_root;
+        static uint8_t local_slot[0x800] = {};
+        static uintptr_t local_root = (uintptr_t)local_slot;
+        *(uintptr_t*)(local_slot + cheats::LOCAL_PLAYER) = w.player;
+        cheats::local_player_root = (uintptr_t)&local_root;
+        CHECK(cheats::local_provider() == my_provider);
+        game::wr<float>(cached("RopeEnergyRegenTime") + 0x10, 7.0f);
+        cheats::cache_get_hook(my_provider, id);
+        CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 0.01f);
+        cheats::local_player_root = saved_root;
+        cheats::player_provider = tick_provider;
+    }
     CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 0.01f && (game::rdv<uint8_t>(cached("RopeEnergyRegenTime") + 0x20) & 1));
     CHECK(game::rdv<uintptr_t>(cached("RopeEnergyRegenTime") + 8) == cheats::vt_param_float && cheats::vt_param_float);
     CHECK(game::rdv<uint8_t>(cached("CanUseHook") + 0x10) == 1 && game::rdv<uintptr_t>(cached("CanUseHook") + 8) == cheats::vt_param_bool);
@@ -477,6 +491,38 @@ int main(int argc, char** argv) {
     *(uintptr_t*)(control + cheats::CONTROL_ENTITY) = 0xdead0000;
     CHECK(!cheats::position_of((uintptr_t)control, &at) && position_calls == 1);
     cheats::get_position = saved_get;
+
+    CHECK(cheats::dfa_fall_speed);
+    {
+        float fall = 12.0f;
+        uintptr_t real = cheats::dfa_fall_speed;
+        cheats::dfa_fall_speed = (uintptr_t)&fall;
+        cheats::dfa_fall_original = NAN;
+        auto* height = cheats::find_tweak("h_dfa_height");
+        height->factor = height->max;
+        cheats::apply_dfa_fall_speed();
+        CHECK(fall == cheats::DFA_FALL_SPEED_AT_MAX && cheats::dfa_fall_original == 12.0f);
+        height->factor = 1.0f;
+        cheats::apply_dfa_fall_speed();
+        CHECK(fall == 12.0f);
+        cheats::dfa_fall_speed = real;
+    }
+
+    CHECK(config::profile_name("  PvP: hunter/../x  ") == "PvP hunterx");
+    config::delete_profile("selftest profile");
+    config::Profile saved{{"god", "uv"}, {{"h_dfa", 7.5f}}};
+    CHECK(config::save_profile("selftest profile", saved));
+    auto listed = config::list_profiles();
+    CHECK(std::find(listed.begin(), listed.end(), "selftest profile") != listed.end());
+    config::Profile back;
+    CHECK(config::load_profile("selftest profile", back) && back.cheats == saved.cheats && back.tweaks.size() == 1 && back.tweaks[0].second == 7.5f);
+    cheats::find("stamina")->on = true;
+    cheats::apply_profile(back);
+    CHECK(cheats::is_on("god") && cheats::is_on("uv") && !cheats::is_on("stamina") && cheats::find_tweak("h_dfa")->factor == 7.5f);
+    CHECK(cheats::current_profile().cheats.size() == 2 && cheats::current_profile().tweaks.size() == 1);
+    cheats::all_off();
+    CHECK(config::delete_profile("selftest profile") && !config::load_profile("selftest profile", back));
+    RemoveDirectoryA(config::profile_dir().c_str());
 
     printf(fails ? "SELFTEST FAILED (%d)\n" : "SELFTEST OK\n", fails);
     return fails != 0;

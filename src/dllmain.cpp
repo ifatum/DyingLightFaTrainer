@@ -195,6 +195,10 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     }
     const DWORD MENU_RESCAN = 3000, CHEAT_RESCAN = 15000;
     DWORD since_scan = GetTickCount() - g_last_scan;
+    if (cheats::respawned) {
+        std::lock_guard<std::mutex> l(game::mx);
+        if (!game::g.scanning) cheats::respawned = false, request_refresh();
+    }
     if ((g_open && since_scan > MENU_RESCAN) || (cheats::objects_missing && since_scan > CHEAT_RESCAN)) {
         std::lock_guard<std::mutex> l(game::mx);
         bool menu_needs = game::g.wallets.empty() || game::g.invs.empty() || game::g.descs.empty() || !cheats::player;
