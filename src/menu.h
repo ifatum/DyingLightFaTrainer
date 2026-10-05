@@ -678,6 +678,7 @@ inline void zombie_page() {
     begin_card("abilities", "ABILITIES");
     cheat_switch("z_cooldowns");
     cheat_switch("z_spits");
+    cheat_switch("z_aim");
     cheat_switch("z_camo");
     end_card();
     spit_keys_card();
@@ -812,15 +813,9 @@ inline void draw_esp() {
     if (sample) {
         const float perspective[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0};
         memcpy(m, perspective, sizeof m);
-        targets = {{{-1.2f, -1.0f, 6}, 180, 250, 23, 40, true, false, 7}, {{1.5f, -1.0f, 9}, 60, 175, 41, NAN, false, true, 3}};
-    } else {
-        std::unique_lock<std::mutex> l(game::mx, std::try_to_lock);
-        if (l.owns_lock()) {
-            if (!cheats::alive(cheats::player) || !cheats::view_matrix(m)) return targets.clear();
-            targets = cheats::esp_targets(e.max_distance);
-        } else if (!cheats::view_matrix(m)) {
-            return;
-        }
+        targets = {{{-1.2f, -1.0f, 6}, {}, 180, 250, 23, 40, true, false, 7}, {{1.5f, -1.0f, 9}, {}, 60, 175, 41, NAN, false, true, 3}};
+    } else if (!cheats::esp_snapshot(m, targets, e.max_distance)) {
+        return;
     }
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImVec2 screen = ImGui::GetIO().DisplaySize;
@@ -1083,7 +1078,7 @@ inline const Page PAGES[] = {
     {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS", {"god", "stamina", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
-    {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "MODES", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
+    {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "MODES", {"z_energy", "z_cooldowns", "z_spits", "z_aim", "z_camo"}},
     {"pvp", "PvP", "How far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
      {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_kicks", "h_melee"}},
     {"visuals", "Visuals", "Player ESP and UV light color", visuals_page, always, "MODES", {}},

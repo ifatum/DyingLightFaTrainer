@@ -219,6 +219,11 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     }
     poll_spit_keys();
     bool esp = config::cfg.esp.on;
+    if (g_ready && (esp || cheats::is_on("z_aim"))) {
+        cheats::track_players();
+        cheats::track_spit();
+    }
+    if (cheats::ballistics_learned.exchange(false)) save_config();
     if (g_ready && (g_open || esp)) {
         ImGuiIO& io = ImGui::GetIO();
         io.MouseDrawCursor = g_open;
@@ -368,6 +373,7 @@ static void main_thread() {
     menu::startup();
     cheats::locate((uintptr_t)gamedll);
     cheats::install_update_hooks();
+    logf("spit aimbot hook: %s", cheats::install_spit_hook((uintptr_t)gamedll) ? "ok" : "not found");
     logf("settings cache hook: %s", cheats::install_cache_hook() ? "ok" : cheats::cache_get_fn ? "unexpected code, skipped" : "not found");
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
@@ -377,7 +383,7 @@ static void main_thread() {
     std::thread([] {
         for (;;) {
             if (cheats::is_on("one_hit")) cheats::scan_enemies();
-            if (config::cfg.esp.on) cheats::scan_players();
+            if (config::cfg.esp.on || cheats::is_on("z_aim")) cheats::scan_players();
             Sleep(3000);
         }
     }).detach();

@@ -9,6 +9,8 @@
 - New: custom UV light color and glow on the Visuals page.
 - New: spit keys on the Night Hunter page. Pick your own key for the Horde Summoner, UV Suppressor, Sense Suppressor and Toxic spit; the trainer presses the game's key for it.
 - Fixed: one hit kill no longer drops Be The Zombie nests to 1 health, so their health bar is not stuck on red.
+- New: Spit aimbot on the Night Hunter page. Every spit you throw flies to the survivor nearest your crosshair, aiming for drop and where the survivor is running. Your view does not move. The trainer measures how your spits fly and remembers it in fatrainer.ini, so the first spit of a new install can still miss.
+- Fixed: the ESP flickering or not showing in Be The Zombie. It now draws from the game camera and holds each player for a moment when the game skips a position update, instead of depending on finding your own character first.
 
 ## 1.8.1
 

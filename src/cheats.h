@@ -67,6 +67,7 @@ inline Cheat CHEATS[] = {
       {"FastGrabBreakCooldown", 0}},
      {}},
     {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}},
+    {"z_aim", "Spit aimbot", "Spits fly to the survivor nearest your crosshair. Your view does not move.", {}, {}},
     {"prison_pause", "Pause prison timers", "The run timer and the reward room countdown stand still. Works when you are the host.", {}, {}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
@@ -1000,7 +1001,7 @@ const int LOGICAL_PLAYER = 0x9d8, PLAYER_TEAM = 0x6dc, PLAYER_ROLE = 0x6e0, ROLE
 const int RANK_SURVIVOR = 0x74c, RANK_HUNTER = 0x750, CAMERA_ENGINE = 8, CAMERA_COMBINED = 0xb0;
 const float PLAYER_HEIGHT = 1.8f;
 
-struct EspTarget { Vec3 feet; float health, max_health, distance, rage; bool hunter, ally; int rank; };
+struct EspTarget { Vec3 feet, velocity; float health, max_health, distance, rage; bool hunter, ally; int rank; uintptr_t p; double seen; };
 inline std::mutex esp_mx;
 inline std::vector<uintptr_t> esp_players;
 
@@ -1018,13 +1019,18 @@ inline uintptr_t logical_player(uintptr_t p) {
     return lp && g.vt_logical_player && rdv<uintptr_t>(lp) == g.vt_logical_player ? lp : 0;
 }
 
-inline bool view_matrix(float m[16]) {
+const int CAMERA_EYE[3] = {0x4c, 0x5c, 0x6c};
+
+inline bool view_matrix(float m[16], Vec3* eye = nullptr) {
     uintptr_t game_object = profile_root ? rdv<uintptr_t>(profile_root) : 0;
     if (!game_object || !active_level || !view_camera) return false;
     uintptr_t level = active_level(game_object);
     uintptr_t camera = level ? view_camera(level) : 0;
     uintptr_t engine_camera = camera ? rdv<uintptr_t>(camera + CAMERA_ENGINE) : 0;
-    return engine_camera && rd(engine_camera + CAMERA_COMBINED, m, 16 * sizeof(float));
+    if (!engine_camera || !rd(engine_camera + CAMERA_COMBINED, m, 16 * sizeof(float))) return false;
+    if (eye) *eye = {rdv<float>(engine_camera + CAMERA_EYE[0], NAN), rdv<float>(engine_camera + CAMERA_EYE[1], NAN),
+                     rdv<float>(engine_camera + CAMERA_EYE[2], NAN)};
+    return true;
 }
 
 inline bool to_screen(const float m[16], Vec3 p, float width, float height, float& sx, float& sy) {
@@ -1047,23 +1053,72 @@ inline float max_health_of(uintptr_t p) {
     return in_game_module((uintptr_t)fn) ? fn(p, -1) : NAN;
 }
 
-inline std::vector<EspTarget> esp_targets(float max_distance) {
-    std::vector<EspTarget> out;
-    Vec3 me = player_position();
-    if (!std::isfinite(me.x) || g.player_control < 0) return out;
-    uintptr_t my_lp = logical_player(player);
+inline double now_seconds() {
+    static LARGE_INTEGER frequency = [] { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return f; }();
+    LARGE_INTEGER c;
+    QueryPerformanceCounter(&c);
+    return (double)c.QuadPart / (double)frequency.QuadPart;
+}
+
+inline uintptr_t local_player() {
+    uintptr_t local = local_player_root ? rdv<uintptr_t>(rdv<uintptr_t>(local_player_root) + LOCAL_PLAYER) : 0;
+    return alive(local) ? local : 0;
+}
+
+const double HOLD_SECONDS = 0.5;
+const float OWN_BODY_RADIUS = 1.2f, OWN_BODY_BELOW = 2.6f, OWN_BODY_ABOVE = 0.5f, VELOCITY_SMOOTHING = 0.3f;
+
+inline bool own_body(Vec3 eye, Vec3 feet) {
+    float dx = feet.x - eye.x, dz = feet.z - eye.z, dy = feet.y - eye.y;
+    return dx * dx + dz * dz < OWN_BODY_RADIUS * OWN_BODY_RADIUS && dy > -OWN_BODY_BELOW && dy < OWN_BODY_ABOVE;
+}
+
+struct View { float m[16]; Vec3 eye; double at = -1; };
+inline View view;
+inline std::vector<EspTarget> seen_players;
+inline std::string esp_state;
+
+inline void note_esp_state(const char* state) {
+    if (esp_state == state) return;
+    esp_state = state;
+    logf_hook("esp: %s", state);
+}
+
+inline void track_players() {
+    double now = now_seconds();
+    View v;
+    if (!view_matrix(v.m, &v.eye) || !std::isfinite(v.eye.x)) return note_esp_state("no camera");
+    v.at = now;
+    uintptr_t me = local_player();
+    uintptr_t my_lp = logical_player(me);
     int my_team = my_lp ? rdv<int>(my_lp + PLAYER_TEAM, -1) : -1;
     std::vector<uintptr_t> players;
+    std::vector<EspTarget> before;
     {
         std::lock_guard<std::mutex> l(esp_mx);
         players = esp_players;
+        before = seen_players;
     }
+    std::vector<EspTarget> now_seen;
     for (uintptr_t p : players) {
-        if (p == player || !alive(p)) continue;
+        if (p == me || !alive(p) || g.player_control < 0) continue;
+        auto last = std::find_if(before.begin(), before.end(), [&](const EspTarget& t) { return t.p == p; });
         EspTarget t{};
-        if (!position_of(p + g.player_control, &t.feet)) continue;
-        t.distance = distance(me, t.feet);
-        if (!(t.distance <= max_distance)) continue;
+        if (!position_of(p + g.player_control, &t.feet)) {
+            if (last != before.end() && now - last->seen < HOLD_SECONDS) now_seen.push_back(*last);
+            continue;
+        }
+        if (!me && own_body(v.eye, t.feet)) continue;
+        t.p = p;
+        t.seen = now;
+        if (last != before.end() && now > last->seen) {
+            float dt = (float)(now - last->seen);
+            Vec3 measured{(t.feet.x - last->feet.x) / dt, (t.feet.y - last->feet.y) / dt, (t.feet.z - last->feet.z) / dt};
+            t.velocity = {last->velocity.x + (measured.x - last->velocity.x) * VELOCITY_SMOOTHING,
+                          last->velocity.y + (measured.y - last->velocity.y) * VELOCITY_SMOOTHING,
+                          last->velocity.z + (measured.z - last->velocity.z) * VELOCITY_SMOOTHING};
+        }
+        t.distance = distance(v.eye, t.feet);
         t.health = health_of(p);
         t.max_health = max_health_of(p);
         uintptr_t lp = logical_player(p);
@@ -1071,9 +1126,187 @@ inline std::vector<EspTarget> esp_targets(float max_distance) {
         t.ally = lp && my_team >= 0 && rdv<int>(lp + PLAYER_TEAM, -2) == my_team;
         t.rank = lp ? rdv<int>(lp + (t.hunter ? RANK_HUNTER : RANK_SURVIVOR), -1) : -1;
         t.rage = lp ? rdv<float>(lp + PLAYER_RAGE, NAN) : NAN;
-        out.push_back(t);
+        now_seen.push_back(t);
     }
-    return out;
+    note_esp_state(players.empty() ? "no players found yet" : now_seen.empty() ? "players found, none positioned" : me ? "tracking" : "tracking without local player");
+    std::lock_guard<std::mutex> l(esp_mx);
+    view = v;
+    seen_players.swap(now_seen);
+}
+
+inline bool esp_snapshot(float m[16], std::vector<EspTarget>& out, float max_distance) {
+    std::lock_guard<std::mutex> l(esp_mx);
+    if (view.at < 0 || now_seconds() - view.at > HOLD_SECONDS) return false;
+    memcpy(m, view.m, sizeof view.m);
+    out.clear();
+    for (auto& t : seen_players)
+        if (t.distance <= max_distance) out.push_back(t);
+    return true;
+}
+
+const int SLOT_THROW_IMPULSE = 124, THROW_OWNER = 0x378, THROW_PENDING_IMPULSE = 0x100, THROWABLE_CONTROL = 0x18;
+const float AIM_HEIGHT = 1.1f, DEFAULT_SPIT_SPEED_PER_IMPULSE = 1.0f, DEFAULT_SPIT_GRAVITY = 9.81f;
+const double FLIGHT_SAMPLE_SECONDS = 0.4, FLIGHT_MIN_SECONDS = 0.15;
+const int FLIGHT_MIN_SAMPLES = 5, LEAD_ITERATIONS = 3;
+
+using ThrowImpulseFn = Vec3* (*)(uintptr_t, Vec3*);
+inline uintptr_t vt_spit = 0;
+inline ThrowImpulseFn throw_impulse_original = nullptr;
+
+struct Flight { uintptr_t spit = 0; float impulse = 0; double start = 0; std::vector<std::pair<double, Vec3>> samples; };
+inline Flight flight;
+inline std::atomic<bool> ballistics_learned{false};
+
+inline float length(Vec3 v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
+
+inline bool aim_direction(Vec3 from, Vec3 to, float speed, float gravity, Vec3* dir, float* time) {
+    float dx = to.x - from.x, dz = to.z - from.z, dy = to.y - from.y;
+    float horizontal = std::sqrt(dx * dx + dz * dz);
+    if (!(speed > 0) || !(gravity > 0) || !(horizontal > 0.01f)) return false;
+    float s2 = speed * speed;
+    float disc = s2 * s2 - gravity * (gravity * horizontal * horizontal + 2 * dy * s2);
+    float angle = disc >= 0 ? std::atan((s2 - std::sqrt(disc)) / (gravity * horizontal)) : 0.785398f;
+    float c = std::cos(angle);
+    *dir = {dx / horizontal * c, std::sin(angle), dz / horizontal * c};
+    *time = horizontal / (speed * c);
+    return true;
+}
+
+inline bool fit_flight(const std::vector<std::pair<double, Vec3>>& samples, Vec3* velocity, float* gravity) {
+    size_t n = samples.size();
+    if (n < (size_t)FLIGHT_MIN_SAMPLES || samples.back().first - samples.front().first < FLIGHT_MIN_SECONDS) return false;
+    double t0 = samples.front().first, st = 0, st2 = 0, st3 = 0, st4 = 0, sx = 0, sz = 0, sy = 0, sxt = 0, szt = 0, syt = 0, syt2 = 0;
+    for (auto& [at, p] : samples) {
+        double t = at - t0;
+        st += t, st2 += t * t, st3 += t * t * t, st4 += t * t * t * t;
+        sx += p.x, sz += p.z, sy += p.y, sxt += p.x * t, szt += p.z * t, syt += p.y * t, syt2 += p.y * t * t;
+    }
+    double linear = n * st2 - st * st;
+    if (std::fabs(linear) < 1e-12) return false;
+    velocity->x = (float)((n * sxt - st * sx) / linear);
+    velocity->z = (float)((n * szt - st * sz) / linear);
+    double a[3][4] = {{(double)n, st, st2, sy}, {st, st2, st3, syt}, {st2, st3, st4, syt2}};
+    for (int c = 0; c < 3; c++) {
+        int pivot = c;
+        for (int r = c + 1; r < 3; r++)
+            if (std::fabs(a[r][c]) > std::fabs(a[pivot][c])) pivot = r;
+        std::swap(a[c], a[pivot]);
+        if (std::fabs(a[c][c]) < 1e-12) return false;
+        for (int r = 0; r < 3; r++) {
+            if (r == c) continue;
+            double f = a[r][c] / a[c][c];
+            for (int k = c; k < 4; k++) a[r][k] -= f * a[c][k];
+        }
+    }
+    velocity->y = (float)(a[1][3] / a[1][1]);
+    *gravity = (float)(-2 * a[2][3] / a[2][2]);
+    return std::isfinite(velocity->x) && std::isfinite(*gravity);
+}
+
+inline float spit_speed_per_impulse() { return config::cfg.spit_speed > 0 ? config::cfg.spit_speed : DEFAULT_SPIT_SPEED_PER_IMPULSE; }
+inline float spit_gravity() { return config::cfg.spit_gravity > 0 ? config::cfg.spit_gravity : DEFAULT_SPIT_GRAVITY; }
+
+inline void learn_from_flight() {
+    Vec3 velocity;
+    float gravity;
+    bool ok = fit_flight(flight.samples, &velocity, &gravity);
+    float speed = length(velocity);
+    if (ok && gravity > 1 && gravity < 80 && speed > 2 && flight.impulse > 0) {
+        float per_impulse = speed / flight.impulse;
+        bool first = !(config::cfg.spit_speed > 0);
+        config::cfg.spit_speed = first ? per_impulse : (config::cfg.spit_speed + per_impulse) / 2;
+        config::cfg.spit_gravity = first ? gravity : (config::cfg.spit_gravity + gravity) / 2;
+        ballistics_learned = true;
+        logf_hook("spit flight: %zu samples, speed %.1f m/s for impulse %.2f, gravity %.2f, now using %.3f per impulse and gravity %.2f",
+                  flight.samples.size(), speed, flight.impulse, gravity, config::cfg.spit_speed, config::cfg.spit_gravity);
+    } else {
+        logf_hook("spit flight: not usable (%zu samples, fit %d, speed %.1f, gravity %.2f)", flight.samples.size(), (int)ok, speed, ok ? gravity : NAN);
+    }
+    flight = {};
+}
+
+inline void track_spit() {
+    std::lock_guard<std::mutex> l(esp_mx);
+    if (!flight.spit) return;
+    double now = now_seconds();
+    Vec3 p;
+    bool flying = rdv<uintptr_t>(flight.spit) == vt_spit && position_of(flight.spit + THROWABLE_CONTROL, &p);
+    if (flying && now - flight.start <= FLIGHT_SAMPLE_SECONDS) {
+        if (flight.samples.empty() || length({p.x - flight.samples.back().second.x, p.y - flight.samples.back().second.y,
+                                              p.z - flight.samples.back().second.z}) > 0.001f)
+            flight.samples.push_back({now, p});
+        return;
+    }
+    learn_from_flight();
+}
+
+inline bool pick_spit_target(Vec3 from, Vec3 look, EspTarget* out) {
+    float best = -2;
+    for (auto& t : seen_players) {
+        if (t.hunter || t.ally || !(t.health > 0) || now_seconds() - t.seen > HOLD_SECONDS) continue;
+        Vec3 to{t.feet.x - from.x, t.feet.y + AIM_HEIGHT - from.y, t.feet.z - from.z};
+        float d = length(to), l = length(look);
+        if (!(d > 0) || !(l > 0)) continue;
+        float facing = (to.x * look.x + to.y * look.y + to.z * look.z) / (d * l);
+        if (facing > best) best = facing, *out = t;
+    }
+    return best > -2;
+}
+
+inline bool aim_spit(Vec3 from, Vec3 impulse, Vec3* aimed) {
+    float strength = length(impulse);
+    EspTarget t;
+    if (!(strength > 0) || !pick_spit_target(from, impulse, &t)) return false;
+    float speed = strength * spit_speed_per_impulse();
+    float time = 0;
+    Vec3 dir{};
+    for (int i = 0; i < LEAD_ITERATIONS; i++) {
+        Vec3 at{t.feet.x + t.velocity.x * time, t.feet.y + AIM_HEIGHT + t.velocity.y * time, t.feet.z + t.velocity.z * time};
+        if (!aim_direction(from, at, speed, spit_gravity(), &dir, &time)) return false;
+    }
+    *aimed = {dir.x * strength, dir.y * strength, dir.z * strength};
+    return true;
+}
+
+inline bool thrown_by_me(uintptr_t spit, Vec3 eye) {
+    uintptr_t owner = rdv<uintptr_t>(spit + THROW_OWNER);
+    if (!owner) return false;
+    if (owner == local_player()) return true;
+    Vec3 feet;
+    return alive(owner) && g.player_control >= 0 && position_of(owner + g.player_control, &feet) && own_body(eye, feet);
+}
+
+inline Vec3* spit_impulse_hook(uintptr_t spit, Vec3* out) {
+    Vec3* result = throw_impulse_original(spit, out);
+    if (!is_on("z_aim")) return result;
+    std::lock_guard<std::mutex> l(esp_mx);
+    if (view.at < 0 || !thrown_by_me(spit, view.eye)) return result;
+    Vec3 from;
+    if (!position_of(spit + THROWABLE_CONTROL, &from) || distance(from, view.eye) > 3) from = view.eye;
+    Vec3 original = *out, aimed;
+    if (aim_spit(from, original, &aimed)) {
+        Vec3 pending = rdv<Vec3>(spit + THROW_PENDING_IMPULSE, Vec3{NAN, NAN, NAN});
+        if (std::isfinite(pending.x)) {
+            wr<Vec3>(spit + THROW_PENDING_IMPULSE, {pending.x + aimed.x - original.x, pending.y + aimed.y - original.y, pending.z + aimed.z - original.z});
+            *out = aimed;
+        }
+    }
+    flight = {spit, length(*out), now_seconds(), {}};
+    return result;
+}
+
+inline bool install_spit_hook(uintptr_t base) {
+    vt_spit = game::find_vtable(base, "ThrowableLiquid");
+    if (!vt_spit) return false;
+    auto at = (uintptr_t*)(vt_spit + SLOT_THROW_IMPULSE * 8);
+    if (*at == (uintptr_t)&spit_impulse_hook) return true;
+    if (!in_game_module(*at)) return false;
+    throw_impulse_original = (ThrowImpulseFn)*at;
+    DWORD old;
+    VirtualProtect(at, 8, PAGE_READWRITE, &old);
+    *at = (uintptr_t)&spit_impulse_hook;
+    VirtualProtect(at, 8, old, &old);
+    return true;
 }
 
 const int FLASH_COLORS[] = {0x180, 0x18c, 0x198, 0x1a4, 0x1b0}, FLASH_BEAMS[] = {0x198, 0x1b0};
