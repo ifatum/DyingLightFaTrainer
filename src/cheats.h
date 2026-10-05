@@ -146,6 +146,9 @@ inline uintptr_t original_vtable = 0;
 inline float best_stamina[2] = {};
 inline std::mutex modules_mx;
 inline std::vector<uintptr_t> enemy_modules;
+inline std::map<uintptr_t, bool> nest_modules;
+inline uintptr_t vt_nest_logic = 0;
+const int AI_FIELDS = 0x2000;
 inline std::map<uintptr_t, int> stack_floor;
 inline std::map<uintptr_t, float> condition_floor;
 const int ITEM_CONDITION = 0x44;
@@ -248,6 +251,7 @@ inline void locate(uintptr_t base) {
         var_root = game::rip_target(hits[0], 3, 7);
     if (auto hits = game::find_code(base, "F3 0F 10 05 ? ? ? ? F3 44 0F 10 15 ? ? ? ? 41 0F 57 C2 0F 2F 40 04"); !hits.empty())
         dfa_fall_speed = game::rip_target(hits[0], 4, 8);
+    vt_nest_logic = game::find_vtable(base, "HiveBroodLogicModule");
     vt_param_float = game::find_vtable(base, "?$Param@M");
     vt_param_bool = game::find_vtable(base, "?$Param@_N");
     read_param_names();
@@ -635,20 +639,46 @@ inline bool is_enemy_module(uintptr_t m) {
            slot(owner, SLOT_HEALTH) == rdv<uintptr_t>(g.vt_human + SLOT_HEALTH * 8);
 }
 
+inline bool owned_by_nest(uintptr_t owner) {
+    if (!vt_nest_logic) return false;
+    for (int off = 0; off < AI_FIELDS; off += 8) {
+        uintptr_t field = rdv<uintptr_t>(owner + off);
+        if (field > 0x10000 && rdv<uintptr_t>(field) == vt_nest_logic) return true;
+    }
+    return false;
+}
+
+inline bool is_nest_module(uintptr_t m) {
+    {
+        std::lock_guard<std::mutex> l(modules_mx);
+        auto it = nest_modules.find(m);
+        if (it != nest_modules.end()) return it->second;
+    }
+    bool nest = owned_by_nest(rdv<uintptr_t>(m + MODULE_OWNER));
+    std::lock_guard<std::mutex> l(modules_mx);
+    nest_modules[m] = nest;
+    return nest;
+}
+
 inline void scan_enemies() {
     std::vector<uintptr_t> vts(std::begin(g.vt_health), std::end(g.vt_health)), found;
+    std::map<uintptr_t, bool> nests;
     for (auto& list : game::scan(vts))
         for (uintptr_t m : list)
-            if (is_enemy_module(m)) found.push_back(m);
+            if (is_enemy_module(m)) {
+                found.push_back(m);
+                nests[m] = owned_by_nest(rdv<uintptr_t>(m + MODULE_OWNER));
+            }
     std::lock_guard<std::mutex> l(modules_mx);
     enemy_modules.swap(found);
+    nest_modules.swap(nests);
 }
 
 inline void weaken_enemies() {
     std::lock_guard<std::mutex> l(modules_mx);
     for (uintptr_t m : enemy_modules) {
         float cur = rdv<float>(m + MODULE_HEALTH, NAN);
-        if (is_enemy_module(m) && cur > ONE_HIT_HEALTH && cur < 1e7f) wr<float>(m + MODULE_HEALTH, ONE_HIT_HEALTH);
+        if (is_enemy_module(m) && !nest_modules[m] && cur > ONE_HIT_HEALTH && cur < 1e7f) wr<float>(m + MODULE_HEALTH, ONE_HIT_HEALTH);
     }
 }
 
@@ -1084,7 +1114,7 @@ asm(".text\n" FATRAINER_UPDATE_HOOK(0) FATRAINER_UPDATE_HOOK(1) FATRAINER_UPDATE
 
 extern "C" void fatrainer_module_update(uintptr_t module) {
     static cheats::Cheat* one_hit = cheats::find("one_hit");
-    if (!one_hit->on || !cheats::is_enemy_module(module)) return;
+    if (!one_hit->on || !cheats::is_enemy_module(module) || cheats::is_nest_module(module)) return;
     float cur = cheats::rdv<float>(module + cheats::MODULE_HEALTH, NAN);
     if (cur > cheats::ONE_HIT_HEALTH && cur < 1e7f) cheats::wr<float>(module + cheats::MODULE_HEALTH, cheats::ONE_HIT_HEALTH);
 }

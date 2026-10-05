@@ -218,6 +218,19 @@ int main(int argc, char** argv) {
     game::wr<float>(w.enemy_health + 0x78, 300);
     fatrainer_module_update(w.enemy_health);
     CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
+    CHECK(cheats::vt_nest_logic);
+    {
+        static uintptr_t nest_logic[4] = {cheats::vt_nest_logic};
+        game::wr<uintptr_t>(w.enemy + 0x88, (uintptr_t)nest_logic);
+        cheats::nest_modules.clear();
+        game::wr<float>(w.enemy_health + 0x78, 90);
+        fatrainer_module_update(w.enemy_health);
+        CHECK(game::rdv<float>(w.enemy_health + 0x78) == 90 && cheats::is_nest_module(w.enemy_health));
+        game::wr<uintptr_t>(w.enemy + 0x88, 0);
+        cheats::nest_modules.clear();
+        fatrainer_module_update(w.enemy_health);
+        CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1 && !cheats::is_nest_module(w.enemy_health));
+    }
     CHECK(game::rdv<float>(param("RopeEnergyRegenTime")) == 0.01f && game::rdv<uint8_t>(param("CanUseHook")) == 1);
     CHECK(game::rdv<uint8_t>(param("InfiniteStamina")) == 1 && game::rdv<float>(param("FlashlightRechargeSpeed")) == 1000);
     CHECK(game::rdv<uint8_t>(param("CanUseHook")) == 1 && game::rdv<float>(param("ZombieSpitLightDisableAmmoRegenTime3v1")) == 0.05f);
