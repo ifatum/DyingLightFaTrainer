@@ -56,7 +56,12 @@ int main(int argc, char** argv) {
     CHECK(memcmp(f16 + 7, "\x8b\x41\x40", 3) == 0);
 
     w.build();
+    game::copy_heap_chunks = true;
     game::refresh();
+    std::string copied = game::g.status.substr(0, game::g.status.find(", scan"));
+    game::copy_heap_chunks = false;
+    game::refresh();
+    CHECK(copied == game::g.status.substr(0, game::g.status.find(", scan")));
     printf("status: %s\nstats: %s\n", game::g.status.c_str(), game::stat_report().c_str());
     CHECK(game::g.wallets.size() == 1 && game::money(game::g.wallets[0]) == 15855);
     auto* bp = game::find_inventory(game::K_BACKPACK);
@@ -216,6 +221,21 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 8 && game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 10.0f);
     CHECK(game::rdv<float>(param("RopeEnergyRegenTime")) == 12.5f && game::rdv<uint8_t>(param("CanUseHook")) == 0 && fake_rules[0] == 0);
     (void)flag;
+    uintptr_t blade = 0;
+    for (auto& it : game::find_inventory(game::K_BACKPACK)->items)
+        if (it.info && !strcmp(it.info->id, "Melee_MacheteAGen")) blade = it.addr;
+    CHECK(blade);
+    game::wr<float>(blade + cheats::ITEM_CONDITION, 30.0f);
+    cheats::find("durability")->on = true;
+    cheats::tick();
+    game::wr<float>(blade + cheats::ITEM_CONDITION, 12.5f);
+    cheats::tick();
+    CHECK(game::rdv<float>(blade + cheats::ITEM_CONDITION) == 30.0f);
+    cheats::find("durability")->on = false;
+    cheats::tick();
+    game::wr<float>(blade + cheats::ITEM_CONDITION, 12.5f);
+    cheats::tick();
+    CHECK(game::rdv<float>(blade + cheats::ITEM_CONDITION) == 12.5f && cheats::condition_floor.empty());
     CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == game::g.vt_human);
     printf("cheats: %s\n", cheats::describe().c_str());
 
@@ -443,6 +463,20 @@ int main(int argc, char** argv) {
     config::normalize({"player", "combat", "prison", "give", "settings"});
     CHECK(config::cfg.pages[2].id == "prison" && config::cfg.pages[3].id == "give");
     DeleteFileA(path.c_str());
+
+    static int position_calls = 0;
+    auto saved_get = cheats::get_position;
+    cheats::get_position = [](uintptr_t, cheats::Vec3* out) { position_calls++; *out = {1, 2, 3}; return out; };
+    uint8_t node[0x40] = {}, entity[0x100] = {}, control[0x10] = {};
+    *(uintptr_t*)(entity + cheats::ENTITY_NODE) = (uintptr_t)node;
+    *(uintptr_t*)(control + cheats::CONTROL_ENTITY) = (uintptr_t)entity;
+    cheats::Vec3 at;
+    CHECK(cheats::position_of((uintptr_t)control, &at) && at.y == 2 && position_calls == 1);
+    *(uintptr_t*)(entity + cheats::ENTITY_NODE) = 0x10;
+    CHECK(!cheats::position_of((uintptr_t)control, &at) && std::isnan(at.x) && position_calls == 1);
+    *(uintptr_t*)(control + cheats::CONTROL_ENTITY) = 0xdead0000;
+    CHECK(!cheats::position_of((uintptr_t)control, &at) && position_calls == 1);
+    cheats::get_position = saved_get;
 
     printf(fails ? "SELFTEST FAILED (%d)\n" : "SELFTEST OK\n", fails);
     return fails != 0;

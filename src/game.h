@@ -109,19 +109,33 @@ inline std::vector<uintptr_t> find_code(uintptr_t base, const char* pattern, siz
 
 inline uintptr_t rip_target(uintptr_t at, int disp_at, int length) { return at + length + rdv<int32_t>(at + disp_at); }
 
+inline bool on_wine() {
+    static const bool wine = GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version") != nullptr;
+    return wine;
+}
+inline bool copy_heap_chunks = !on_wine();
+
 template <class F> inline void each_heap_chunk(F visit) {
     const size_t CH = 1 << 20;
     MEMORY_BASIC_INFORMATION mbi;
     const uintptr_t STACK_AREA = 0x400000;
     uintptr_t stack_hi = (uintptr_t)((NT_TIB*)NtCurrentTeb())->StackBase, stack_lo = stack_hi - STACK_AREA;
     const uintptr_t SYSTEM_AREA = 0x7FFF00000000ULL;
+    std::vector<uint64_t> copy(copy_heap_chunks ? CH / 8 : 0);
+    uintptr_t copy_lo = (uintptr_t)copy.data(), copy_hi = copy_lo + copy.size() * 8;
     for (uintptr_t a = 0x10000; a < SYSTEM_AREA && VirtualQuery((LPCVOID)a, &mbi, sizeof mbi); ) {
         uintptr_t s = (uintptr_t)mbi.BaseAddress, e = s + mbi.RegionSize;
         bool ok = mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && mbi.Protect == PAGE_READWRITE &&
                   mbi.RegionSize <= (1ULL << 30) && !(s < stack_hi && e > stack_lo);
         for (uintptr_t c = s; ok && c < e; c += CH) {
             size_t n = std::min<uintptr_t>(CH, e - c);
-            if (!IsBadReadPtr((const void*)c, n)) visit(c, n);
+            SIZE_T got = 0;
+            if (c < copy_hi && c + n > copy_lo) continue;
+            if (copy.empty()) {
+                if (!IsBadReadPtr((const void*)c, n)) visit((const uint64_t*)c, c, n);
+            } else if (ReadProcessMemory(GetCurrentProcess(), (LPCVOID)c, copy.data(), n, &got) && got == n) {
+                visit(copy.data(), c, n);
+            }
         }
         a = e > a ? e : a + 0x1000;
     }
@@ -130,8 +144,7 @@ template <class F> inline void each_heap_chunk(F visit) {
 inline std::vector<std::vector<uintptr_t>> scan(const std::vector<uintptr_t>& vts) {
     std::vector<std::vector<uintptr_t>> out(vts.size());
     uintptr_t vts_at = (uintptr_t)vts.data();
-    each_heap_chunk([&](uintptr_t c, size_t n) {
-        const uint64_t* q = (const uint64_t*)c;
+    each_heap_chunk([&](const uint64_t* q, uintptr_t c, size_t n) {
         for (size_t i = 0; i < n / 8; i++)
             for (size_t j = 0; j < vts.size(); j++)
                 if (q[i] == vts[j] && vts[j] && (c + i * 8 < vts_at || c + i * 8 >= vts_at + vts.size() * 8))

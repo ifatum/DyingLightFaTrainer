@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.1
+
+- Fixed: the game could crash at start on Windows. The trainer's memory scan read game memory that the game was freeing at the same time; on Windows it now copies each block safely first.
+- Fixed: a crash when the trainer read the position of a character that was being removed (Kill all enemies, saved positions, prison sections).
+- Unbreakable weapons keeps each weapon's own durability full instead of relying on game settings, so it works for every melee weapon, including the Korek Machete.
+
 ## 1.8
 
 - Fixed: zombies and NPCs standing still. Cheats that change game settings (for example the grappling hook) also changed a different setting of every zombie and NPC. They now only change your own settings.

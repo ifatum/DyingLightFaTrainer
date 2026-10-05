@@ -141,6 +141,8 @@ inline float best_stamina[2] = {};
 inline std::mutex modules_mx;
 inline std::vector<uintptr_t> enemy_modules;
 inline std::map<uintptr_t, int> stack_floor;
+inline std::map<uintptr_t, float> condition_floor;
+const int ITEM_CONDITION = 0x44;
 struct Saved { std::vector<uint8_t> original, written; };
 inline std::map<uintptr_t, Saved> saved_bytes;
 using CacheGetFn = uintptr_t (*)(uintptr_t, int);
@@ -621,14 +623,19 @@ inline void weaken_enemies() {
 
 inline bool is_ammo(const game::Item& it) { return it.info && strstr(it.info->id, "Ammo"); }
 
+inline std::set<uintptr_t> items_present(uintptr_t inv) {
+    uintptr_t arr = rdv<uintptr_t>(inv + 0x40);
+    uint32_t n = rdv<uint32_t>(inv + 0x48);
+    std::set<uintptr_t> present;
+    for (uint32_t i = 0; i < n && i < 4000; i++) present.insert(rdv<uintptr_t>(arr + i * 8));
+    return present;
+}
+
 inline void keep_stacks(bool ammo, bool supplies) {
     if (!ammo && !supplies) return stack_floor.clear();
     for (auto& inv : g.invs) {
         if (inv.kind == game::K_STASH) continue;
-        uintptr_t arr = rdv<uintptr_t>(inv.obj + 0x40);
-        uint32_t n = rdv<uint32_t>(inv.obj + 0x48);
-        std::set<uintptr_t> present;
-        for (uint32_t i = 0; i < n && i < 4000; i++) present.insert(rdv<uintptr_t>(arr + i * 8));
+        auto present = items_present(inv.obj);
         for (auto& it : inv.items) {
             bool wanted = is_ammo(it) ? ammo : supplies;
             if (!wanted || !it.info || !(it.info->st[ST_MaxStackCount] > 1) || !present.count(it.addr)) continue;
@@ -637,6 +644,22 @@ inline void keep_stacks(bool ammo, bool supplies) {
             if (f == stack_floor.end()) f = stack_floor.emplace(it.addr, std::max(cur, 2)).first;
             else if (cur > f->second) f->second = cur;
             if (cur < f->second) game::set_count(it, f->second);
+        }
+    }
+}
+
+inline void keep_durability(bool on) {
+    if (!on) return condition_floor.clear();
+    for (auto& inv : g.invs) {
+        if (inv.kind != game::K_BACKPACK) continue;
+        auto present = items_present(inv.obj);
+        for (auto& it : inv.items) {
+            if (!it.info || !(it.info->st[ST_Condition] > 0) || !present.count(it.addr)) continue;
+            float cur = rdv<float>(it.addr + ITEM_CONDITION, NAN);
+            if (!(cur > 0)) continue;
+            auto f = condition_floor.emplace(it.addr, cur).first;
+            if (cur > f->second) f->second = cur;
+            if (cur < f->second) wr<float>(it.addr + ITEM_CONDITION, f->second);
         }
     }
 }
@@ -686,6 +709,16 @@ inline void locate_engine(HMODULE engine) {
     float_field_editor = (uintptr_t)GetProcAddress(engine, "?GetFieldFloatEditor@CRTTIObject@@UEBAPEBVCRTTIFieldFloat@@PEBDAEAM@Z");
 }
 
+const int CONTROL_ENTITY = 0x8, ENTITY_NODE = 0xe8, NODE_FLAGS = 0x28;
+inline bool position_of(uintptr_t control, Vec3* out) {
+    *out = {NAN, NAN, NAN};
+    uintptr_t entity = rdv<uintptr_t>(control + CONTROL_ENTITY), node = rdv<uintptr_t>(entity + ENTITY_NODE);
+    uint32_t flags;
+    if (!get_position || !node || !rd(node + NODE_FLAGS, &flags, sizeof flags)) return false;
+    get_position(control, out);
+    return std::isfinite(out->x);
+}
+
 struct Section { uintptr_t sensor; int type; int stage; bool last; Vec3 pos; };
 enum { SENSOR_START = 1, SENSOR_STAGE = 2, SENSOR_REWARD = 3, SENSOR_EVAC = 4 };
 inline std::vector<Section> prison_sections;
@@ -716,7 +749,7 @@ inline void read_sections() {
         if (!get_position || rdv<uintptr_t>(s) != g.vt_prison_sensor) continue;
         Section sec{s, 0, -1, false, {NAN, NAN, NAN}};
         if (g.sensor_control < 0) continue;
-        get_position(s + g.sensor_control, &sec.pos);
+        position_of(s + g.sensor_control, &sec.pos);
         uintptr_t r = g.sensor_rtti < 0 ? 0 : s + g.sensor_rtti;
         if (r && reflected(r) && field_int && field_bool && field_enum) {
             int v = 0;
@@ -738,7 +771,7 @@ inline void read_sections() {
 
 inline Vec3 player_position() {
     Vec3 p{NAN, NAN, NAN};
-    if (alive(player) && get_position && g.player_control >= 0) get_position(player + g.player_control, &p);
+    if (alive(player) && g.player_control >= 0) position_of(player + g.player_control, &p);
     return p;
 }
 
@@ -824,9 +857,8 @@ inline int kill_enemies(float radius) {
     for (uintptr_t m : enemy_modules) {
         if (!is_enemy_module(m) || !(rdv<float>(m + MODULE_HEALTH, NAN) > 0)) continue;
         uintptr_t owner = rdv<uintptr_t>(m + MODULE_OWNER), kill = slot(owner, SLOT_KILL);
-        Vec3 at{NAN, NAN, NAN};
-        get_position(owner + g.human_control, &at);
-        if (!in_game_module(kill) || !(distance(me, at) <= radius)) continue;
+        Vec3 at;
+        if (!in_game_module(kill) || !position_of(owner + g.human_control, &at) || !(distance(me, at) <= radius)) continue;
         ((void (*)(uintptr_t))kill)(owner);
         killed++;
     }
@@ -939,6 +971,7 @@ inline void tick() {
     objects_missing = prison_missing || uv_missing || rope_missing;
     game::reapply_stats();
     keep_stacks(is_on("ammo"), is_on("supplies"));
+    keep_durability(is_on("durability"));
     if (is_on("one_hit")) weaken_enemies();
     player = find_player();
     player_provider = alive(player) ? rdv<uintptr_t>(player + PARAM_PROVIDER) : 0;
