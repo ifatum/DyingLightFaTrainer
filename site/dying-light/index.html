@@ -29,7 +29,11 @@
 </header>
 
 <main id="main">
-  <section class="hero">
+  <section class="hero hero-city">
+    <div class="city" data-p="top" aria-hidden="true">
+      <div class="city-layer back"><img src="img/harran-back.svg" alt=""><img class="lit" src="img/harran-back-lit.svg" alt=""></div>
+      <div class="city-layer front"><img src="img/harran-front.svg" alt=""><img class="lit" src="img/harran-front-lit.svg" alt=""></div>
+    </div>
     <div class="wrap">
       <ul class="kicker">
         <li>Version 1.9</li>
@@ -54,10 +58,20 @@
           </dl>
         </div>
       </div>
-      <figure class="shot wide-shot" data-wipe>
-        <div class="frame"><img src="img/pvp.webp" width="1038" height="698" alt="The FaTrainer menu on its PvP page: a sidebar of pages and sliders for Pounce, Ground pound, Tackle and Claws, each set to Normal."></div>
-        <figcaption>The PvP page. Each Night Hunter attack has its own reach slider.</figcaption>
-      </figure>
+    </div>
+  </section>
+
+  <section class="press" data-pin aria-labelledby="press-title">
+    <div class="press-stage wrap">
+      <div class="press-copy">
+        <h2 id="press-title">Press <em>Insert</em>.</h2>
+        <p>The menu opens over the game. While it is open the game stops reading your mouse and keyboard, so clicking a switch never swings your machete.</p>
+        <p class="hint">Keep scrolling to press it.</p>
+      </div>
+      <div class="press-visual">
+        <div class="keycap" aria-hidden="true">Insert</div>
+        <figure class="press-shot"><img src="img/pvp.webp" width="1038" height="698" alt="The FaTrainer menu on its PvP page: a sidebar of pages and sliders for Pounce, Ground pound, Tackle and Claws, each set to Normal."></figure>
+      </div>
     </div>
   </section>
 
@@ -107,6 +121,11 @@
       </div>
     </div>
   </section>
+
+  <div class="ticker" aria-hidden="true">
+    <div class="row" data-speed="0.6"><span>God mode</span><span>One hit kill</span><span>Infinite spits</span><span>Instant lockpicking</span><span>Player ESP</span><span>No reload</span><span>Long camouflage</span><span>Weapon editor</span><span>Infinite grappling hook</span></div>
+    <div class="row" data-speed="-0.45"><span>Pause prison timers</span><span>Death from above</span><span>Give items</span><span>Unbreakable weapons</span><span>UV light color</span><span>No cooldowns</span><span>Skill levels</span><span>Route replay</span><span>Infinite UV</span></div>
+  </div>
 
   <section class="reach" aria-labelledby="reach-title" data-from="10" data-to="40" data-angle-from="45" data-angle-to="180">
     <div class="reach-stage wrap">
