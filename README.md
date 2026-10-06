@@ -30,7 +30,7 @@
 Download the installer from the [latest release](https://github.com/ifatum/DyingLightFaTrainer/releases/latest):
 
 - **Windows**: `FaTrainer-Installer.exe`
-- **Linux**: `FaTrainer-Installer-Linux.tar.gz`, unpack it and run `FaTrainer-Installer` (works on any distribution with glibc 2.27 or newer and `curl` or `wget`)
+- **Linux**: `FaTrainer-Installer-Linux.tar.gz`, unpack it and run `FaTrainer-Installer` (works on any distribution with glibc 2.27 or newer and `curl` or `wget`). On NixOS start it with `steam-run ./FaTrainer-Installer`
 
 The installer finds Dying Light in your Steam libraries (or lets you choose the folder), downloads `xinput1_3.dll` from the release, checks it against the release checksum and puts it next to `DyingLightGame.exe`. Run it again to update or uninstall. On Linux it also shows the Steam launch option Proton needs:
 

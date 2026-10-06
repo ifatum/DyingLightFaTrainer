@@ -1,15 +1,21 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <unistd.h>
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_opengl3_loader.h"
 #include "ui.h"
 
+static void nixos_hint() {
+    if (access("/etc/NIXOS", F_OK) == 0) fprintf(stderr, "On NixOS, start it through Steam's runtime instead: steam-run ./FaTrainer-Installer\n");
+}
+
 int main() {
     glfwSetErrorCallback([](int code, const char* text) { fprintf(stderr, "glfw %d: %s\n", code, text); });
     if (!glfwInit()) {
         fprintf(stderr, "FaTrainer Installer needs a desktop session with X11 or XWayland.\n");
+        nixos_hint();
         return 1;
     }
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
@@ -29,6 +35,7 @@ int main() {
     }
     if (!window) {
         fprintf(stderr, "FaTrainer Installer could not open an OpenGL window.\n");
+        nixos_hint();
         glfwTerminate();
         return 1;
     }
