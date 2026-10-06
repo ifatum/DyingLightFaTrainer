@@ -1,14 +1,17 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <cstdio>
-#include <unistd.h>
+#include <fstream>
+#include <string>
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_opengl3_loader.h"
 #include "ui.h"
 
 static void nixos_hint() {
-    if (access("/etc/NIXOS", F_OK) == 0) fprintf(stderr, "On NixOS, start it through Steam's runtime instead: steam-run ./FaTrainer-Installer\n");
+    std::ifstream release("/etc/os-release");
+    std::string text((std::istreambuf_iterator<char>(release)), std::istreambuf_iterator<char>());
+    if (text.find("ID=nixos") != std::string::npos) fprintf(stderr, "On NixOS, start it through Steam's runtime instead: steam-run ./FaTrainer-Installer\n");
 }
 
 int main() {
