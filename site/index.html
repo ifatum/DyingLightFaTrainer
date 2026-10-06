@@ -3,264 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FaTrainer | Dying Light</title>
-<meta name="description" content="An in-game trainer for Dying Light 1 on Windows and Linux (Proton). One file next to the game, Insert opens the menu.">
-<meta name="theme-color" content="#0e0f12">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%230e0f12'/%3E%3Cpath d='M10 7h13v4h-8.5v4H21v4h-6.5v6H10z' fill='%23f39a1e'/%3E%3C/svg%3E">
-<link rel="preload" href="fonts/big-shoulders-display-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/newsreader-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css">
-<script src="site.js" defer></script>
+<title>FaTrainer</title>
+<meta name="description" content="Free, open source in-game trainers for PC games. One file next to the game, a menu over it.">
+<meta name="theme-color" content="#121110">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/anybody-latin-standard-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
-<header class="top">
+<header class="bar">
   <div class="wrap">
-    <a class="mark" href="./">FaTrainer <span>| Dying Light</span></a>
+    <a class="brand" href="./">FaTrainer</a>
     <nav aria-label="Main">
-      <a href="#menu">Menu</a>
-      <a href="#install">Install</a>
-      <a class="extra" href="#changes">Changes</a>
-      <a href="https://github.com/ifatum/DyingLightFaTrainer">Source</a>
+      <a href="#games">Games</a>
+      <a href="#how">How it works</a>
     </nav>
   </div>
+  <span class="progress" aria-hidden="true"></span>
 </header>
 
 <main id="main">
   <section class="hero">
     <div class="wrap">
-      <div class="hero-copy">
-        <p class="label"><b>v1.9</b> &nbsp;/&nbsp; Dying Light 1 &nbsp;/&nbsp; Windows and Linux</p>
-        <h1>A trainer that runs <em>inside</em> the game</h1>
-        <p class="lead">One file next to <code>DyingLightGame.exe</code>. Press <kbd>Insert</kbd> in Harran and a menu opens over the game: god mode, items, a weapon editor, skill levels, Harran Prison timers and the reach of every Night Hunter attack.</p>
-        <div class="actions">
-          <a class="button" href="downloads/FaTrainer-1.9.zip" download>Download 1.9 <small>zip, 2.6 MB</small></a>
-          <a class="quiet" href="https://github.com/ifatum/DyingLightFaTrainer">Read the source &rarr;</a>
-        </div>
-        <dl class="facts">
-          <dt>File</dt><dd>xinput1_3.dll, no installer</dd>
-          <dt>Opens with</dt><dd>Insert or F8, any key you pick</dd>
-          <dt>License</dt><dd>MIT, free</dd>
-        </dl>
-      </div>
-      <figure class="shot">
-        <img src="img/pvp.webp" width="1038" height="698" alt="The FaTrainer menu on its PvP page: a sidebar of pages on the left and sliders for Pounce, Ground pound, Tackle and Claws, each set to Normal.">
-        <figcaption><b>Fig. 1</b> &nbsp;The PvP page. Every Night Hunter attack gets its own reach slider, from Normal to Max.</figcaption>
-      </figure>
+      <h1 class="title stretch hub-title" data-p="top">FaTrainer</h1>
+      <p class="lead">Trainers that open as a menu inside the game. One file next to the game's executable, a key to open it, nothing to install. Free and open source.</p>
     </div>
   </section>
 
-  <section class="chapter" id="menu" aria-labelledby="menu-title">
+  <section class="section" id="games" aria-labelledby="games-title">
     <div class="wrap">
-      <div class="chapter-head" data-reveal>
-        <div><div class="rule"></div><p class="label">01 &nbsp;The menu</p></div>
-        <div>
-          <h2 id="menu-title">Fourteen pages, grouped like the game</h2>
-          <p>The sidebar on the left is the trainer's own. Pages that have something switched on get a dot, and Turn all off puts every cheat and slider back at once.</p>
-        </div>
+      <div class="head">
+        <h2 id="games-title" class="rise"><span class="line-mask"><span>Games</span></span></h2>
+        <p class="fade">Each game gets its own trainer, built for how that game works.</p>
       </div>
-
-      <div class="menu-tour">
-        <nav class="rail" aria-label="Menu pages">
-          <span class="marker" aria-hidden="true"></span>
-          <ol>
-            <li class="group">Cheats</li>
-            <li><a href="#p-player">Player</a></li>
-            <li><a href="#p-combat">Combat</a></li>
-            <li><a href="#p-skills">Skills</a></li>
-            <li class="group">Modes</li>
-            <li><a href="#p-hunter">Night Hunter</a></li>
-            <li><a href="#p-pvp">PvP</a></li>
-            <li><a href="#p-visuals">Visuals</a></li>
-            <li><a href="#p-prison">Prison</a></li>
-            <li class="group">Items</li>
-            <li><a href="#p-items">Cash to Give items</a></li>
-            <li><a href="#p-settings">Settings</a></li>
-          </ol>
-        </nav>
-
-        <div class="pages">
-          <section id="p-player" data-reveal>
-            <h3>Player</h3>
-            <p class="what">Your own character, in the story and in co-op.</p>
-            <ul data-stagger>
-              <li><b>God mode</b>, also against the forced damage Harran Prison uses.</li>
-              <li>Infinite stamina, grappling hook and UV flashlight, or a slider that makes the UV charge last up to ten times longer.</li>
-              <li>Instant lockpicking. Every pick position is the sweet spot.</li>
-              <li>No fall damage, movement speed, jump height, refill health and stamina.</li>
-            </ul>
-            <figure class="shot">
-              <img src="img/player.webp" width="1038" height="698" loading="lazy" alt="The Player page: health and stamina readouts, a Refill button, and switches for God mode, Infinite stamina, Infinite grappling hook and Infinite UV flashlight.">
-              <figcaption><b>Fig. 2</b> &nbsp;The Player page reads your live health and stamina from the game.</figcaption>
-            </figure>
-          </section>
-
-          <section id="p-combat" data-reveal>
-            <h3>Combat</h3>
-            <p class="what">Weapons and enemies.</p>
-            <ul data-stagger>
-              <li>One hit kill. Be The Zombie nests keep their real health.</li>
-              <li>Infinite ammo, no reload, infinite consumables.</li>
-              <li>Unbreakable weapons: each weapon keeps its own durability full.</li>
-              <li>Kill every zombie and human within 80 m through the game's own kill, so quest counters move.</li>
-            </ul>
-          </section>
-
-          <section id="p-skills" data-reveal>
-            <h3>Skills</h3>
-            <p class="what">Every skill tree, the Night Hunter level and both PvP ranks.</p>
-            <ul data-stagger>
-              <li>XP multiplier, or level up through real XP so the game hands out the skill points.</li>
-              <li>Set any tree: +1, +10, Max, -1, -10.</li>
-              <li>Survivor and Night Hunter ranks for Be The Zombie.</li>
-            </ul>
-          </section>
-
-          <section id="p-hunter" data-reveal>
-            <h3>Night Hunter</h3>
-            <p class="what">For Be The Zombie, when you invade as the hunter.</p>
-            <ul data-stagger>
-              <li>Hunter god mode and infinite energy. UV light no longer exhausts you.</li>
-              <li>No ability cooldowns: tendril, camouflage and ground pound are always ready.</li>
-              <li>Infinite spits, and your own key for each of the four spit types.</li>
-              <li>Long camouflage: ten minutes, and you can run and attack while hidden.</li>
-            </ul>
-            <figure class="shot">
-              <img src="img/zombie.webp" width="1038" height="698" loading="lazy" alt="The Night Hunter page with switches for Hunter god mode, Infinite hunter energy, No ability cooldowns, Infinite spits and Long camouflage.">
-              <figcaption><b>Fig. 3</b> &nbsp;Night Hunter switches work before or during a match.</figcaption>
-            </figure>
-          </section>
-
-          <section id="p-pvp" data-reveal>
-            <h3>PvP</h3>
-            <p class="what">How far each attack reaches. Each player's game decides its own attacks, so some sliders only change what happens on your side.</p>
-            <ul data-stagger>
-              <li>Pounce, ground pound, tackle, claws, death from above, dropkick, kicks and melee.</li>
-              <li>At Max the pounce, dropkick and death from above also take targets that are not in front of you.</li>
-              <li>Spit hit radius: blast spits reach up to 30 m from where they land, toxic puddles grow with it.</li>
-              <li>Death from above height: a normal jump is enough instead of a long drop.</li>
-            </ul>
-          </section>
-
-          <section id="p-visuals" data-reveal>
-            <h3>Visuals</h3>
-            <p class="what">See players through walls, and change how the UV light looks.</p>
-            <ul data-stagger>
-              <li>Player ESP: box, role, health bar and number, distance, PvP rank, hunter rage, lines from the bottom of the screen.</li>
-              <li>Allies on or off, a range limit, separate colors for the Night Hunter and survivors.</li>
-              <li>Your own UV light color and glow strength.</li>
-            </ul>
-            <figure class="shot">
-              <img src="img/visuals.webp" width="1038" height="698" loading="lazy" alt="The Visuals page: Show players with a range of up to 300 m, checkboxes for Box, Role, Health bar, Distance and Show allies, and color swatches for the Night Hunter and survivors.">
-              <figcaption><b>Fig. 4</b> &nbsp;The ESP keeps drawing after you close the menu.</figcaption>
-            </figure>
-          </section>
-
-          <section id="p-prison" data-reveal>
-            <h3>Prison</h3>
-            <p class="what">The Harran Prison DLC run.</p>
-            <ul data-stagger>
-              <li>Pause both prison timers.</li>
-              <li>Teleport to the start, every split, the reward room and the evacuation.</li>
-              <li>Record your route once, then replay it so every quest trigger fires.</li>
-              <li>Save and load your position.</li>
-            </ul>
-          </section>
-
-          <section id="p-items" data-reveal>
-            <h3>Cash to Give items</h3>
-            <p class="what">Cash, Backpack, Stash, Materials, Tools and Give items.</p>
-            <ul data-stagger>
-              <li>Set your money and any stack count.</li>
-              <li>Spawn any weapon, upgrade, consumable, material or blueprint. Each goes into the inventory the game accepts it in.</li>
-              <li>Weapon editor: damage, durability, crits, knockback, stamina use, reach, magazine, reload time, upgrades, repairs and rarity.</li>
-            </ul>
-          </section>
-
-          <section id="p-settings" data-reveal>
-            <h3>Settings</h3>
-            <p class="what">The menu itself.</p>
-            <ul data-stagger>
-              <li>Accent color, interface size, background dim, menu key.</li>
-              <li>Sidebar order and which pages show.</li>
-              <li>Named configs: save the cheats and sliders you use and load them in one click.</li>
-            </ul>
-          </section>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="chapter" id="install" aria-labelledby="install-title">
-    <div class="wrap">
-      <div class="chapter-head" data-reveal>
-        <div><div class="rule"></div><p class="label">02 &nbsp;Install</p></div>
-        <div>
-          <h2 id="install-title">Copy one file</h2>
-          <p>The game loads <code>xinput1_3.dll</code> from its own folder, so the trainer starts with it. Delete the file to remove it.</p>
-        </div>
-      </div>
-      <div class="steps">
-        <div data-reveal>
-          <h3>Windows</h3>
-          <ol>
-            <li><p>Download the zip and take <code>xinput1_3.dll</code> out of it.</p></li>
-            <li><p>In Steam, right-click Dying Light, then Manage, then Browse local files.</p></li>
-            <li><p>Put the file next to <code>DyingLightGame.exe</code> and start the game.</p></li>
-            <li><p>Press <kbd>Insert</kbd> or <kbd>F8</kbd> once you are in game.</p></li>
-          </ol>
-        </div>
-        <div data-reveal style="--i: 2">
-          <h3>Linux, Steam with Proton</h3>
-          <ol>
-            <li><p>Put <code>xinput1_3.dll</code> next to <code>DyingLightGame.exe</code>, as on Windows.</p></li>
-            <li>
-              <p>Tell Proton to use it. In the game's Properties, paste this into Launch options:</p>
-              <div class="code"><code id="launch">WINEDLLOVERRIDES="xinput1_3=n,b" %command%</code><button type="button" data-copy="launch">Copy</button></div>
-            </li>
-            <li><p>Start the game and press <kbd>Insert</kbd> or <kbd>F8</kbd>.</p></li>
-          </ol>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="chapter" id="before" aria-labelledby="before-title">
-    <div class="wrap">
-      <div class="chapter-head" data-reveal>
-        <div><div class="rule"></div><p class="label">03 &nbsp;Before you play</p></div>
-        <div><h2 id="before-title">Read this first</h2></div>
-      </div>
-      <ul class="notes" data-stagger>
-        <li><strong>Back up your saves</strong><p>Item, level and rank changes are saved by the game like any other progress. Keep a copy of your save folder before you try something big.</p></li>
-        <li><strong>Other players</strong><p>In co-op and Be The Zombie the trainer changes your game, and through it, theirs. Turn things off when you play with people who did not agree to it.</p></li>
-        <li><strong>Techland's rules</strong><p>Modifying the game online may break Dying Light's terms of use. Any action Techland takes against an account is between you and Techland.</p></li>
-        <li><strong>If something breaks</strong><p>The trainer writes <code>fatrainer.log</code> next to the game. Attach it when you report a problem on GitHub.</p></li>
+      <ul class="games">
+        <li class="game fade" style="--game-accent: #e8973a">
+          <a href="dying-light/">
+            <h2>Dying Light</h2>
+            <span class="meta"><b>Version 1.9</b><span>Windows and Linux</span></span>
+            <p>God mode, items and a weapon editor, skill levels, Harran Prison timers, and Be The Zombie reach sliders with a player ESP.</p>
+          </a>
+        </li>
       </ul>
+      <p class="soon fade">More games will be added here.</p>
     </div>
   </section>
 
-  <section class="chapter" id="changes" aria-labelledby="changes-title">
+  <section class="section" id="how" aria-labelledby="how-title">
     <div class="wrap">
-      <div class="chapter-head" data-reveal>
-        <div><div class="rule"></div><p class="label">04 &nbsp;Changes</p></div>
-        <div>
-          <h2 id="changes-title">What is new</h2>
-          <p>The full history is in <a href="https://github.com/ifatum/DyingLightFaTrainer/blob/main/CHANGELOG.md">CHANGELOG.md</a>.</p>
-        </div>
+      <div class="head">
+        <h2 id="how-title" class="rise"><span class="line-mask"><span>Every FaTrainer</span></span><span class="line-mask" style="--i: 1"><span>works the same way.</span></span></h2>
       </div>
-      <div class="log">
-        <div class="version" data-reveal>1.9</div>
-        <ul data-stagger>
-          <li><em>New</em>Visuals page: a player ESP for Be The Zombie and co-op, and your own UV light color.</li>
-          <li><em>New</em>Spit hit radius slider and spit keys on the Night Hunter page.</li>
-          <li><em>New</em>Named configs on the Settings page.</li>
-          <li><em>New</em>Death from above height: start it from a normal jump.</li>
-          <li><em>Fixed</em>Crashes and stutter while the ESP or one hit kill was on.</li>
-          <li><em>Fixed</em>PvP sliders and other cheats stopping after you die.</li>
-          <li><em>Fixed</em>One hit kill no longer drops Be The Zombie nests to 1 health.</li>
-        </ul>
+      <div class="notes" data-stagger>
+        <div class="fade"><h3>One file</h3><p>The trainer is a single DLL the game loads from its own folder. Delete it and the game is untouched.</p></div>
+        <div class="fade"><h3>A menu over the game</h3><p>Press <kbd>Insert</kbd> or <kbd>F8</kbd>. While it is open the game ignores your mouse and keyboard.</p></div>
+        <div class="fade"><h3>Windows and Linux</h3><p>On Linux it runs through Steam's Proton with one launch option.</p></div>
+        <div class="fade"><h3>Nothing leaves your PC</h3><p>A trainer never connects to the internet. It only writes its settings and a log next to the game.</p></div>
       </div>
     </div>
   </section>
@@ -269,23 +70,19 @@
 <footer class="foot">
   <div class="wrap">
     <div>
-      <p><strong class="mark">FaTrainer <span>| Dying Light</span></strong></p>
-      <p>Dying Light is a trademark of Techland S.A. FaTrainer is a free fan project. It is not made, endorsed or supported by Techland.</p>
+      <p>FaTrainer is a free fan project. Game names are trademarks of their owners, who do not make, endorse or support it.</p>
     </div>
     <div>
-      <p class="label">Legal</p>
+      <h2>Games</h2>
       <ul>
-        <li><a href="legal.html">Privacy and contact</a></li>
-        <li><a href="prawne.html" hreflang="pl" lang="pl">Prywatność i kontakt</a></li>
-        <li><a href="legal.html#cookies">Cookies: none</a></li>
+        <li><a href="dying-light/">Dying Light</a></li>
       </ul>
     </div>
     <div>
-      <p class="label">Project</p>
+      <h2>Legal</h2>
       <ul>
-        <li><a href="https://github.com/ifatum/DyingLightFaTrainer">Source on GitHub</a></li>
-        <li><a href="https://github.com/ifatum/DyingLightFaTrainer/blob/main/LICENSE">MIT License</a></li>
-        <li><a href="https://github.com/ifatum/DyingLightFaTrainer/issues">Report a problem</a></li>
+        <li><a href="legal.html">Privacy and contact</a></li>
+        <li><a href="prawne.html" hreflang="pl" lang="pl">Prywatność i kontakt</a></li>
       </ul>
     </div>
   </div>
