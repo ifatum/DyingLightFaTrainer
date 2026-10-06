@@ -12,3 +12,4 @@ graphify-out/
 *.swp
 .DS_Store
 CLAUDE.md
+nexus/
