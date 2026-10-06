@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#121110">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="preload" href="assets/fonts/anybody-latin-standard-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/style.css">
-<script src="assets/site.js" defer></script>
+<link rel="stylesheet" href="assets/style.css?v=11">
+<script src="assets/site.js?v=11" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -26,10 +26,21 @@
 </header>
 
 <main id="main">
-  <section class="hero">
+  <section class="hero hub-hero">
     <div class="wrap">
       <h1 class="title stretch hub-title" data-p="top">FaTrainer</h1>
-      <p class="lead">Trainers that open as a menu inside the game. One file next to the game's executable, a key to open it, nothing to install. Free and open source.</p>
+      <div class="hero-grid">
+        <div>
+          <p class="lead">Trainers that open as a menu inside the game. One file next to the game's executable, a key to open it, nothing to install. Free and open source.</p>
+          <p class="actions"><a class="button" href="dying-light/">Dying Light <span>1.9</span></a><a class="link-arrow" href="#how">How it works</a></p>
+        </div>
+        <div class="deck" data-p="top" aria-hidden="true">
+          <img style="--k: -1.5; --a: 1.5" src="dying-light/img/visuals.webp" width="1038" height="698" alt="">
+          <img style="--k: -0.5; --a: 0.5" src="dying-light/img/zombie.webp" width="1038" height="698" alt="">
+          <img style="--k: 0.5; --a: 0.5" src="dying-light/img/pvp.webp" width="1038" height="698" alt="">
+          <img style="--k: 1.5; --a: 1.5" src="dying-light/img/player.webp" width="1038" height="698" alt="">
+        </div>
+      </div>
     </div>
   </section>
 
@@ -40,7 +51,7 @@
         <p class="fade">Each game gets its own trainer, built for how that game works.</p>
       </div>
       <ul class="games">
-        <li class="game fade" style="--game-accent: #e8973a">
+        <li class="game fade" style="--game-accent: #e8973a; --skyline: url(/dying-light/img/harran-front-lit.svg)">
           <a href="dying-light/">
             <h2>Dying Light</h2>
             <span class="meta"><b>Version 1.9</b><span>Windows and Linux</span></span>
@@ -51,6 +62,11 @@
       <p class="soon fade">More games will be added here.</p>
     </div>
   </section>
+
+  <div class="ticker" aria-hidden="true">
+    <div class="row" data-speed="0.5"><span>One file</span><span>No installer</span><span>Insert</span><span>God mode</span><span>Windows</span><span>Linux and Proton</span><span>Open source</span><span>Item editor</span><span>F8</span></div>
+    <div class="row" data-speed="-0.38"><span>Nothing leaves your PC</span><span>MIT</span><span>Skill levels</span><span>Your own menu key</span><span>Configs</span><span>Free</span><span>Delete it and it is gone</span></div>
+  </div>
 
   <section class="press" data-pin aria-labelledby="press-title">
     <div class="press-stage wrap">

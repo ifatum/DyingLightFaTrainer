@@ -98,7 +98,7 @@ h1, h2, h3 { font-family: var(--display); margin: 0; text-wrap: balance; font-we
 .kicker { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 28px; padding: 0; list-style: none; color: var(--muted); font-size: 0.92rem; }
 .kicker li:first-child { color: var(--accent); font-weight: 600; }
 .title { font-size: clamp(2.5rem, 5.6vw, 4.6rem); line-height: 0.94; max-width: 13ch; letter-spacing: -0.025em; --w-from: 125%; --w-span: 55%; --g-from: 820; --g-span: 260; }
-.hub-title { font-size: clamp(3rem, 10.4vw, 8.6rem); line-height: 0.85; letter-spacing: -0.035em; --w-from: 150%; --w-span: 95%; --g-from: 860; --g-span: 560; }
+.hub-title { font-size: clamp(2.2rem, 10.4vw, 8.6rem); line-height: 0.85; letter-spacing: -0.035em; --w-from: 150%; --w-span: 95%; --g-from: 860; --g-span: 560; }
 .title em { font-style: normal; color: var(--accent); }
 .lead { font-size: clamp(1.1rem, 1.5vw, 1.28rem); line-height: 1.55; color: var(--soft); margin-top: 28px; max-width: 46ch; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 30px; margin-top: 36px; }
@@ -269,6 +269,20 @@ html.js .fade.in { opacity: 1; transform: none; }
 .ticker span:nth-child(3n + 1) { color: var(--soft); font-weight: 300; }
 .ticker span:nth-child(4n + 2) { color: var(--accent); }
 .ticker span::after { content: "/"; margin-left: 0.6em; color: var(--line); font-weight: 200; }
+
+.hub-hero { overflow: clip; }
+.hub-hero .hero-grid { align-items: center; }
+.deck { position: relative; aspect-ratio: 1038 / 698; perspective: 1400px; --tx: 0; --ty: 0; }
+.deck img { position: absolute; inset: 0; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.8); transform-origin: 50% 120%;
+  transform: rotateY(calc(var(--tx) * 10deg)) rotateX(calc(var(--ty) * -8deg)) translateX(calc(var(--k) * (14px + var(--p, 0) * 70px))) translateY(calc(var(--a) * var(--p, 0) * 30px)) rotate(calc(var(--k) * (3deg + var(--p, 0) * 7deg)));
+  filter: brightness(calc(0.55 + (var(--k) + 1.5) * 0.15)); transition: filter 400ms var(--out), translate 500ms var(--out), transform 600ms var(--out); }
+.deck:hover img { filter: brightness(0.5); }
+.deck:hover img:hover { filter: none; translate: 0 -18px; z-index: 1; }
+.game a { position: relative; isolation: isolate; overflow: hidden; }
+.game a::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--skyline) right bottom / auto 100% repeat-x; opacity: 0.16; transform: translateY(35%); transition: opacity 700ms var(--out), transform 900ms var(--out); }
+.game a::after { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(60% 120% at 80% 110%, color-mix(in srgb, var(--game-accent) 22%, transparent), transparent 70%); opacity: 0; transition: opacity 700ms var(--out); }
+.game a:hover::before, .game a:focus-visible::before { opacity: 0.4; transform: none; }
+.game a:hover::after, .game a:focus-visible::after { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

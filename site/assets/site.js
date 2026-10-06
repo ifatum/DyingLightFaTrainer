@@ -168,3 +168,15 @@ document.querySelectorAll("[data-copy]").forEach((button) => {
     setTimeout(() => { button.textContent = "Copy"; }, 1600);
   });
 });
+
+const deck = document.querySelector(".deck");
+if (deck && !still) {
+  const hero = deck.closest(".hero");
+  hero.addEventListener("pointermove", (e) => {
+    if (e.pointerType !== "mouse") return;
+    const r = deck.getBoundingClientRect();
+    deck.style.setProperty("--tx", Math.max(-1, Math.min(1, (e.clientX - r.left) / r.width * 2 - 1)).toFixed(3));
+    deck.style.setProperty("--ty", Math.max(-1, Math.min(1, (e.clientY - r.top) / r.height * 2 - 1)).toFixed(3));
+  });
+  hero.addEventListener("pointerleave", () => { deck.style.setProperty("--tx", 0); deck.style.setProperty("--ty", 0); });
+}
