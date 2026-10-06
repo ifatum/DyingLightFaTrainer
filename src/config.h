@@ -40,7 +40,6 @@ struct Config {
     int spit_keys[SPIT_KEYS] = {};
     Esp esp;
     UvLight uv;
-    float spit_speed = 0, spit_gravity = 0;
 };
 
 inline Config cfg;
@@ -181,7 +180,6 @@ inline void load(const std::string& path) {
             auto& u = cfg.uv;
             if (sscanf(v.c_str(), "%d,%f,%f,%f,%f", &on, &u.color[0], &u.color[1], &u.color[2], &u.glow) == 5) u.on = on != 0;
         }
-        else if (k == "spit_ballistics") sscanf(v.c_str(), "%f,%f", &cfg.spit_speed, &cfg.spit_gravity);
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
         else if (Profile p; read_cheat_line(k, v, p)) {
             cfg.cheats_on.insert(cfg.cheats_on.end(), p.cheats.begin(), p.cheats.end());
@@ -212,7 +210,6 @@ inline bool save(const std::string& path) {
     fprintf(f, "esp_hunter=%.3f,%.3f,%.3f\nesp_survivor=%.3f,%.3f,%.3f\n", e.hunter[0], e.hunter[1], e.hunter[2], e.survivor[0],
             e.survivor[1], e.survivor[2]);
     fprintf(f, "uv_light=%d,%.3f,%.3f,%.3f,%.2f\n", cfg.uv.on, cfg.uv.color[0], cfg.uv.color[1], cfg.uv.color[2], cfg.uv.glow);
-    if (cfg.spit_speed > 0) fprintf(f, "spit_ballistics=%.4f,%.3f\n", cfg.spit_speed, cfg.spit_gravity);
     fclose(f);
     return true;
 }

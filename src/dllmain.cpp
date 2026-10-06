@@ -225,11 +225,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     }
     poll_spit_keys();
     bool esp = config::cfg.esp.on;
-    if (g_ready && (esp || cheats::is_on("z_aim"))) {
-        cheats::track_players();
-        cheats::track_spit();
-    }
-    if (cheats::ballistics_learned.exchange(false)) save_config();
+    if (g_ready && esp) cheats::track_players();
     if (g_ready && (g_open || esp)) {
         ImGuiIO& io = ImGui::GetIO();
         io.MouseDrawCursor = g_open;
@@ -379,7 +375,6 @@ static void main_thread() {
     menu::startup();
     cheats::locate((uintptr_t)gamedll);
     cheats::install_update_hooks();
-    logf("spit aimbot hook: %s", cheats::install_spit_hook((uintptr_t)gamedll) ? "ok" : "not found");
     logf("settings cache hook: %s", cheats::install_cache_hook() ? "ok" : cheats::cache_get_fn ? "unexpected code, skipped" : "not found");
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
@@ -391,7 +386,7 @@ static void main_thread() {
         const DWORD ENEMY_RESCAN = 3000, PLAYER_RESCAN = 10000;
         DWORD last_players = 0;
         for (;;) {
-            bool players = (config::cfg.esp.on || cheats::is_on("z_aim")) && GetTickCount() - last_players >= PLAYER_RESCAN;
+            bool players = config::cfg.esp.on && GetTickCount() - last_players >= PLAYER_RESCAN;
             if (players) last_players = GetTickCount();
             cheats::scan_targets(cheats::is_on("one_hit"), players);
             Sleep(ENEMY_RESCAN);

@@ -62,12 +62,11 @@ inline Cheat CHEATS[] = {
      {"FastRevolverReload"}},
     {"z_energy", "Infinite hunter energy", "Fitness and stamina never drain, UV light cannot exhaust you.", {},
      {"InfiniteFitness", "InfiniteStamina"}},
-    {"z_cooldowns", "No ability cooldowns", "Tendril, camouflage, ground pound and grab breaks are always ready.",
-     {{"TDCooldown", 0}, {"CamouflageCooldown", 0}, {"ZombieGroundPoundCooldown", 0}, {"ChargeLightCooldown", 0},
-      {"FastGrabBreakCooldown", 0}},
+    {"z_cooldowns", "No ability cooldowns", "Tendril, camouflage and ground pound are always ready.",
+     {{"TDCooldown", 0}, {"CamouflageCooldown", 0}, {"ZombieGroundPoundCooldown", 0}, {"ChargeLightCooldown", 0}},
      {}},
     {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}},
-    {"z_aim", "Spit aimbot", "Spits fly to the survivor nearest your crosshair. Your view does not move.", {}, {}},
+    {"z_air_tackle", "Tackle in mid air", "Start the charge tackle while jumping or falling, not only on the ground.", {}, {}},
     {"prison_pause", "Pause prison timers", "The run timer and the reward room countdown stand still. Works when you are the host.", {}, {}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
@@ -102,7 +101,8 @@ inline Tweak TWEAKS[] = {
     {"z_pound", "Ground pound", "Reach of the ground pound and the aerial ground pound.", G_ZOMBIE, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}},
     {"z_tackle", "Tackle", "How far away the charge tackle still connects.", G_ZOMBIE, {"ZombieChargeAttackRange"}},
     {"z_claws", "Claws", "Reach of your claw swipes.", G_ZOMBIE, {"RangeMeleeMul", "BestTargetMeleeRange"}},
-    {"z_spit", "Spit", "Spits fly faster and further.", G_ZOMBIE, {"ZombieSpitControlTheHordeVelocityMul", "ZombieSpitLightDisableVelocityMul"}},
+    {"z_spit", "Spit range", "How fast and far every spit flies, tapped or charged. At Max a tapped spit is four times faster.", G_ZOMBIE, {},
+     {{"f_btz_fixed_velocity_forward", 60}, {"f_btz_spit_charge_additinal_vel", 100}}},
     {"h_dfa", "Death from above range", "How far away the hunter can be when you start it. At Max, 12 m. Also grows the landing shockwave.",
      G_HUMAN, {"JumpAttackRange", "JumpAttackShockwaveRadius"}, {{"f_btz_jump_attack_range", 12}, {"f_btz_jump_attack_range_velocity_factor", 0.5f}}},
     {"h_dfa_pull", "Death from above pull", "How far off target you can start it; the attack pulls you onto the hunter. At Max he can be beside or behind you.",
@@ -136,6 +136,7 @@ inline uintptr_t player = 0;
 inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
+inline uintptr_t air_tackle_jump = 0;
 inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, profile_root = 0;
 inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
@@ -247,6 +248,10 @@ inline void locate(uintptr_t base) {
     const int FORCED_DAMAGE_AT = 16;
     if (auto hits = game::find_code(base, "0F 2F B3 64 09 00 00 73 0D 80 BB 2E 07 00 00 00 0F 84"); !hits.empty())
         forced_damage_jump = hits[0] + FORCED_DAMAGE_AT;
+    const int AIR_TACKLE_AT = 6;
+    if (auto hits = game::find_code(base, "80 7B 28 00 74 50 48 8B 03 48 8B CB FF 50 20 48 8B 88 98 0C 00 00 8B 41 38 85 C0 74 11 80 B9 CC 00 00 00 00 75 08 83 C0 FE 83 F8 01 76 28");
+        !hits.empty())
+        air_tackle_jump = hits[0] + AIR_TACKLE_AT;
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 8B 0D ? ? ? ? 48 8B 18 48 8B 01 FF 90 90 01 00 00 48 8B 0D ? ? ? ? 48 8D 55 ? 4C 8B C0 FF 93 90 03 00 00");
         !hits.empty())
         var_root = game::rip_target(hits[0], 3, 7);
@@ -501,6 +506,15 @@ inline void block_forced_damage(bool on) {
     if (!forced_damage_jump || forced_damage_blocked() == on) return;
     const uint8_t conditional[2] = {0x0F, 0x84}, always[2] = {0x90, 0xE9};
     write_code(forced_damage_jump, on ? always : conditional, 2);
+}
+
+inline const uint8_t CHARGE_STATE_CHECK[3] = {0x48, 0x8B, 0x03}, SKIP_CHARGE_STATE_CHECK[3] = {0xEB, 0x41, 0x90};
+
+inline bool air_tackle_allowed() { return air_tackle_jump && rdv<uint8_t>(air_tackle_jump) == SKIP_CHARGE_STATE_CHECK[0]; }
+
+inline void allow_air_tackle(bool on) {
+    if (!air_tackle_jump || air_tackle_allowed() == on) return;
+    write_code(air_tackle_jump, on ? SKIP_CHARGE_STATE_CHECK : CHARGE_STATE_CHECK, sizeof CHARGE_STATE_CHECK);
 }
 
 inline void apply_overrides() {
@@ -1006,7 +1020,7 @@ const int LOGICAL_PLAYER = 0x9d8, PLAYER_TEAM = 0x6dc, PLAYER_ROLE = 0x6e0, ROLE
 const int RANK_SURVIVOR = 0x74c, RANK_HUNTER = 0x750, CAMERA_ENGINE = 8, CAMERA_COMBINED = 0xb0;
 const float PLAYER_HEIGHT = 1.8f;
 
-struct EspTarget { Vec3 feet, velocity; float health, max_health, distance, rage; bool hunter, ally; int rank; uintptr_t p; double seen; };
+struct EspTarget { Vec3 feet; float health, max_health, distance, rage; bool hunter, ally; int rank; uintptr_t p; double seen; };
 inline std::mutex esp_mx;
 inline std::vector<uintptr_t> esp_players;
 
@@ -1084,7 +1098,7 @@ inline uintptr_t local_player() {
 }
 
 const double HOLD_SECONDS = 0.5;
-const float OWN_BODY_RADIUS = 1.2f, OWN_BODY_BELOW = 2.6f, OWN_BODY_ABOVE = 0.5f, VELOCITY_SMOOTHING = 0.3f;
+const float OWN_BODY_RADIUS = 1.2f, OWN_BODY_BELOW = 2.6f, OWN_BODY_ABOVE = 0.5f;
 
 inline bool own_body(Vec3 eye, Vec3 feet) {
     float dx = feet.x - eye.x, dz = feet.z - eye.z, dy = feet.y - eye.y;
@@ -1097,8 +1111,11 @@ inline std::vector<EspTarget> seen_players;
 inline std::string esp_state;
 
 inline void note_esp_state(const char* state) {
-    if (esp_state == state) return;
+    const DWORD QUIET_MS = 10000;
+    static DWORD logged_at = 0;
+    if (esp_state == state || GetTickCount() - logged_at < QUIET_MS) return;
     esp_state = state;
+    logged_at = GetTickCount();
     logf_hook("esp: %s", state);
 }
 
@@ -1129,13 +1146,6 @@ inline void track_players() {
         if (!me && own_body(v.eye, t.feet)) continue;
         t.p = p;
         t.seen = now;
-        if (last != before.end() && now > last->seen) {
-            float dt = (float)(now - last->seen);
-            Vec3 measured{(t.feet.x - last->feet.x) / dt, (t.feet.y - last->feet.y) / dt, (t.feet.z - last->feet.z) / dt};
-            t.velocity = {last->velocity.x + (measured.x - last->velocity.x) * VELOCITY_SMOOTHING,
-                          last->velocity.y + (measured.y - last->velocity.y) * VELOCITY_SMOOTHING,
-                          last->velocity.z + (measured.z - last->velocity.z) * VELOCITY_SMOOTHING};
-        }
         t.distance = distance(v.eye, t.feet);
         t.health = health_of(p);
         t.max_health = max_health_of(p);
@@ -1159,171 +1169,6 @@ inline bool esp_snapshot(float m[16], std::vector<EspTarget>& out, float max_dis
     out.clear();
     for (auto& t : seen_players)
         if (t.distance <= max_distance) out.push_back(t);
-    return true;
-}
-
-const int SLOT_THROW_IMPULSE = 124, THROW_OWNER = 0x378, THROW_PENDING_IMPULSE = 0x100, THROWABLE_CONTROL = 0x18;
-const float AIM_HEIGHT = 1.1f, DEFAULT_SPIT_SPEED_PER_IMPULSE = 1.0f, DEFAULT_SPIT_GRAVITY = 9.81f;
-const double FLIGHT_SAMPLE_SECONDS = 0.4, FLIGHT_MIN_SECONDS = 0.15;
-const int FLIGHT_MIN_SAMPLES = 5, LEAD_ITERATIONS = 3;
-
-using ThrowImpulseFn = Vec3* (*)(uintptr_t, Vec3*);
-inline uintptr_t vt_spit = 0;
-inline ThrowImpulseFn throw_impulse_original = nullptr;
-
-struct Flight { uintptr_t spit = 0; float impulse = 0; double start = 0; std::vector<std::pair<double, Vec3>> samples; };
-inline Flight flight;
-inline std::atomic<bool> ballistics_learned{false};
-
-inline float length(Vec3 v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
-
-inline bool aim_direction(Vec3 from, Vec3 to, float speed, float gravity, Vec3* dir, float* time) {
-    float dx = to.x - from.x, dz = to.z - from.z, dy = to.y - from.y;
-    float horizontal = std::sqrt(dx * dx + dz * dz);
-    if (!(speed > 0) || !(gravity > 0) || !(horizontal > 0.01f)) return false;
-    float s2 = speed * speed;
-    float disc = s2 * s2 - gravity * (gravity * horizontal * horizontal + 2 * dy * s2);
-    float angle = disc >= 0 ? std::atan((s2 - std::sqrt(disc)) / (gravity * horizontal)) : 0.785398f;
-    float c = std::cos(angle);
-    *dir = {dx / horizontal * c, std::sin(angle), dz / horizontal * c};
-    *time = horizontal / (speed * c);
-    return true;
-}
-
-inline bool fit_flight(const std::vector<std::pair<double, Vec3>>& samples, Vec3* velocity, float* gravity) {
-    size_t n = samples.size();
-    if (n < (size_t)FLIGHT_MIN_SAMPLES || samples.back().first - samples.front().first < FLIGHT_MIN_SECONDS) return false;
-    double t0 = samples.front().first, st = 0, st2 = 0, st3 = 0, st4 = 0, sx = 0, sz = 0, sy = 0, sxt = 0, szt = 0, syt = 0, syt2 = 0;
-    for (auto& [at, p] : samples) {
-        double t = at - t0;
-        st += t, st2 += t * t, st3 += t * t * t, st4 += t * t * t * t;
-        sx += p.x, sz += p.z, sy += p.y, sxt += p.x * t, szt += p.z * t, syt += p.y * t, syt2 += p.y * t * t;
-    }
-    double linear = n * st2 - st * st;
-    if (std::fabs(linear) < 1e-12) return false;
-    velocity->x = (float)((n * sxt - st * sx) / linear);
-    velocity->z = (float)((n * szt - st * sz) / linear);
-    double a[3][4] = {{(double)n, st, st2, sy}, {st, st2, st3, syt}, {st2, st3, st4, syt2}};
-    for (int c = 0; c < 3; c++) {
-        int pivot = c;
-        for (int r = c + 1; r < 3; r++)
-            if (std::fabs(a[r][c]) > std::fabs(a[pivot][c])) pivot = r;
-        std::swap(a[c], a[pivot]);
-        if (std::fabs(a[c][c]) < 1e-12) return false;
-        for (int r = 0; r < 3; r++) {
-            if (r == c) continue;
-            double f = a[r][c] / a[c][c];
-            for (int k = c; k < 4; k++) a[r][k] -= f * a[c][k];
-        }
-    }
-    velocity->y = (float)(a[1][3] / a[1][1]);
-    *gravity = (float)(-2 * a[2][3] / a[2][2]);
-    return std::isfinite(velocity->x) && std::isfinite(*gravity);
-}
-
-inline float spit_speed_per_impulse() { return config::cfg.spit_speed > 0 ? config::cfg.spit_speed : DEFAULT_SPIT_SPEED_PER_IMPULSE; }
-inline float spit_gravity() { return config::cfg.spit_gravity > 0 ? config::cfg.spit_gravity : DEFAULT_SPIT_GRAVITY; }
-
-inline void learn_from_flight() {
-    Vec3 velocity;
-    float gravity;
-    bool ok = fit_flight(flight.samples, &velocity, &gravity);
-    float speed = length(velocity);
-    if (ok && gravity > 1 && gravity < 80 && speed > 2 && flight.impulse > 0) {
-        float per_impulse = speed / flight.impulse;
-        bool first = !(config::cfg.spit_speed > 0);
-        config::cfg.spit_speed = first ? per_impulse : (config::cfg.spit_speed + per_impulse) / 2;
-        config::cfg.spit_gravity = first ? gravity : (config::cfg.spit_gravity + gravity) / 2;
-        ballistics_learned = true;
-        logf_hook("spit flight: %zu samples, speed %.1f m/s for impulse %.2f, gravity %.2f, now using %.3f per impulse and gravity %.2f",
-                  flight.samples.size(), speed, flight.impulse, gravity, config::cfg.spit_speed, config::cfg.spit_gravity);
-    } else {
-        logf_hook("spit flight: not usable (%zu samples, fit %d, speed %.1f, gravity %.2f)", flight.samples.size(), (int)ok, speed, ok ? gravity : NAN);
-    }
-    flight = {};
-}
-
-inline void track_spit() {
-    std::lock_guard<std::mutex> l(esp_mx);
-    if (!flight.spit) return;
-    double now = now_seconds();
-    Vec3 p;
-    bool flying = rdv<uintptr_t>(flight.spit) == vt_spit && position_of(flight.spit + THROWABLE_CONTROL, &p);
-    if (flying && now - flight.start <= FLIGHT_SAMPLE_SECONDS) {
-        if (flight.samples.empty() || length({p.x - flight.samples.back().second.x, p.y - flight.samples.back().second.y,
-                                              p.z - flight.samples.back().second.z}) > 0.001f)
-            flight.samples.push_back({now, p});
-        return;
-    }
-    learn_from_flight();
-}
-
-inline bool pick_spit_target(Vec3 from, Vec3 look, EspTarget* out) {
-    float best = -2;
-    for (auto& t : seen_players) {
-        if (t.hunter || t.ally || !(t.health > 0) || now_seconds() - t.seen > HOLD_SECONDS) continue;
-        Vec3 to{t.feet.x - from.x, t.feet.y + AIM_HEIGHT - from.y, t.feet.z - from.z};
-        float d = length(to), l = length(look);
-        if (!(d > 0) || !(l > 0)) continue;
-        float facing = (to.x * look.x + to.y * look.y + to.z * look.z) / (d * l);
-        if (facing > best) best = facing, *out = t;
-    }
-    return best > -2;
-}
-
-inline bool aim_spit(Vec3 from, Vec3 impulse, Vec3* aimed) {
-    float strength = length(impulse);
-    EspTarget t;
-    if (!(strength > 0) || !pick_spit_target(from, impulse, &t)) return false;
-    float speed = strength * spit_speed_per_impulse();
-    float time = 0;
-    Vec3 dir{};
-    for (int i = 0; i < LEAD_ITERATIONS; i++) {
-        Vec3 at{t.feet.x + t.velocity.x * time, t.feet.y + AIM_HEIGHT + t.velocity.y * time, t.feet.z + t.velocity.z * time};
-        if (!aim_direction(from, at, speed, spit_gravity(), &dir, &time)) return false;
-    }
-    *aimed = {dir.x * strength, dir.y * strength, dir.z * strength};
-    return true;
-}
-
-inline bool thrown_by_me(uintptr_t spit, Vec3 eye) {
-    uintptr_t owner = rdv<uintptr_t>(spit + THROW_OWNER);
-    if (!owner) return false;
-    if (owner == local_player()) return true;
-    Vec3 feet;
-    return alive(owner) && g.player_control >= 0 && position_of(owner + g.player_control, &feet) && own_body(eye, feet);
-}
-
-inline Vec3* spit_impulse_hook(uintptr_t spit, Vec3* out) {
-    Vec3* result = throw_impulse_original(spit, out);
-    if (!is_on("z_aim")) return result;
-    std::lock_guard<std::mutex> l(esp_mx);
-    if (view.at < 0 || !thrown_by_me(spit, view.eye)) return result;
-    Vec3 from;
-    if (!position_of(spit + THROWABLE_CONTROL, &from) || distance(from, view.eye) > 3) from = view.eye;
-    Vec3 original = *out, aimed;
-    if (aim_spit(from, original, &aimed)) {
-        Vec3 pending = rdv<Vec3>(spit + THROW_PENDING_IMPULSE, Vec3{NAN, NAN, NAN});
-        if (std::isfinite(pending.x)) {
-            wr<Vec3>(spit + THROW_PENDING_IMPULSE, {pending.x + aimed.x - original.x, pending.y + aimed.y - original.y, pending.z + aimed.z - original.z});
-            *out = aimed;
-        }
-    }
-    flight = {spit, length(*out), now_seconds(), {}};
-    return result;
-}
-
-inline bool install_spit_hook(uintptr_t base) {
-    vt_spit = game::find_vtable(base, "ThrowableLiquid");
-    if (!vt_spit) return false;
-    auto at = (uintptr_t*)(vt_spit + SLOT_THROW_IMPULSE * 8);
-    if (*at == (uintptr_t)&spit_impulse_hook) return true;
-    if (!in_game_module(*at)) return false;
-    throw_impulse_original = (ThrowImpulseFn)*at;
-    DWORD old;
-    VirtualProtect(at, 8, PAGE_READWRITE, &old);
-    *at = (uintptr_t)&spit_impulse_hook;
-    VirtualProtect(at, 8, old, &old);
     return true;
 }
 
@@ -1425,6 +1270,7 @@ inline void tick() {
     bool rope_missing = is_on("hook") && !keep_rope_energy();
     patch_lockpick(is_on("lockpick"));
     block_forced_damage(is_on("god"));
+    allow_air_tackle(is_on("z_air_tackle"));
     route_tick();
     objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing;
     game::reapply_stats();
@@ -1471,13 +1317,13 @@ inline std::string describe() {
     char b[1600];
     snprintf(b, sizeof b,
              "player %s (%zu scanned, local root %s, local %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
-             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, pvp rank survivor %d hunter %d, trees %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
+             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, air tackle %s, pvp rank survivor %d hunter %d, trees %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
              "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s (player +%x, sensor +%x/+%x)",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", local_class().c_str(), health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
              level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", !lockpick_patch ? "missing" : lockpick_patched() ? "on" : "ready",
-             !forced_damage_jump ? "missing" : forced_damage_blocked() ? "on" : "ready", pvp_rank(false), pvp_rank(true), tree_report().c_str(),
+             !forced_damage_jump ? "missing" : forced_damage_blocked() ? "on" : "ready", !air_tackle_jump ? "missing" : air_tackle_allowed() ? "on" : "ready", pvp_rank(false), pvp_rank(true), tree_report().c_str(),
              enemy_modules.size(), saved_bytes.size(),
              g.equipment.size(), g.ropes.size(), g.prison_data.size(), g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_START_TIME, NAN),
              g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_END_TIME, NAN), g.prison_sensors.size(),

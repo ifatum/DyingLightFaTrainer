@@ -155,6 +155,17 @@ int main(int argc, char** argv) {
         cheats::forced_damage_jump = real;
     }
     CHECK(lockpick_code == (uintptr_t)m + 0x7817ae);
+    CHECK(cheats::air_tackle_jump == (uintptr_t)m + 0xcf66b7);
+    {
+        static uint8_t fake_check[5] = {0x48, 0x8B, 0x03, 0x48, 0x8B};
+        uintptr_t real = cheats::air_tackle_jump;
+        cheats::air_tackle_jump = (uintptr_t)fake_check;
+        cheats::allow_air_tackle(true);
+        CHECK(fake_check[0] == 0xEB && fake_check[1] == 0x41 && fake_check[2] == 0x90 && fake_check[3] == 0x48 && cheats::air_tackle_allowed());
+        cheats::allow_air_tackle(false);
+        CHECK(fake_check[0] == 0x48 && fake_check[1] == 0x8B && fake_check[2] == 0x03 && !cheats::air_tackle_allowed());
+        cheats::air_tackle_jump = real;
+    }
     CHECK(!memcmp((const void*)cheats::cache_get_fn, "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18", 15));
     fake_cache_base = w.cache;
     cheats::cache_get_original = fake_cache_get;
@@ -287,8 +298,10 @@ int main(int argc, char** argv) {
     cheats::find_tweak("h_dfa_pull")->factor = 10.0f;
     CHECK(read_var("f_btz_jump_attack_angle_max") == 180 && read_var("f_btz_jump_attack_range") == 12);
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_zombie_grab_range") == 25);
+    cheats::find_tweak("z_spit")->factor = 10.0f;
+    CHECK(read_var("f_btz_fixed_velocity_forward") == 60 && read_var("f_btz_spit_charge_additinal_vel") == 100);
     cheats::all_off();
-    CHECK(read_var("f_btz_jump_attack_range") == 7);
+    CHECK(read_var("f_btz_jump_attack_range") == 7 && read_var("f_btz_fixed_velocity_forward") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
 
     {
@@ -622,81 +635,6 @@ int main(int argc, char** argv) {
         CHECK(config::cfg.uv.on && config::cfg.uv.glow == 2.5f && config::cfg.uv.color[0] == 0.25f);
         DeleteFileA(ini.c_str());
         config::cfg = saved_cfg;
-    }
-
-    {
-        auto lands_at = [](cheats::Vec3 from, cheats::Vec3 dir, float speed, float gravity, float time) {
-            return cheats::Vec3{from.x + dir.x * speed * time, from.y + dir.y * speed * time - 0.5f * gravity * time * time,
-                                from.z + dir.z * speed * time};
-        };
-        cheats::Vec3 dir, from{1, 2, 3}, to{21, 5, 13};
-        float time;
-        CHECK(cheats::aim_direction(from, to, 25, 9.81f, &dir, &time));
-        CHECK(cheats::distance(lands_at(from, dir, 25, 9.81f, time), to) < 0.01f && std::fabs(cheats::length(dir) - 1) < 1e-4f);
-        CHECK(cheats::aim_direction(from, {500, 2, 3}, 10, 9.81f, &dir, &time) && std::fabs(dir.y - 0.7071f) < 1e-3f);
-        CHECK(!cheats::aim_direction(from, {1, 9, 3}, 25, 9.81f, &dir, &time));
-
-        std::vector<std::pair<double, cheats::Vec3>> samples;
-        for (int i = 0; i < 8; i++) {
-            double t = 0.05 * i;
-            samples.push_back({100 + t, {(float)(4 + 12 * t), (float)(2 + 6 * t - 0.5 * 14 * t * t), (float)(-1 - 9 * t)}});
-        }
-        cheats::Vec3 velocity;
-        float gravity;
-        CHECK(cheats::fit_flight(samples, &velocity, &gravity));
-        CHECK(std::fabs(velocity.x - 12) < 0.01f && std::fabs(velocity.y - 6) < 0.01f && std::fabs(velocity.z + 9) < 0.01f && std::fabs(gravity - 14) < 0.01f);
-        samples.resize(3);
-        CHECK(!cheats::fit_flight(samples, &velocity, &gravity));
-
-        static uint8_t spit[0x400] = {};
-        static uintptr_t fake_spit_vtable = 0x5157;
-        uintptr_t saved_vt = cheats::vt_spit, saved_root = cheats::local_player_root;
-        auto saved_original = cheats::throw_impulse_original;
-        auto saved_cfg = config::cfg;
-        static uint8_t local_slot[0x800] = {};
-        static uintptr_t local_root = (uintptr_t)local_slot;
-        *(uintptr_t*)(local_slot + cheats::LOCAL_PLAYER) = w.player;
-        cheats::local_player_root = (uintptr_t)&local_root;
-        cheats::vt_spit = fake_spit_vtable;
-        *(uintptr_t*)spit = fake_spit_vtable;
-        *(uintptr_t*)(spit + cheats::THROW_OWNER) = w.player;
-        cheats::throw_impulse_original = [](uintptr_t self, cheats::Vec3* out) {
-            *out = {0, 2, 13};
-            auto pending = (cheats::Vec3*)(self + cheats::THROW_PENDING_IMPULSE);
-            pending->x += out->x, pending->y += out->y, pending->z += out->z;
-            return out;
-        };
-        config::cfg.spit_speed = 2, config::cfg.spit_gravity = 9.81f;
-        cheats::view.at = cheats::now_seconds();
-        cheats::view.eye = {0, 1.6f, 0};
-        cheats::EspTarget survivor{}, hunter{};
-        survivor.feet = {8, 0, 20}, survivor.health = 100, survivor.seen = cheats::now_seconds(), survivor.p = 1;
-        hunter.feet = {0, 0, 10}, hunter.health = 100, hunter.seen = survivor.seen, hunter.hunter = true, hunter.p = 2;
-        cheats::seen_players = {hunter, survivor};
-        cheats::Vec3 out{};
-        cheats::spit_impulse_hook((uintptr_t)spit, &out);
-        CHECK(out.x == 0 && out.y == 2 && out.z == 13 && cheats::flight.spit == 0);
-        *(cheats::Vec3*)(spit + cheats::THROW_PENDING_IMPULSE) = {};
-        cheats::find("z_aim")->on = true;
-        cheats::spit_impulse_hook((uintptr_t)spit, &out);
-        float strength = std::sqrt(2.0f * 2.0f + 13.0f * 13.0f);
-        cheats::Vec3 aimed_dir{out.x / strength, out.y / strength, out.z / strength};
-        cheats::Vec3 chest{8, cheats::AIM_HEIGHT, 20};
-        float horizontal = std::sqrt(64.0f + 400.0f), flight_time = horizontal / (strength * 2 * std::sqrt(aimed_dir.x * aimed_dir.x + aimed_dir.z * aimed_dir.z));
-        CHECK(cheats::distance(lands_at(cheats::view.eye, aimed_dir, strength * 2, 9.81f, flight_time), chest) < 0.05f);
-        cheats::Vec3 pending = *(cheats::Vec3*)(spit + cheats::THROW_PENDING_IMPULSE);
-        CHECK(cheats::distance(pending, out) < 1e-4f && cheats::flight.spit == (uintptr_t)spit);
-        *(uintptr_t*)(spit + cheats::THROW_OWNER) = 0x1234;
-        out = {};
-        cheats::spit_impulse_hook((uintptr_t)spit, &out);
-        CHECK(out.x == 0 && out.y == 2 && out.z == 13);
-        cheats::all_off();
-        cheats::flight = {};
-        cheats::seen_players.clear();
-        cheats::view = {};
-        config::cfg = saved_cfg;
-        cheats::throw_impulse_original = saved_original;
-        cheats::vt_spit = saved_vt, cheats::local_player_root = saved_root;
     }
 
     CHECK(config::profile_name("  PvP: hunter/../x  ") == "PvP hunterx");

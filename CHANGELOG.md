@@ -9,7 +9,9 @@
 - New: custom UV light color and glow on the Visuals page.
 - New: spit keys on the Night Hunter page. Pick your own key for the Horde Summoner, UV Suppressor, Sense Suppressor and Toxic spit; the trainer presses the game's key for it.
 - Fixed: one hit kill no longer drops Be The Zombie nests to 1 health, so their health bar is not stuck on red.
-- New: Spit aimbot on the Night Hunter page. Every spit you throw flies to the survivor nearest your crosshair, aiming for drop and where the survivor is running. Your view does not move. The trainer measures how your spits fly and remembers it in fatrainer.ini, so the first spit of a new install can still miss.
+- New: Spit range slider on the PvP page (replaces the old Spit slider, which only changed one spit type). It raises the speed the game gives every spit, tapped or charged; at Max a tapped spit flies four times faster.
+- New: Tackle in mid air on the Night Hunter page. The charge tackle can be started while jumping or falling.
+- No ability cooldowns no longer sets the grab break cooldown, which the game never reads.
 - Fixed: crashes and stutter while the ESP or one hit kill was on. The trainer searched all game memory every 3 seconds, twice, and could crash when the game freed memory during the search. It now does one search, every 10 seconds for players, at low priority with short pauses, and skips memory that disappears mid-read instead of crashing. When game objects for a cheat are missing (for example in menus), it searches less and less often instead of every 15 seconds.
 - Fixed: the ESP flickering or not showing in Be The Zombie. It now draws from the game camera and holds each player for a moment when the game skips a position update, instead of depending on finding your own character first.
 
