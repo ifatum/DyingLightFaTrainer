@@ -1399,6 +1399,31 @@ inline void draw() {
     }
 }
 
+inline void draw_update_notice(const std::string& latest, float alpha) {
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(28), S(22)});
+    ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, S(48) - (1 - alpha) * S(24)}, ImGuiCond_Always, {0.5f, 0});
+    ImGui::SetNextWindowSize({S(560), 0});
+    ImGui::Begin("##update", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings);
+    ImVec2 p = ImGui::GetWindowPos(), sz = ImGui::GetWindowSize();
+    ImGui::GetWindowDrawList()->AddRectFilled({p.x, p.y + S(18)}, {p.x + S(4), p.y + sz.y - S(18)}, col(T.accent, alpha), S(2));
+    ImGui::PushFont(f_head);
+    ImGui::TextUnformatted(("FaTrainer " + latest + " is out").c_str());
+    ImGui::PopFont();
+    ImGui::Dummy({0, S(2)});
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextUnformatted(("This version (" + std::string(VERSION) +
+                            ") is turned off until you update. Close the game, open the FaTrainer installer and press Update. "
+                            "The game itself works as usual.").c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::PushFont(f_small);
+    ImGui::TextColored(T.dim, "Press your menu key or F8 to show this again.");
+    ImGui::PopFont();
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+}
+
 inline void load_fonts(const void* ttf, int size) {
     ImGuiIO& io = ImGui::GetIO();
     ImFontConfig cfg;

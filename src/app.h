@@ -11,9 +11,10 @@
 #include "cheats.h"
 #include "config.h"
 #include "game.h"
+#include "version.h"
 
 inline const char* TITLE = "FaTrainer | Dying Light";
-inline const char* VERSION = "1.9";
+
 
 inline void logf(const char* fmt, ...) {
     static std::string path;

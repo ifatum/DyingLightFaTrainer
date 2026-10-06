@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FaTrainer</title>
-<meta name="description" content="Free, open source in-game trainers for PC games. One file next to the game, a menu over it.">
+<meta name="description" content="Free, open source in-game trainers for PC games. An installer that sets them up, a menu over the game.">
 <meta name="theme-color" content="#121110">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="preload" href="assets/fonts/anybody-latin-standard-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -31,8 +31,8 @@
       <h1 class="title stretch hub-title" data-p="top">FaTrainer</h1>
       <div class="hero-grid">
         <div>
-          <p class="lead">Trainers that open as a menu inside the game. One file next to the game's executable, a key to open it, nothing to install. Free and open source.</p>
-          <p class="actions"><a class="button" href="dying-light/">Dying Light <span>1.9</span></a><a class="link-arrow" href="#how">How it works</a></p>
+          <p class="lead">Trainers that open as a menu inside the game. An installer that finds the game and keeps the trainer up to date, and a key to open it in game. Free and open source.</p>
+          <p class="actions"><a class="button" href="dying-light/">Dying Light <span>2.0</span></a><a class="link-arrow" href="#how">How it works</a></p>
         </div>
         <div class="deck" data-p="top" aria-hidden="true">
           <img style="--k: -1.5; --a: 1.5" src="dying-light/img/visuals.webp" width="1038" height="698" alt="">
@@ -54,18 +54,18 @@
         <li class="game fade" style="--game-accent: #e8973a; --skyline: url(/dying-light/img/harran-front-lit.svg)">
           <a href="dying-light/">
             <h2>Dying Light</h2>
-            <span class="meta"><b>Version 1.9</b><span>Windows and Linux</span></span>
+            <span class="meta"><b>Version 2.0</b><span>Windows and Linux</span></span>
             <p>God mode, items and a weapon editor, skill levels, Harran Prison timers, and Be The Zombie reach sliders with a player ESP.</p>
           </a>
         </li>
       </ul>
-      <p class="soon fade">More games will be added here.</p>
+      <p class="soon fade">More games will be added here, and to the installer.</p>
     </div>
   </section>
 
   <div class="ticker" aria-hidden="true">
-    <div class="row" data-speed="0.5"><span>One file</span><span>No installer</span><span>Insert</span><span>God mode</span><span>Windows</span><span>Linux and Proton</span><span>Open source</span><span>Item editor</span><span>F8</span></div>
-    <div class="row" data-speed="-0.38"><span>Nothing leaves your PC</span><span>MIT</span><span>Skill levels</span><span>Your own menu key</span><span>Configs</span><span>Free</span><span>Delete it and it is gone</span></div>
+    <div class="row" data-speed="0.5"><span>One file</span><span>One installer</span><span>Insert</span><span>God mode</span><span>Windows</span><span>Linux and Proton</span><span>Open source</span><span>Item editor</span><span>F8</span></div>
+    <div class="row" data-speed="-0.38"><span>Update check</span><span>MIT</span><span>Skill levels</span><span>Your own menu key</span><span>Configs</span><span>Free</span><span>Uninstall in one click</span></div>
   </div>
 
   <section class="press" data-pin aria-labelledby="press-title">
@@ -88,10 +88,10 @@
         <h2 id="how-title" class="rise"><span class="line-mask"><span>Every FaTrainer</span></span><span class="line-mask" style="--i: 1"><span>works the same way.</span></span></h2>
       </div>
       <div class="notes" data-stagger>
-        <div class="fade"><h3>One file</h3><p>The trainer is a single DLL the game loads from its own folder. Delete it and the game is untouched.</p></div>
+        <div class="fade"><h3>One installer</h3><p>It finds the game in your Steam libraries and puts a single DLL in its folder, which the game loads by itself. Uninstall removes it again.</p></div>
         <div class="fade"><h3>A menu over the game</h3><p>Press <kbd>Insert</kbd> or <kbd>F8</kbd>. While it is open the game ignores your mouse and keyboard.</p></div>
         <div class="fade"><h3>Windows and Linux</h3><p>On Linux it runs through Steam's Proton with one launch option.</p></div>
-        <div class="fade"><h3>Nothing leaves your PC</h3><p>A trainer never connects to the internet. It only writes its settings and a log next to the game.</p></div>
+        <div class="fade"><h3>Only a version check</h3><p>When the game starts, a trainer asks GitHub which version is newest and stays off until you update. Nothing else leaves your PC; settings and a log stay next to the game.</p></div>
       </div>
     </div>
   </section>

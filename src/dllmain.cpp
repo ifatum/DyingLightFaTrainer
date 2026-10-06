@@ -11,6 +11,7 @@
 #include "font.h"
 #include "input.h"
 #include "menu.h"
+#include "net_win.h"
 #include "imgui.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
@@ -58,6 +59,7 @@ static WNDPROC oWndProc;
 static bool g_ready;
 static std::atomic<long> g_dx{0}, g_dy{0}, g_wheel{0};
 static std::atomic<long> g_frames{0};
+static std::string g_outdated;
 
 static void on_raw_input(LPARAM l) {
     RAWINPUT ri;
@@ -189,8 +191,53 @@ static void poll_spit_keys() {
     }
 }
 
+static void begin_passive_frame(IDXGISwapChain* sc) {
+    ImGuiIO& io = ImGui::GetIO();
+    DXGI_SWAP_CHAIN_DESC d{};
+    sc->GetDesc(&d);
+    io.DisplaySize = {(float)d.BufferDesc.Width, (float)d.BufferDesc.Height};
+    io.DeltaTime = 1.0f / 60.0f;
+}
+
+static void render_overlay(IDXGISwapChain* sc) {
+    ImGui::Render();
+    ID3D11Texture2D* bb = nullptr;
+    if (SUCCEEDED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) {
+        ID3D11RenderTargetView* rtv = nullptr;
+        if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) {
+            g_ctx->OMSetRenderTargets(1, &rtv, nullptr);
+            ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+            rtv->Release();
+        }
+        bb->Release();
+    }
+}
+
+static HRESULT present_update_notice(IDXGISwapChain* sc, UINT sync, UINT flags) {
+    const DWORD NOTICE_MS = 20000, FADE_IN_MS = 400, FADE_OUT_MS = 800;
+    static DWORD shown_at = GetTickCount();
+    static bool prev = false;
+    bool key = (GetAsyncKeyState(config::cfg.menu_key) | GetAsyncKeyState(VK_F8)) & 0x8000;
+    if (key && !prev) shown_at = GetTickCount();
+    prev = key;
+    DWORD age = GetTickCount() - shown_at;
+    if (age < NOTICE_MS) {
+        if (!g_ready) init_imgui(sc);
+        if (g_ready) {
+            ImGui_ImplDX11_NewFrame();
+            begin_passive_frame(sc);
+            ImGui::NewFrame();
+            float alpha = std::min({1.0f, age / (float)FADE_IN_MS, (NOTICE_MS - age) / (float)FADE_OUT_MS});
+            menu::draw_update_notice(g_outdated, alpha);
+            render_overlay(sc);
+        }
+    }
+    return oPresent(sc, sync, flags);
+}
+
 static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (g_frames++ == 0) logf("first frame (thread %lu)", (unsigned long)GetCurrentThreadId());
+    if (!g_outdated.empty()) return present_update_notice(sc, sync, flags);
     static bool prev = false;
     bool key = (GetAsyncKeyState(config::cfg.menu_key) | GetAsyncKeyState(VK_F8)) & 0x8000;
     if (key && !prev) g_open = !g_open;
@@ -235,25 +282,12 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
             feed_mouse();
             feed_keyboard();
         } else {
-            DXGI_SWAP_CHAIN_DESC d{};
-            sc->GetDesc(&d);
-            io.DisplaySize = {(float)d.BufferDesc.Width, (float)d.BufferDesc.Height};
-            io.DeltaTime = 1.0f / 60.0f;
+            begin_passive_frame(sc);
         }
         ImGui::NewFrame();
         if (esp) menu::draw_esp();
         if (g_open) menu::draw();
-        ImGui::Render();
-        ID3D11Texture2D* bb = nullptr;
-        if (SUCCEEDED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) {
-            ID3D11RenderTargetView* rtv = nullptr;
-            if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) {
-                g_ctx->OMSetRenderTargets(1, &rtv, nullptr);
-                ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-                rtv->Release();
-            }
-            bb->Release();
-        }
+        render_overlay(sc);
     }
     return oPresent(sc, sync, flags);
 }
@@ -362,11 +396,31 @@ static void watch_first_frame() {
     }
 }
 
+static std::string latest_release() {
+    std::string text, error;
+    if (!net::get_text(std::string(RELEASE_DOWNLOADS) + "version.txt", text, error)) {
+        logf("update: could not check for a new version (%s), the trainer stays on", error.c_str());
+        return "";
+    }
+    std::string latest = parse_release_info(text).version;
+    logf("update: latest release %s, this is %s", latest.empty() ? "unknown" : latest.c_str(), VERSION);
+    return latest;
+}
+
 static void main_thread() {
     logf("--- %s %s loaded", TITLE, VERSION);
     log_environment();
+    std::string latest = latest_release();
     HMODULE gamedll = nullptr;
     while (!(gamedll = GetModuleHandleA("gamedll_x64_rwdi.dll"))) Sleep(200);
+    if (newer_version(latest, VERSION)) {
+        g_outdated = latest;
+        logf("update: FaTrainer %s is out, this version stays off until you update with the installer", latest.c_str());
+        config::load(config::default_path());
+        Sleep(4000);
+        hook_d3d();
+        return;
+    }
     if (game::resolve_classes((uintptr_t)gamedll))
         logf("classes: money +%llx, inventory +%llx, item manager +%llx", (unsigned long long)(game::g.vt_money - game::g.base),
              (unsigned long long)(game::g.vt_inv[0] - game::g.base), (unsigned long long)(game::g.vt_manager - game::g.base));

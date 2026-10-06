@@ -27,18 +27,26 @@
 
 ### Install
 
-Build `xinput1_3.dll` with `./build.sh` (needs mingw-w64 through nix) and copy it next to `DyingLightGame.exe`.
+Download the installer from the [latest release](https://github.com/ifatum/DyingLightFaTrainer/releases/latest):
 
-- **Windows**: nothing else to do.
-- **Linux (Proton)**: run `./install.sh` and add this to the Steam launch options:
+- **Windows**: `FaTrainer-Installer.exe`
+- **Linux**: `FaTrainer-Installer-Linux.tar.gz`, unpack it and run `FaTrainer-Installer` (works on any distribution with glibc 2.27 or newer and `curl` or `wget`)
+
+The installer finds Dying Light in your Steam libraries (or lets you choose the folder), downloads `xinput1_3.dll` from the release, checks it against the release checksum and puts it next to `DyingLightGame.exe`. Run it again to update or uninstall. On Linux it also shows the Steam launch option Proton needs:
 
 ```
 WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 ```
 
+When a newer version is released, the trainer stays off in game and asks you to run the installer again. The game itself keeps working, and without internet the trainer works as usual.
+
 Press **Insert** or **F8** in game to open the menu. While it is open the game ignores your mouse and keyboard. A dot in the sidebar marks pages with something turned on, and **Turn all off** resets every cheat and slider at once.
 
 See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+
+### Building
+
+`./build.sh` builds the trainer, `./build_installer.sh` both installers and `./release.sh` the release files (all through nix).
 
 ### Notes
 

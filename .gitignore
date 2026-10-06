@@ -13,3 +13,5 @@ graphify-out/
 .DS_Store
 CLAUDE.md
 nexus/
+.zig-cache/
+dist/

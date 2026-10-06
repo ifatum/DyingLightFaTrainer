@@ -3,6 +3,8 @@
 #include "config.h"
 #include "fake.h"
 #include "input.h"
+#include "version.h"
+#include "../installer/logic.h"
 
 static int fails = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -48,6 +50,19 @@ static void fake_request_ownership(uintptr_t repl) { ownership_requests++; *(uin
 static void __fastcall fake_level_from_xp(uintptr_t, int) { fake_level_calls++; }
 
 int main(int argc, char** argv) {
+    CHECK(newer_version("2.1", "2.0") && newer_version("2.0.1", "2.0") && newer_version("10.0", "9.9"));
+    CHECK(!newer_version("2.0", "2.0") && !newer_version("2.0.0", "2.0") && !newer_version("1.9", "2.0") && !newer_version("", "2.0") && !newer_version("2.x", "2.0"));
+    ReleaseInfo info = parse_release_info("version 2.1\r\nsha256 ab12\nsize 2598750\n");
+    CHECK(info.version == "2.1" && info.sha256 == "ab12" && info.size == 2598750);
+    CHECK(!strcmp(VERSION, FATRAINER_VERSION));
+    CHECK(logic::sha256_hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    CHECK(logic::sha256_hex(std::string(1000, 'a')) == "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3");
+    auto libraries = logic::vdf_values("\"0\"\n{\n\t\t\"path\"\t\t\"D:\\\\Games\\\\Steam\"\n}\n\"1\" { \"path\" \"/home/a b/Steam\" }", "path");
+    CHECK(libraries.size() == 2 && libraries[0] == "D:\\Games\\Steam" && libraries[1] == "/home/a b/Steam");
+    CHECK(logic::trainer_version_in(std::string("xx\0FaTrainer-version:2.0\0yy", 28)) == "2.0");
+    CHECK(logic::trainer_version_in("..FaTrainer | Dying Light..") == logic::LEGACY_VERSION && logic::trainer_version_in("MZ other mod").empty());
+    auto log = logic::parse_changelog("# Changelog\n\n## 2.0\n\n- One\n  more\n- Two\n\n## 1.9\n\n- Three\n");
+    CHECK(log.size() == 2 && log[0].version == "2.0" && log[0].lines.size() == 2 && log[0].lines[0] == "One more" && log[1].lines[0] == "Three");
     HMODULE m = LoadLibraryExA(argv[1], nullptr, DONT_RESOLVE_DLL_REFERENCES);
     CHECK(m);
     if (!m) return 1;
