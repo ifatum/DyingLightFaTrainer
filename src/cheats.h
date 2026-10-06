@@ -66,7 +66,6 @@ inline Cheat CHEATS[] = {
      {{"TDCooldown", 0}, {"CamouflageCooldown", 0}, {"ZombieGroundPoundCooldown", 0}, {"ChargeLightCooldown", 0}},
      {}},
     {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}},
-    {"z_air_tackle", "Tackle in mid air", "Start the charge tackle while jumping or falling, not only on the ground.", {}, {}},
     {"prison_pause", "Pause prison timers", "The run timer and the reward room countdown stand still. Works when you are the host.", {}, {}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
@@ -101,8 +100,8 @@ inline Tweak TWEAKS[] = {
     {"z_pound", "Ground pound", "Reach of the ground pound and the aerial ground pound.", G_ZOMBIE, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}},
     {"z_tackle", "Tackle", "How far away the charge tackle still connects.", G_ZOMBIE, {"ZombieChargeAttackRange"}},
     {"z_claws", "Claws", "Reach of your claw swipes.", G_ZOMBIE, {"RangeMeleeMul", "BestTargetMeleeRange"}},
-    {"z_spit", "Spit range", "How fast and far every spit flies, tapped or charged. At Max a tapped spit is four times faster.", G_ZOMBIE, {},
-     {{"f_btz_fixed_velocity_forward", 60}, {"f_btz_spit_charge_additinal_vel", 100}}},
+    {"z_spit", "Spit hit radius", "How far from a survivor a spit can land and still hit him. Normal is 5 m, x3 is 15 m. Toxic spit puddles grow too.",
+     G_ZOMBIE, {}, {}, 6.0f},
     {"h_dfa", "Death from above range", "How far away the hunter can be when you start it. At Max, 12 m. Also grows the landing shockwave.",
      G_HUMAN, {"JumpAttackRange", "JumpAttackShockwaveRadius"}, {{"f_btz_jump_attack_range", 12}, {"f_btz_jump_attack_range_velocity_factor", 0.5f}}},
     {"h_dfa_pull", "Death from above pull", "How far off target you can start it; the attack pulls you onto the hunter. At Max he can be beside or behind you.",
@@ -136,7 +135,6 @@ inline uintptr_t player = 0;
 inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
-inline uintptr_t air_tackle_jump = 0;
 inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, profile_root = 0;
 inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
@@ -248,10 +246,6 @@ inline void locate(uintptr_t base) {
     const int FORCED_DAMAGE_AT = 16;
     if (auto hits = game::find_code(base, "0F 2F B3 64 09 00 00 73 0D 80 BB 2E 07 00 00 00 0F 84"); !hits.empty())
         forced_damage_jump = hits[0] + FORCED_DAMAGE_AT;
-    const int AIR_TACKLE_AT = 6;
-    if (auto hits = game::find_code(base, "80 7B 28 00 74 50 48 8B 03 48 8B CB FF 50 20 48 8B 88 98 0C 00 00 8B 41 38 85 C0 74 11 80 B9 CC 00 00 00 00 75 08 83 C0 FE 83 F8 01 76 28");
-        !hits.empty())
-        air_tackle_jump = hits[0] + AIR_TACKLE_AT;
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 8B 0D ? ? ? ? 48 8B 18 48 8B 01 FF 90 90 01 00 00 48 8B 0D ? ? ? ? 48 8D 55 ? 4C 8B C0 FF 93 90 03 00 00");
         !hits.empty())
         var_root = game::rip_target(hits[0], 3, 7);
@@ -508,13 +502,36 @@ inline void block_forced_damage(bool on) {
     write_code(forced_damage_jump, on ? always : conditional, 2);
 }
 
-inline const uint8_t CHARGE_STATE_CHECK[3] = {0x48, 0x8B, 0x03}, SKIP_CHARGE_STATE_CHECK[3] = {0xEB, 0x41, 0x90};
+inline const char* const BLAST_SPITS[] = {"Throwable_Control_The_Horde", "Throwable_Control_The_Horde_Upgraded", "Throwable_Control_The_Horde_Spit_Pound",
+                                           "Throwable_LightDisable_Spit", "Throwable_LightDisableUpgraded_Spit", "Throwable_LightDisable_Spit_Pound",
+                                           "ZZZZZ_Throwable_Camo_Spit", "ZZZZZ_Throwable_Camo_Spit_Pound"};
+inline const char* const TOXIC_SPITS[] = {"ZZZZZ_Throwable_Toxic_Spit", "ZZZZZ_Throwable_Toxic_Spit_Pound_Inner", "ZZZZZ_Throwable_Toxic_Spit_Pound_Outer"};
+const int TOXIC_SPLASH_MIN = 0x468, TOXIC_SPLASH_MAX = 0x46c;
+const float TOXIC_SPLASH_LIMIT = 20.0f;
+inline std::map<uintptr_t, float> spit_radius_originals;
 
-inline bool air_tackle_allowed() { return air_tackle_jump && rdv<uint8_t>(air_tackle_jump) == SKIP_CHARGE_STATE_CHECK[0]; }
+inline void remember_radius(uintptr_t at, float expected) {
+    float v = rdv<float>(at, NAN);
+    if (!spit_radius_originals.count(at) && v > 0 && (std::isnan(expected) ? v <= TOXIC_SPLASH_LIMIT : v == expected)) spit_radius_originals[at] = v;
+}
 
-inline void allow_air_tackle(bool on) {
-    if (!air_tackle_jump || air_tackle_allowed() == on) return;
-    write_code(air_tackle_jump, on ? SKIP_CHARGE_STATE_CHECK : CHARGE_STATE_CHECK, sizeof CHARGE_STATE_CHECK);
+inline void apply_spit_radius(float factor) {
+    const auto& range = g.stats[ST_DamageRange];
+    if (factor != 1.0f && range.off >= 0 && range.is_float)
+        for (const char* id : BLAST_SPITS)
+            if (auto d = g.descs.find(id); d != g.descs.end()) remember_radius(d->second + range.off, game::lookup(id) ? game::lookup(id)->st[ST_DamageRange] : NAN);
+    if (factor != 1.0f)
+        for (const char* id : TOXIC_SPITS)
+            if (auto d = g.descs.find(id); d != g.descs.end()) {
+                float lo = rdv<float>(d->second + TOXIC_SPLASH_MIN, NAN), hi = rdv<float>(d->second + TOXIC_SPLASH_MAX, NAN);
+                if (!(lo > 0 && hi >= lo && hi <= TOXIC_SPLASH_LIMIT)) continue;
+                remember_radius(d->second + TOXIC_SPLASH_MIN, NAN);
+                remember_radius(d->second + TOXIC_SPLASH_MAX, NAN);
+            }
+    for (auto& [at, original] : spit_radius_originals) {
+        float want = original * factor;
+        if (rdv<float>(at, NAN) != want) wr<float>(at, want);
+    }
 }
 
 inline void apply_overrides() {
@@ -1270,7 +1287,7 @@ inline void tick() {
     bool rope_missing = is_on("hook") && !keep_rope_energy();
     patch_lockpick(is_on("lockpick"));
     block_forced_damage(is_on("god"));
-    allow_air_tackle(is_on("z_air_tackle"));
+    apply_spit_radius(std::clamp(find_tweak("z_spit")->factor.load(), 1.0f, find_tweak("z_spit")->max));
     route_tick();
     objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing;
     game::reapply_stats();
@@ -1317,13 +1334,13 @@ inline std::string describe() {
     char b[1600];
     snprintf(b, sizeof b,
              "player %s (%zu scanned, local root %s, local %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
-             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, air tackle %s, pvp rank survivor %d hunter %d, trees %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
+             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, spit radii %zu, pvp rank survivor %d hunter %d, trees %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
              "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s (player +%x, sensor +%x/+%x)",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", local_class().c_str(), health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
              level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", !lockpick_patch ? "missing" : lockpick_patched() ? "on" : "ready",
-             !forced_damage_jump ? "missing" : forced_damage_blocked() ? "on" : "ready", !air_tackle_jump ? "missing" : air_tackle_allowed() ? "on" : "ready", pvp_rank(false), pvp_rank(true), tree_report().c_str(),
+             !forced_damage_jump ? "missing" : forced_damage_blocked() ? "on" : "ready", spit_radius_originals.size(), pvp_rank(false), pvp_rank(true), tree_report().c_str(),
              enemy_modules.size(), saved_bytes.size(),
              g.equipment.size(), g.ropes.size(), g.prison_data.size(), g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_START_TIME, NAN),
              g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_END_TIME, NAN), g.prison_sensors.size(),

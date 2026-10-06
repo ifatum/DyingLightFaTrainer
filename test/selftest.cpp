@@ -155,17 +155,6 @@ int main(int argc, char** argv) {
         cheats::forced_damage_jump = real;
     }
     CHECK(lockpick_code == (uintptr_t)m + 0x7817ae);
-    CHECK(cheats::air_tackle_jump == (uintptr_t)m + 0xcf66b7);
-    {
-        static uint8_t fake_check[5] = {0x48, 0x8B, 0x03, 0x48, 0x8B};
-        uintptr_t real = cheats::air_tackle_jump;
-        cheats::air_tackle_jump = (uintptr_t)fake_check;
-        cheats::allow_air_tackle(true);
-        CHECK(fake_check[0] == 0xEB && fake_check[1] == 0x41 && fake_check[2] == 0x90 && fake_check[3] == 0x48 && cheats::air_tackle_allowed());
-        cheats::allow_air_tackle(false);
-        CHECK(fake_check[0] == 0x48 && fake_check[1] == 0x8B && fake_check[2] == 0x03 && !cheats::air_tackle_allowed());
-        cheats::air_tackle_jump = real;
-    }
     CHECK(!memcmp((const void*)cheats::cache_get_fn, "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18", 15));
     fake_cache_base = w.cache;
     cheats::cache_get_original = fake_cache_get;
@@ -298,10 +287,8 @@ int main(int argc, char** argv) {
     cheats::find_tweak("h_dfa_pull")->factor = 10.0f;
     CHECK(read_var("f_btz_jump_attack_angle_max") == 180 && read_var("f_btz_jump_attack_range") == 12);
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_zombie_grab_range") == 25);
-    cheats::find_tweak("z_spit")->factor = 10.0f;
-    CHECK(read_var("f_btz_fixed_velocity_forward") == 60 && read_var("f_btz_spit_charge_additinal_vel") == 100);
     cheats::all_off();
-    CHECK(read_var("f_btz_jump_attack_range") == 7 && read_var("f_btz_fixed_velocity_forward") == 7);
+    CHECK(read_var("f_btz_jump_attack_range") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
 
     {
@@ -635,6 +622,31 @@ int main(int argc, char** argv) {
         CHECK(config::cfg.uv.on && config::cfg.uv.glow == 2.5f && config::cfg.uv.color[0] == 0.25f);
         DeleteFileA(ini.c_str());
         config::cfg = saved_cfg;
+    }
+
+    {
+        const int RANGE_OFF = 0x300;
+        auto saved_range = game::g.stats[ST_DamageRange];
+        game::g.stats[ST_DamageRange].off = RANGE_OFF, game::g.stats[ST_DamageRange].is_float = true;
+        uintptr_t camo = game::g.descs["ZZZZZ_Throwable_Camo_Spit"], toxic = game::g.descs["ZZZZZ_Throwable_Toxic_Spit"];
+        uintptr_t grenade = game::g.descs["Throwable_SpitGrenade"];
+        w.put<float>(camo + RANGE_OFF, 5.0f), w.put<float>(grenade + RANGE_OFF, 5.0f);
+        w.put<float>(toxic + cheats::TOXIC_SPLASH_MIN, 1.0f), w.put<float>(toxic + cheats::TOXIC_SPLASH_MAX, 4.0f);
+        cheats::find_tweak("z_spit")->factor = 3.0f;
+        cheats::tick();
+        CHECK(game::rdv<float>(camo + RANGE_OFF) == 15.0f && game::rdv<float>(grenade + RANGE_OFF) == 5.0f);
+        CHECK(game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MIN) == 3.0f && game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MAX) == 12.0f);
+        cheats::tick();
+        CHECK(game::rdv<float>(camo + RANGE_OFF) == 15.0f && game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MAX) == 12.0f);
+        cheats::find_tweak("z_spit")->factor = 50.0f;
+        cheats::tick();
+        CHECK(game::rdv<float>(camo + RANGE_OFF) == 30.0f);
+        cheats::all_off();
+        cheats::tick();
+        CHECK(game::rdv<float>(camo + RANGE_OFF) == 5.0f && game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MIN) == 1.0f &&
+              game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MAX) == 4.0f);
+        game::g.stats[ST_DamageRange] = saved_range;
+        cheats::spit_radius_originals.clear();
     }
 
     CHECK(config::profile_name("  PvP: hunter/../x  ") == "PvP hunterx");
