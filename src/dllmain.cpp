@@ -59,6 +59,7 @@ static ID3D11Device* g_dev;
 static ID3D11DeviceContext* g_ctx;
 static WNDPROC oWndProc;
 static bool g_ready;
+static std::atomic<DWORD> g_wndproc_at{0};
 static std::atomic<long> g_dx{0}, g_dy{0}, g_wheel{0};
 static std::atomic<long> g_frames{0};
 static std::string g_outdated;
@@ -76,6 +77,7 @@ static void on_raw_input(LPARAM l) {
 static LRESULT CALLBACK hkWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     static bool logged = false;
     if (!logged) { logged = true; logf("window thread %lu", (unsigned long)GetCurrentThreadId()); }
+    g_wndproc_at = GetTickCount();
     drain_queue();
     if (m == WM_FATRAINER) return 0;
     if (g_open) {
@@ -180,6 +182,16 @@ static void init_imgui(IDXGISwapChain* sc) {
     logf("overlay ready (window %p, render thread %lu)", (void*)g_hwnd, (unsigned long)GetCurrentThreadId());
 }
 
+static void keep_window_hooked() {
+    const DWORD SILENT_MS = 1000;
+    if (GetTickCount() - g_wndproc_at < SILENT_MS) return;
+    if ((WNDPROC)GetWindowLongPtrW(g_hwnd, GWLP_WNDPROC) == hkWndProc) return;
+    oWndProc = (WNDPROC)SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC, (LONG_PTR)hkWndProc);
+    g_wndproc_at = GetTickCount();
+    logf("overlay: the game replaced the window procedure, hooking it again");
+    PostMessageW(g_hwnd, WM_FATRAINER, 0, 0);
+}
+
 static const BYTE SPIT_GAME_KEYS[config::SPIT_KEYS] = {DIK_1, DIK_2, DIK_3, DIK_4};
 
 static void poll_spit_keys() {
@@ -246,6 +258,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     prev = key;
     input::blocked = g_open.load();
     if (!g_ready) init_imgui(sc);
+    if (g_ready) keep_window_hooked();
     static DWORD last_tick = 0;
     static std::atomic<bool> tick_queued{false};
     if (g_ready && GetTickCount() - last_tick > 100 && !tick_queued.exchange(true)) {
