@@ -272,7 +272,7 @@ html.js .fade.in { opacity: 1; transform: none; }
 
 .hub-hero { overflow: clip; }
 .hub-hero .hero-grid { align-items: center; }
-.deck { position: relative; aspect-ratio: 1038 / 698; perspective: 1400px; --tx: 0; --ty: 0; }
+.deck { position: relative; aspect-ratio: 1060 / 760; perspective: 1400px; --tx: 0; --ty: 0; }
 .deck img { position: absolute; inset: 0; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.8); transform-origin: 50% 120%;
   transform: rotateY(calc(var(--tx) * 10deg)) rotateX(calc(var(--ty) * -8deg)) translateX(calc(var(--k) * (14px + var(--p, 0) * 70px))) translateY(calc(var(--a) * var(--p, 0) * 30px)) rotate(calc(var(--k) * (3deg + var(--p, 0) * 7deg)));
   filter: brightness(calc(0.55 + (var(--k) + 1.5) * 0.15)); transition: filter 400ms var(--out), translate 500ms var(--out), transform 600ms var(--out); }

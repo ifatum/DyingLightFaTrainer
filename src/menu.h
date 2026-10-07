@@ -1520,7 +1520,7 @@ inline void open_page(const char* id) {
 
 inline bool nav_item(const Page& p, bool active, bool marked, float& active_y) {
     ImGui::PushID(p.id);
-    float w = ImGui::GetContentRegionAvail().x, h = S(34);
+    float w = ImGui::GetContentRegionAvail().x, h = S(31);
     ImVec2 at = ImGui::GetCursorScreenPos();
     if (active) active_y = at.y - ImGui::GetWindowPos().y + ImGui::GetScrollY();
     bool clicked = ImGui::InvisibleButton("nav", {w, h});
@@ -1599,7 +1599,7 @@ inline void sidebar() {
         if (pill_y < 0 || motion() == 0) pill_y = target_y;
         brand::follow(pill_y, target_y, 16);
         ImVec2 o = ImGui::GetWindowPos();
-        float y = o.y + pill_y - ImGui::GetScrollY(), w = ImGui::GetContentRegionAvail().x, h = S(34);
+        float y = o.y + pill_y - ImGui::GetScrollY(), w = ImGui::GetContentRegionAvail().x, h = S(31);
         nav->AddRectFilled({o.x, y}, {o.x + w, y + h}, C(T.accent, 0.12f), R(9));
         nav->AddRectFilled({o.x, y + h * 0.26f}, {o.x + S(3), y + h * 0.74f}, C(T.accent), S(2));
     }
@@ -1719,7 +1719,7 @@ inline void draw(float shown_raw, bool open) {
     static ImVec2 rest{-1, -1};
     if (rest.x < 0) ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_FirstUseEver, {0.5f, 0.5f});
     else if (shown < 1) ImGui::SetNextWindowPos({rest.x, rest.y + (1 - shown) * S(22) * motion()});
-    ImGui::SetNextWindowSize({S(1060), S(720)}, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize({S(1060), S(760)}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints({S(780), S(500)}, {FLT_MAX, FLT_MAX});
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, shown);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
@@ -1764,7 +1764,8 @@ inline void draw(float shown_raw, bool open) {
     ImGui::End();
     ImGui::PopStyleVar();
     draw_toast();
-    if (open) draw_cursor();
+    static const bool cursor = getenv("DLT_NO_CURSOR") == nullptr;
+    if (open && cursor) draw_cursor();
 }
 
 inline void draw_update_notice(const std::string& latest, float alpha) {
