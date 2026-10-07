@@ -8,13 +8,16 @@
 #include "backends/imgui_impl_opengl3_loader.h"
 #include "ui.h"
 
+static const char* program = "FaTrainer-Installer";
+
 static void nixos_hint() {
     std::ifstream release("/etc/os-release");
     std::string text((std::istreambuf_iterator<char>(release)), std::istreambuf_iterator<char>());
-    if (text.find("ID=nixos") != std::string::npos) fprintf(stderr, "On NixOS, start it through Steam's runtime instead: steam-run ./FaTrainer-Installer\n");
+    if (text.find("ID=nixos") != std::string::npos) fprintf(stderr, "On NixOS, start it through Steam's runtime instead: steam-run %s\n", program);
 }
 
-int main() {
+int main(int, char** argv) {
+    program = argv[0];
     glfwSetErrorCallback([](int code, const char* text) { fprintf(stderr, "glfw %d: %s\n", code, text); });
     if (!glfwInit()) {
         fprintf(stderr, "FaTrainer Installer needs a desktop session with X11 or XWayland.\n");
@@ -31,7 +34,7 @@ int main() {
     for (const Context& c : contexts) {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, c.major);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, c.minor);
-        if ((window = glfwCreateWindow(1120, 740, "FaTrainer Installer", nullptr, nullptr))) {
+        if ((window = glfwCreateWindow(1120, 740, "FaTrainer Installer (" FATRAINER_EDITION ")", nullptr, nullptr))) {
             glsl = c.glsl;
             break;
         }

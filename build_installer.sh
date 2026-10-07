@@ -8,22 +8,28 @@ mkdir -p dist/nexus
 ./build.sh --nexus
 RC=$(mktemp -d)
 trap 'rm -rf "$RC"' EXIT
-printf '#define VER_MAJOR %s\n#define VER_MINOR %s\n#define VER_STRING "%s"\n#define VER_FILETYPE VFT_APP\n#define VER_DESCRIPTION "FaTrainer Installer"\n#define VER_INTERNAL "FaTrainer-Installer"\n#define VER_FILENAME "FaTrainer-Installer.exe"\n' \
-  "${VER%%.*}" "${VER#*.}" "$VER" > "$RC/version_values.h"
+version_header() {
+  mkdir -p "$RC/$1"
+  printf '#define VER_MAJOR %s\n#define VER_MINOR %s\n#define VER_STRING "%s"\n#define VER_FILETYPE VFT_APP\n#define VER_DESCRIPTION "FaTrainer Installer (%s)"\n#define VER_INTERNAL "%s"\n#define VER_FILENAME "%s.exe"\n' \
+    "${VER%%.*}" "${VER#*.}" "$VER" "$2" "$3" "$3" > "$RC/$1/version_values.h"
+}
+version_header fatum "Fatum Version" FaTrainer-Fatum-Version-Installer
+version_header nexus "Nexus Version" FaTrainer-Nexus-Version-Installer
 export RC
 IMGUI="$IM/imgui.cpp $IM/imgui_draw.cpp $IM/imgui_tables.cpp $IM/imgui_widgets.cpp"
 
 nix-shell -p pkgsCross.mingwW64.buildPackages.gcc --run "
   set -e
-  x86_64-w64-mingw32-windres installer/installer.rc -O coff -o \$RC/installer.res -I. -I\$RC
+  x86_64-w64-mingw32-windres installer/installer.rc -O coff -o \$RC/fatum.res -I. -I\$RC/fatum
+  x86_64-w64-mingw32-windres installer/installer.rc -O coff -o \$RC/nexus.res -I. -I\$RC/nexus
   windows_installer() {
     x86_64-w64-mingw32-g++ -O2 -std=c++17 -municode -mwindows -o \$1 \$2 installer/main_win.cpp $IMGUI \
-      $IM/backends/imgui_impl_dx11.cpp $IM/backends/imgui_impl_win32.cpp \$RC/installer.res \
+      $IM/backends/imgui_impl_dx11.cpp $IM/backends/imgui_impl_win32.cpp \$4 \
       -I$IM -Isrc -Iinstaller -DIMGUI_IMPL_WIN32_DISABLE_GAMEPAD -DIMGUI_DISABLE_DEMO_WINDOWS -DIMGUI_DISABLE_DEBUG_TOOLS -D_WIN32_WINNT=0x0A00 \
       -static -static-libgcc -static-libstdc++ -ld3d11 -ldxgi -ld3dcompiler -ldwmapi -lgdi32 -limm32 -lole32 -luuid -lshell32 -s \$3
   }
-  windows_installer dist/FaTrainer-Installer.exe '' -lwinhttp
-  windows_installer dist/nexus/FaTrainer-Installer.exe -DFATRAINER_OFFLINE ''
+  windows_installer dist/FaTrainer-Fatum-Version-Installer.exe '' -lwinhttp \$RC/fatum.res
+  windows_installer dist/nexus/FaTrainer-Nexus-Version-Installer.exe -DFATRAINER_OFFLINE '' \$RC/nexus.res
 "
 
 nix-shell -p zig libx11.dev libxrandr.dev libxinerama.dev libxcursor.dev libxi.dev libxext.dev libxrender.dev libxfixes.dev xorgproto --run "
@@ -41,7 +47,7 @@ nix-shell -p zig libx11.dev libxrandr.dev libxinerama.dev libxcursor.dev libxi.d
       $IM/backends/imgui_impl_glfw.cpp $IM/backends/imgui_impl_opengl3.cpp \$OBJ/*.o \
       -I$IM -Isrc -Iinstaller -I$GLFW/include -DGLFW_INCLUDE_NONE -DIMGUI_DISABLE_DEMO_WINDOWS -DIMGUI_DISABLE_DEBUG_TOOLS -ldl -lpthread -lm -s
   }
-  linux_installer dist/FaTrainer-Installer ''
-  linux_installer dist/nexus/FaTrainer-Installer -DFATRAINER_OFFLINE
+  linux_installer dist/FaTrainer-Fatum-Version-Installer ''
+  linux_installer dist/nexus/FaTrainer-Nexus-Version-Installer -DFATRAINER_OFFLINE
 "
-echo "built: dist/FaTrainer-Installer.exe dist/FaTrainer-Installer (GitHub), dist/nexus/ (Nexus Mods edition)"
+echo "built: dist/FaTrainer-Fatum-Version-Installer[.exe], dist/nexus/FaTrainer-Nexus-Version-Installer[.exe]"

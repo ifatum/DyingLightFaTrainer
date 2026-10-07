@@ -1306,6 +1306,8 @@ inline void sidebar() {
     ImGui::PopFont();
     ImGui::SetCursorPosX(S(19));
     label(("DYING LIGHT   v" + std::string(VERSION)).c_str());
+    ImGui::SetCursorPosX(S(19));
+    label(FATRAINER_EDITION_CAPS);
     ImGui::Dummy({0, S(10)});
     int active = cheats::active_count();
     float footer = ImGui::GetFrameHeight() * (active ? 2 : 1) + S(active ? 64 : 52);

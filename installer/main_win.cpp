@@ -82,7 +82,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     float scale = dpi / 96.0f;
     int width = (int)(1120 * scale), height = (int)(740 * scale);
     RECT area = info.rcWork;
-    HWND window = CreateWindowExW(0, wc.lpszClassName, L"FaTrainer Installer", WS_OVERLAPPEDWINDOW, area.left + (area.right - area.left - width) / 2,
+    HWND window = CreateWindowExW(0, wc.lpszClassName, L"FaTrainer Installer (" FATRAINER_EDITION ")", WS_OVERLAPPEDWINDOW, area.left + (area.right - area.left - width) / 2,
                                   area.top + (area.bottom - area.top - height) / 2, width, height, nullptr, nullptr, instance, nullptr);
     BOOL dark = TRUE;
     const DWORD IMMERSIVE_DARK_MODE = 20;

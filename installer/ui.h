@@ -546,7 +546,7 @@ inline void status_pill(ImVec2 right_top) {
     {
         std::lock_guard<std::mutex> l(M.mx);
         fetch = M.fetch;
-        if (fetch == Fetch::ready) text = (OFFLINE ? "Nexus Mods edition " : "Latest release ") + M.latest.version, dot = GOOD;
+        if (fetch == Fetch::ready) text = OFFLINE ? FATRAINER_EDITION " " + M.latest.version : FATRAINER_EDITION ", latest " + M.latest.version, dot = GOOD;
         else if (fetch == Fetch::failed) text = "GitHub not reachable", dot = BAD;
         else text = "Checking GitHub";
     }
@@ -849,8 +849,9 @@ inline void frame() {
     if (shown > 0) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, shown);
         float brand_w = text_w(F.brand, WORD);
-        dl->AddText(F.small, F.small->FontSize, {MARGIN + brand_w + S(12), S(28) + F.brand->FontSize - F.small->FontSize - S(2)}, C(MUTED), "Installer");
-        tabs({MARGIN + brand_w + S(120), S(32)});
+        const char* SUBTITLE = "Installer  \xc2\xb7  " FATRAINER_EDITION;
+        dl->AddText(F.small, F.small->FontSize, {MARGIN + brand_w + S(12), S(28) + F.brand->FontSize - F.small->FontSize - S(2)}, C(MUTED), SUBTITLE);
+        tabs({MARGIN + brand_w + S(12) + text_w(F.small, SUBTITLE) + S(44), S(32)});
         status_pill({size.x - MARGIN, S(24)});
         dl->AddLine({MARGIN, BAR}, {MARGIN + (size.x - 2 * MARGIN) * shown, BAR}, C(LINE_SOFT));
         ImGui::PopStyleVar();

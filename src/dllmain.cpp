@@ -400,7 +400,7 @@ static void watch_first_frame() {
 
 static std::string latest_release() {
 #ifdef FATRAINER_OFFLINE
-    logf("update: Nexus Mods edition, no update check and no internet connection");
+    logf("update: Nexus Version, no update check and no internet connection");
     return "";
 #else
     std::string text, error;
@@ -415,7 +415,7 @@ static std::string latest_release() {
 }
 
 static void main_thread() {
-    logf("--- %s %s loaded", TITLE, VERSION);
+    logf("--- %s %s, %s loaded", TITLE, VERSION, FATRAINER_EDITION);
     log_environment();
     std::string latest = latest_release();
     HMODULE gamedll = nullptr;
