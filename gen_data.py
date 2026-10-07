@@ -100,11 +100,8 @@ def main():
                 "struct ItemInfo { const char* id; const char* name; float st[ST_COUNT]; };\n"
                 "static const ItemInfo ITEMS[] = {\n" + ",\n".join(rows) + "\n};\n"
                 f"static const int ITEM_COUNT = {len(ids)};\n")
-    ttf = open(os.path.join(HERE, "third_party/imgui/Roboto-Medium.ttf"), "rb").read()
-    with open(os.path.join(HERE, "src/font.h"), "w") as f:
-        f.write(f"#pragma once\nstatic const unsigned char FONT_TTF[{len(ttf)}] = {{{','.join(map(str, ttf))}}};\n")
     have = sum(1 for i in ids if stats.get(i))
-    print(f"items.h: {len(ids)} items, {sum(1 for i in ids if names.get(i))} named, {have} with stats; font.h: {len(ttf)} bytes")
+    print(f"items.h: {len(ids)} items, {sum(1 for i in ids if names.get(i))} named, {have} with stats")
 
 
 if __name__ == "__main__":

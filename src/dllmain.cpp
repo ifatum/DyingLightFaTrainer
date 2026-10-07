@@ -8,7 +8,6 @@
 #include <functional>
 #include <string>
 #include <thread>
-#include "font.h"
 #include "input.h"
 #include "menu.h"
 #ifndef FATRAINER_OFFLINE
@@ -171,7 +170,7 @@ static void init_imgui(IDXGISwapChain* sc) {
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NoMouseCursorChange;
-    menu::load_fonts(FONT_TTF, sizeof FONT_TTF);
+    menu::load_fonts();
     menu::apply_style();
     logf("overlay: imgui ok");
     ImGui_ImplWin32_Init(g_hwnd);
@@ -288,9 +287,10 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     poll_spit_keys();
     bool esp = config::cfg.esp.on;
     if (g_ready && esp) cheats::track_players();
-    if (g_ready && (g_open || esp)) {
+    float shown = g_ready ? menu::presence(g_open) : 0;
+    if (g_ready && (shown > 0 || esp)) {
         ImGuiIO& io = ImGui::GetIO();
-        io.MouseDrawCursor = g_open;
+        io.MouseDrawCursor = false;
         ImGui_ImplDX11_NewFrame();
         if (g_open) {
             ImGui_ImplWin32_NewFrame();
@@ -301,7 +301,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         }
         ImGui::NewFrame();
         if (esp) menu::draw_esp();
-        if (g_open) menu::draw();
+        if (shown > 0) menu::draw(shown, g_open);
         render_overlay(sc);
     }
     return oPresent(sc, sync, flags);

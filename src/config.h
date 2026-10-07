@@ -28,8 +28,16 @@ struct UvLight {
 
 const int SPIT_KEYS = 4;
 
+enum Motion { MOTION_OFF, MOTION_SUBTLE, MOTION_FULL };
+
+struct Look {
+    float opacity = 0.97f, roundness = 1.0f;
+    int motion = MOTION_FULL;
+    bool skyline = true, glow = true;
+};
+
 struct Config {
-    float accent[3] = {0.953f, 0.604f, 0.118f};
+    float accent[3] = {0.910f, 0.592f, 0.227f};
     float dim = 0.6f;
     float scale = 1.0f;
     int menu_key = VK_INSERT;
@@ -40,6 +48,7 @@ struct Config {
     int spit_keys[SPIT_KEYS] = {};
     Esp esp;
     UvLight uv;
+    Look look;
 };
 
 inline Config cfg;
@@ -141,6 +150,9 @@ inline void normalize(const std::vector<std::string>& known) {
     cfg.pages = out;
     cfg.scale = std::clamp(cfg.scale, 0.75f, 1.5f);
     cfg.dim = std::clamp(cfg.dim, 0.0f, 0.95f);
+    cfg.look.opacity = std::clamp(cfg.look.opacity, 0.6f, 1.0f);
+    cfg.look.roundness = std::clamp(cfg.look.roundness, 0.0f, 1.6f);
+    cfg.look.motion = std::clamp(cfg.look.motion, (int)MOTION_OFF, (int)MOTION_FULL);
 }
 
 inline void load(const std::string& path) {
@@ -180,6 +192,12 @@ inline void load(const std::string& path) {
             auto& u = cfg.uv;
             if (sscanf(v.c_str(), "%d,%f,%f,%f,%f", &on, &u.color[0], &u.color[1], &u.color[2], &u.glow) == 5) u.on = on != 0;
         }
+        else if (k == "look") {
+            int motion = MOTION_FULL, skyline = 1, glow = 1;
+            auto& l = cfg.look;
+            if (sscanf(v.c_str(), "%f,%f,%d,%d,%d", &l.opacity, &l.roundness, &motion, &skyline, &glow) == 5)
+                l.motion = motion, l.skyline = skyline != 0, l.glow = glow != 0;
+        }
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
         else if (Profile p; read_cheat_line(k, v, p)) {
             cfg.cheats_on.insert(cfg.cheats_on.end(), p.cheats.begin(), p.cheats.end());
@@ -210,6 +228,7 @@ inline bool save(const std::string& path) {
     fprintf(f, "esp_hunter=%.3f,%.3f,%.3f\nesp_survivor=%.3f,%.3f,%.3f\n", e.hunter[0], e.hunter[1], e.hunter[2], e.survivor[0],
             e.survivor[1], e.survivor[2]);
     fprintf(f, "uv_light=%d,%.3f,%.3f,%.3f,%.2f\n", cfg.uv.on, cfg.uv.color[0], cfg.uv.color[1], cfg.uv.color[2], cfg.uv.glow);
+    fprintf(f, "look=%.2f,%.2f,%d,%d,%d\n", cfg.look.opacity, cfg.look.roundness, cfg.look.motion, cfg.look.skyline, cfg.look.glow);
     fclose(f);
     return true;
 }

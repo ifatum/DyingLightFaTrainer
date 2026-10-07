@@ -177,6 +177,14 @@ int main(int argc, char** argv) {
     fake_var_vtable[1 + cheats::SLOT_VAR_FLOAT] = (uintptr_t)&fake_var_float;
     cheats::var_root = (uintptr_t)&fake_var_holder;
     cheats::local_player_root = cheats::params_root = 0;
+    for (auto& p : cheats::PRESETS) {
+        for (auto* k : p.cheats) CHECK(cheats::find(k));
+        for (auto& [k, v] : p.tweaks) CHECK(cheats::find_tweak(k) && v > 1.0f && v <= cheats::find_tweak(k)->max);
+        cheats::apply_profile(cheats::preset_profile(p));
+        CHECK(cheats::preset_active(p));
+        for (auto& other : cheats::PRESETS) CHECK(&other == &p || !cheats::preset_active(other));
+    }
+    cheats::all_off();
     uintptr_t flag = cheats::unlimited_ammo_flag;
     static uint8_t fake_rules[4];
     cheats::unlimited_ammo_flag = (uintptr_t)fake_rules;

@@ -2,72 +2,78 @@
 #include <algorithm>
 #include <cmath>
 #include "app.h"
+#include "brand.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 
 namespace menu {
 
-inline ImFont *f_body, *f_small, *f_head, *f_big, *f_brand;
+inline ImFont *f_body, *f_strong, *f_small, *f_label, *f_head, *f_tile, *f_big, *f_brand, *f_mono;
 
-struct Theme { ImVec4 accent, accent_soft, bg, side, card, hover, line, text, dim, ok, bad; };
+struct Theme { ImU32 accent, accent_ink, ground, side, raised, raised_hi, frame, line, line_soft, text, soft, muted, ok, bad; };
 inline Theme T;
 
 inline float S(float v) { return v * config::cfg.scale; }
-inline ImU32 col(ImVec4 c, float alpha = -1) {
-    if (alpha >= 0) c.w = alpha;
-    return ImGui::GetColorU32(c);
+inline float R(float v) { return S(v) * config::cfg.look.roundness; }
+inline ImU32 C(ImU32 c, float alpha = 1) { return brand::C(c, alpha); }
+inline ImVec4 V(ImU32 c, float alpha = 1) {
+    ImVec4 v = ImGui::ColorConvertU32ToFloat4(c);
+    v.w *= alpha;
+    return v;
 }
+inline float now() { return (float)ImGui::GetTime(); }
+inline float motion() {
+    int m = config::cfg.look.motion;
+    return m == config::MOTION_OFF ? 0.0f : m == config::MOTION_SUBTLE ? 0.5f : 1.0f;
+}
+inline float scene_time() { return motion() > 0 ? now() : 0.0f; }
 
 inline void apply_style() {
     auto& a = config::cfg.accent;
-    T.accent = {a[0], a[1], a[2], 1};
-    T.accent_soft = {a[0], a[1], a[2], 0.14f};
-    T.bg = {0.043f, 0.047f, 0.058f, 0.985f};
-    T.side = {0.058f, 0.063f, 0.077f, 1};
-    T.card = {0.080f, 0.087f, 0.104f, 1};
-    T.hover = {0.102f, 0.110f, 0.130f, 1};
-    T.line = {1, 1, 1, 0.06f};
-    T.text = {0.93f, 0.94f, 0.96f, 1};
-    T.dim = {0.54f, 0.58f, 0.65f, 1};
-    T.ok = {0.35f, 0.82f, 0.55f, 1};
-    T.bad = {0.93f, 0.37f, 0.37f, 1};
+    T.accent = IM_COL32((int)(a[0] * 255), (int)(a[1] * 255), (int)(a[2] * 255), 255);
+    float luminance = 0.299f * a[0] + 0.587f * a[1] + 0.114f * a[2];
+    T.accent_ink = luminance > 0.52f ? brand::ACCENT_INK : IM_COL32(250, 246, 240, 255);
+    T.ground = brand::GROUND, T.side = IM_COL32(20, 20, 23, 255), T.raised = brand::RAISED, T.raised_hi = IM_COL32(33, 33, 37, 255);
+    T.frame = IM_COL32(30, 30, 34, 255), T.line = brand::LINE, T.line_soft = brand::LINE_SOFT;
+    T.text = brand::TEXT, T.soft = brand::SOFT, T.muted = brand::MUTED, T.ok = brand::GOOD, T.bad = brand::BAD;
+    float opacity = config::cfg.look.opacity;
     ImGuiStyle& s = ImGui::GetStyle();
-    s.WindowRounding = S(16), s.ChildRounding = S(12), s.FrameRounding = S(8), s.PopupRounding = S(12);
-    s.GrabRounding = S(8), s.ScrollbarRounding = S(8), s.TabRounding = S(8);
+    s.WindowRounding = R(16), s.ChildRounding = R(12), s.FrameRounding = R(8), s.PopupRounding = R(12);
+    s.GrabRounding = R(6), s.ScrollbarRounding = R(6), s.TabRounding = R(8);
     s.WindowBorderSize = 1, s.ChildBorderSize = 0, s.FrameBorderSize = 0, s.PopupBorderSize = 1;
     s.WindowPadding = {0, 0}, s.FramePadding = {S(12), S(8)}, s.ItemSpacing = {S(10), S(10)};
-    s.ItemInnerSpacing = {S(8), S(6)}, s.CellPadding = {S(10), S(8)}, s.ScrollbarSize = S(8), s.GrabMinSize = S(12);
+    s.ItemInnerSpacing = {S(8), S(6)}, s.CellPadding = {S(10), S(8)}, s.ScrollbarSize = S(6), s.GrabMinSize = S(12);
     ImVec4* c = s.Colors;
-    ImVec4 accent_mid = {a[0], a[1], a[2], 0.55f};
-    c[ImGuiCol_WindowBg] = T.bg;
+    c[ImGuiCol_WindowBg] = V(T.ground, opacity);
     c[ImGuiCol_ChildBg] = {0, 0, 0, 0};
-    c[ImGuiCol_PopupBg] = {0.06f, 0.065f, 0.08f, 0.99f};
-    c[ImGuiCol_Border] = T.line;
-    c[ImGuiCol_ModalWindowDimBg] = {0, 0, 0, 0.5f};
-    c[ImGuiCol_Text] = T.text;
-    c[ImGuiCol_TextDisabled] = T.dim;
-    c[ImGuiCol_FrameBg] = {0.12f, 0.13f, 0.155f, 1};
-    c[ImGuiCol_FrameBgHovered] = {0.15f, 0.16f, 0.19f, 1};
-    c[ImGuiCol_FrameBgActive] = {0.17f, 0.18f, 0.21f, 1};
-    c[ImGuiCol_Button] = {0.13f, 0.14f, 0.165f, 1};
-    c[ImGuiCol_ButtonHovered] = {0.17f, 0.18f, 0.215f, 1};
-    c[ImGuiCol_ButtonActive] = accent_mid;
-    c[ImGuiCol_Header] = T.accent_soft;
+    c[ImGuiCol_PopupBg] = V(T.raised, 0.99f);
+    c[ImGuiCol_Border] = V(T.line_soft);
+    c[ImGuiCol_ModalWindowDimBg] = {0, 0, 0, 0.55f};
+    c[ImGuiCol_Text] = V(T.text);
+    c[ImGuiCol_TextDisabled] = V(T.muted);
+    c[ImGuiCol_FrameBg] = V(T.frame);
+    c[ImGuiCol_FrameBgHovered] = V(IM_COL32(37, 37, 42, 255));
+    c[ImGuiCol_FrameBgActive] = V(IM_COL32(42, 42, 48, 255));
+    c[ImGuiCol_Button] = V(T.frame);
+    c[ImGuiCol_ButtonHovered] = V(IM_COL32(41, 41, 46, 255));
+    c[ImGuiCol_ButtonActive] = V(T.accent, 0.5f);
+    c[ImGuiCol_Header] = V(T.accent, 0.14f);
     c[ImGuiCol_HeaderHovered] = {1, 1, 1, 0.05f};
-    c[ImGuiCol_HeaderActive] = accent_mid;
-    c[ImGuiCol_Separator] = T.line;
+    c[ImGuiCol_HeaderActive] = V(T.accent, 0.5f);
+    c[ImGuiCol_Separator] = V(T.line_soft);
     c[ImGuiCol_ScrollbarBg] = {0, 0, 0, 0};
-    c[ImGuiCol_ScrollbarGrab] = {1, 1, 1, 0.10f};
-    c[ImGuiCol_ScrollbarGrabHovered] = {1, 1, 1, 0.18f};
-    c[ImGuiCol_ScrollbarGrabActive] = accent_mid;
-    c[ImGuiCol_CheckMark] = c[ImGuiCol_SliderGrab] = c[ImGuiCol_SliderGrabActive] = T.accent;
+    c[ImGuiCol_ScrollbarGrab] = V(T.line);
+    c[ImGuiCol_ScrollbarGrabHovered] = V(T.muted);
+    c[ImGuiCol_ScrollbarGrabActive] = V(T.accent);
+    c[ImGuiCol_CheckMark] = c[ImGuiCol_SliderGrab] = c[ImGuiCol_SliderGrabActive] = V(T.accent);
     c[ImGuiCol_TableRowBg] = {0, 0, 0, 0};
-    c[ImGuiCol_TableRowBgAlt] = {1, 1, 1, 0.02f};
-    c[ImGuiCol_TableBorderLight] = T.line;
-    c[ImGuiCol_NavCursor] = T.accent;
-    c[ImGuiCol_TextSelectedBg] = {a[0], a[1], a[2], 0.35f};
+    c[ImGuiCol_TableRowBgAlt] = {1, 1, 1, 0.018f};
+    c[ImGuiCol_TableBorderLight] = V(T.line_soft);
+    c[ImGuiCol_NavCursor] = V(T.accent);
+    c[ImGuiCol_TextSelectedBg] = V(T.accent, 0.35f);
     c[ImGuiCol_ResizeGrip] = {0, 0, 0, 0};
-    c[ImGuiCol_ResizeGripHovered] = accent_mid;
-    c[ImGuiCol_ResizeGripActive] = T.accent;
+    c[ImGuiCol_ResizeGripHovered] = V(T.accent, 0.5f);
+    c[ImGuiCol_ResizeGripActive] = V(T.accent);
     ImGui::GetIO().FontGlobalScale = config::cfg.scale;
 }
 
@@ -84,65 +90,123 @@ inline std::string thousands(long long v) {
 
 inline float animate(ImGuiID id, float target, float speed = 14) {
     float& v = *ImGui::GetStateStorage()->GetFloatRef(id, target);
-    v += (target - v) * std::min(1.0f, ImGui::GetIO().DeltaTime * speed);
-    return v;
+    if (motion() == 0) return v = target;
+    return brand::follow(v, target, speed);
 }
 
-inline ImVec4 mix(ImVec4 a, ImVec4 b, float t) { return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t}; }
+inline float font_size(ImFont* f) { return f->FontSize * config::cfg.scale; }
 
 inline void label(const char* text) {
     ImGui::PushFont(f_small);
-    ImGui::PushStyleColor(ImGuiCol_Text, T.dim);
+    ImGui::PushStyleColor(ImGuiCol_Text, V(T.muted));
     ImGui::TextUnformatted(text);
     ImGui::PopStyleColor();
     ImGui::PopFont();
 }
 
+inline void caps(const char* text, ImU32 color = 0) {
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float size = font_size(f_label);
+    brand::spaced_caps(ImGui::GetWindowDrawList(), f_label, size, p, text, C(color ? color : T.muted), S(1.4f));
+    ImGui::Dummy({0, size});
+}
+
+inline const char* shown_end(const char* text) {
+    const char* hidden = strstr(text, "##");
+    return hidden ? hidden : text + strlen(text);
+}
+
 inline bool accent_button(const char* text, ImVec2 size = {0, 0}) {
-    ImGui::PushStyleColor(ImGuiCol_Button, T.accent);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, mix(T.accent, {1, 1, 1, 1}, 0.15f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, mix(T.accent, {0, 0, 0, 1}, 0.15f));
-    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(15, 15, 18, 255));
-    bool r = ImGui::Button(text, size);
-    ImGui::PopStyleColor(4);
-    return r;
+    ImGuiStyle& st = ImGui::GetStyle();
+    const char* end = shown_end(text);
+    float fs = ImGui::GetFontSize();
+    float text_w = f_strong->CalcTextSizeA(fs, FLT_MAX, 0, text, end).x;
+    if (size.x == 0) size.x = text_w + st.FramePadding.x * 2.6f;
+    else if (size.x < 0) size.x = std::max(S(40), ImGui::GetContentRegionAvail().x + size.x + 1);
+    if (size.y == 0) size.y = ImGui::GetFrameHeight();
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    bool pressed = ImGui::InvisibleButton(text, size);
+    bool hovered = ImGui::IsItemHovered(), held = ImGui::IsItemActive();
+    if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    ImGuiID id = ImGui::GetItemID();
+    float h = animate(id + 1, hovered ? 1.0f : 0.0f, 16), d = animate(id + 2, held ? 1.0f : 0.0f, 30);
+    float lift = (h - d) * S(1.5f) * motion();
+    ImVec2 a{p.x, p.y - lift}, b{p.x + size.x, p.y + size.y - lift};
+    float r = R(8);
+    auto* dl = ImGui::GetWindowDrawList();
+    for (int i = 1; i <= 3 && h > 0.01f; i++) dl->AddRect({a.x - i * S(2), a.y - i * S(2)}, {b.x + i * S(2), b.y + i * S(2)}, C(T.accent, h * 0.1f / i), r + i * S(2), 0, S(2));
+    ImU32 fill = brand::mix(brand::mix(T.accent, IM_COL32(255, 255, 255, 255), h * 0.14f), IM_COL32(0, 0, 0, 255), d * 0.12f);
+    dl->AddRectFilled(a, b, C(fill), r);
+    dl->AddRectFilledMultiColor({a.x + r, a.y + S(1)}, {b.x - r, a.y + size.y * 0.5f}, C(IM_COL32(255, 255, 255, 255), 0.07f), C(IM_COL32(255, 255, 255, 255), 0.07f),
+                                C(IM_COL32(255, 255, 255, 255), 0), C(IM_COL32(255, 255, 255, 255), 0));
+    dl->AddText(f_strong, fs, {(a.x + b.x - text_w) / 2, (a.y + b.y - fs) / 2}, C(T.accent_ink), text, end);
+    return pressed;
+}
+
+inline int g_card = 0;
+inline float g_page_at = -10;
+inline std::vector<float> g_card_offsets;
+
+inline float card_reveal(int index) {
+    float m = motion();
+    if (m == 0) return 1;
+    float delay = m >= 1 ? std::min(index, 8) * 0.055f : 0;
+    return brand::ease_out((now() - g_page_at - delay) / (m >= 1 ? 0.5f : 0.25f));
 }
 
 inline void begin_card(const char* id, const char* title = nullptr) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, T.card);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(16), S(14)});
-    ImGui::BeginChild(id, {0, 0}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding);
+    float a = card_reveal(g_card++);
+    float offset = (1 - a) * S(18) * motion();
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * a);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + offset);
+    g_card_offsets.push_back(offset);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, V(T.raised, std::max(0.75f, config::cfg.look.opacity)));
+    ImGui::PushStyleColor(ImGuiCol_Border, V(T.line_soft));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(18), S(16)});
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+    ImGui::BeginChild(id, {0, 0}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders);
     if (title) {
-        label(title);
+        caps(title);
         ImGui::Dummy({0, S(2)});
     }
 }
 
 inline void end_card() {
     ImGui::EndChild();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
+    float offset = g_card_offsets.empty() ? 0 : g_card_offsets.back();
+    if (!g_card_offsets.empty()) g_card_offsets.pop_back();
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - offset);
     ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
     ImGui::Dummy({0, S(4)});
 }
 
 inline bool switch_row(const char* text, const char* hint, bool& value) {
     ImGui::PushID(text);
-    float w = ImGui::GetContentRegionAvail().x, h = S(hint && *hint ? 58 : 42);
+    float w = ImGui::GetContentRegionAvail().x, h = S(hint && *hint ? 60 : 44);
     ImVec2 p = ImGui::GetCursorScreenPos();
     bool clicked = ImGui::InvisibleButton("row", {w, h});
     if (clicked) value = !value;
     bool hovered = ImGui::IsItemHovered();
+    if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     auto* dl = ImGui::GetWindowDrawList();
     float hover = animate(ImGui::GetID("hover"), hovered ? 1.0f : 0.0f);
-    if (hover > 0.01f) dl->AddRectFilled({p.x - S(8), p.y}, {p.x + w + S(8), p.y + h}, col({1, 1, 1, 0.035f * hover}), S(10));
-    float body = ImGui::GetFontSize(), small = f_small->FontSize * config::cfg.scale;
-    float text_y = p.y + (hint && *hint ? S(9) : (h - body) / 2);
-    dl->AddText(f_body, body, {p.x + S(4), text_y}, col(T.text), text);
-    if (hint && *hint) dl->AddText(f_small, small, {p.x + S(4), text_y + body + S(3)}, col(T.dim), hint);
-    float sw = S(44), sh = S(24), t = animate(ImGui::GetID("knob"), value ? 1.0f : 0.0f);
+    if (hover > 0.01f) dl->AddRectFilled({p.x - S(8), p.y}, {p.x + w + S(8), p.y + h}, C(IM_COL32(255, 255, 255, 255), 0.03f * hover), R(10));
+    float body = ImGui::GetFontSize(), small = font_size(f_small);
+    float text_y = p.y + (hint && *hint ? S(10) : (h - body) / 2);
+    dl->AddText(f_body, body, {p.x + S(4), text_y}, C(T.text), text);
+    if (hint && *hint) dl->AddText(f_small, small, {p.x + S(4), text_y + body + S(3)}, C(T.muted), hint);
+    float sw = S(44), sh = S(24), t = animate(ImGui::GetID("knob"), value ? 1.0f : 0.0f, 16);
     ImVec2 s0 = {p.x + w - sw - S(4), p.y + (h - sh) / 2};
-    dl->AddRectFilled(s0, {s0.x + sw, s0.y + sh}, col(mix({0.2f, 0.215f, 0.25f, 1}, T.accent, t)), sh / 2);
-    dl->AddCircleFilled({s0.x + sh / 2 + t * (sw - sh), s0.y + sh / 2}, sh / 2 - S(3), col(mix({0.75f, 0.77f, 0.8f, 1}, {1, 1, 1, 1}, t)));
+    dl->AddRectFilled(s0, {s0.x + sw, s0.y + sh}, C(brand::mix(IM_COL32(44, 44, 50, 255), T.accent, t)), sh / 2);
+    ImVec2 knob{s0.x + sh / 2 + t * (sw - sh), s0.y + sh / 2};
+    float* flipped_at = ImGui::GetStateStorage()->GetFloatRef(ImGui::GetID("flip"), -10);
+    if (clicked) *flipped_at = now();
+    float pulse = motion() > 0 ? brand::clamp01((now() - *flipped_at) / 0.45f) : 1;
+    if (pulse < 1) dl->AddCircle(knob, sh / 2 + S(10) * brand::ease_out(pulse), C(T.accent, 0.5f * (1 - pulse)), 0, S(2));
+    if (t > 0.01f) dl->AddCircleFilled(knob, sh / 2 + S(3), C(T.accent, 0.18f * t));
+    dl->AddCircleFilled(knob, sh / 2 - S(3), C(brand::mix(T.soft, IM_COL32(255, 252, 246, 255), t)));
     ImGui::PopID();
     return clicked;
 }
@@ -157,28 +221,33 @@ inline void cheat_switch(const char* key, const char* override_label = nullptr) 
     }
 }
 
-inline void stat_tile(const char* id, const char* name, float value, float full, ImVec4 color, float width) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, T.card);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(16), S(14)});
-    ImGui::BeginChild(id, {width, S(104)}, ImGuiChildFlags_AlwaysUseWindowPadding);
-    label(name);
-    ImGui::PushFont(f_head);
+inline void stat_tile(const char* id, const char* name, float value, float full, ImU32 color, float width) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, V(T.raised, std::max(0.75f, config::cfg.look.opacity)));
+    ImGui::PushStyleColor(ImGuiCol_Border, V(T.line_soft));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(18), S(16)});
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+    ImGui::BeginChild(id, {width, S(112)}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders);
+    caps(name);
+    ImGui::Dummy({0, S(2)});
+    ImGui::PushFont(f_tile);
     if (std::isnan(value)) ImGui::TextDisabled("--");
     else ImGui::Text("%.0f", value);
     ImGui::PopFont();
     ImVec2 p = ImGui::GetCursorScreenPos();
     float w = ImGui::GetContentRegionAvail().x, frac = full > 0 && !std::isnan(value) ? std::clamp(value / full, 0.0f, 1.0f) : 0;
     auto* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled({p.x, p.y + S(4)}, {p.x + w, p.y + S(10)}, col({1, 1, 1, 0.07f}), S(3));
-    dl->AddRectFilled({p.x, p.y + S(4)}, {p.x + w * animate(ImGui::GetID("bar"), frac, 6), p.y + S(10)}, col(color), S(3));
+    float shown = animate(ImGui::GetID("bar"), frac, 6);
+    dl->AddRectFilled({p.x, p.y + S(4)}, {p.x + w, p.y + S(9)}, C(IM_COL32(255, 255, 255, 255), 0.06f), S(3));
+    dl->AddRectFilled({p.x, p.y + S(4)}, {p.x + w * shown, p.y + S(9)}, C(color), S(3));
+    if (shown > 0.02f) dl->AddCircleFilled({p.x + w * shown, p.y + S(6.5f)}, S(6), C(color, 0.25f));
     ImGui::EndChild();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
 }
 
 inline void note(const char* text) {
     ImGui::PushFont(f_small);
-    ImGui::PushStyleColor(ImGuiCol_Text, T.dim);
+    ImGui::PushStyleColor(ImGuiCol_Text, V(T.soft));
     ImGui::PushTextWrapPos(0);
     ImGui::TextUnformatted(text);
     ImGui::PopTextWrapPos();
@@ -189,6 +258,43 @@ inline void note(const char* text) {
 inline void empty_state(const char* text) {
     ImGui::Dummy({0, S(24)});
     note(text);
+}
+
+inline bool segmented(const char* id, const char* const* options, int count, int& value, float width) {
+    ImGui::PushID(id);
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float h = ImGui::GetFrameHeight(), cell = width / count;
+    auto* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(p, {p.x + width, p.y + h}, C(T.frame), R(8));
+    float* slide = ImGui::GetStateStorage()->GetFloatRef(ImGui::GetID("slide"), (float)value);
+    if (motion() > 0) brand::follow(*slide, (float)value, 18);
+    else *slide = (float)value;
+    ImVec2 a{p.x + *slide * cell + S(3), p.y + S(3)};
+    dl->AddRectFilled(a, {a.x + cell - S(6), p.y + h - S(3)}, C(T.accent), R(6));
+    bool changed = false;
+    for (int i = 0; i < count; i++) {
+        ImGui::SetCursorScreenPos({p.x + i * cell, p.y});
+        ImGui::PushID(i);
+        if (ImGui::InvisibleButton("seg", {cell, h}) && value != i) value = i, changed = true;
+        ImGui::PopID();
+        float on = brand::clamp01(1 - fabsf(*slide - i));
+        float fs = ImGui::GetFontSize(), tw = f_strong->CalcTextSizeA(fs, FLT_MAX, 0, options[i]).x;
+        dl->AddText(f_strong, fs, {p.x + i * cell + (cell - tw) / 2, p.y + (h - fs) / 2}, C(brand::mix(T.soft, T.accent_ink, on)), options[i]);
+    }
+    ImGui::SetCursorScreenPos({p.x, p.y + h});
+    ImGui::Dummy({width, 0});
+    ImGui::PopID();
+    return changed;
+}
+
+inline void pill(ImDrawList* dl, ImVec2 at, const char* text, ImU32 dot, float pulse) {
+    float fs = font_size(f_small), h = fs + S(10), w = f_small->CalcTextSizeA(fs, FLT_MAX, 0, text).x + S(30);
+    dl->AddRectFilled(at, {at.x + w, at.y + h}, C(T.raised), h / 2);
+    dl->AddRect(at, {at.x + w, at.y + h}, C(T.line), h / 2);
+    ImVec2 c{at.x + S(12), at.y + h / 2};
+    dl->AddCircleFilled(c, S(3.5f), C(dot));
+    if (pulse >= 0) dl->AddCircle(c, S(3.5f) + S(6) * pulse, C(dot, 0.5f * (1 - pulse)), 0, S(1.2f));
+    dl->AddText(f_small, fs, {at.x + S(22), at.y + (h - fs) / 2}, C(T.soft), text);
 }
 
 struct Cat { const char* label; ImU32 color; };
@@ -355,7 +461,7 @@ inline void inventory_page(game::Kind kind) {
         std::string title = std::to_string(inv.items.size()) + " ITEMS";
         if (inv.capacity > 0) title += "   /   " + std::to_string(inv.capacity) + " SLOTS";
         ImGui::Dummy({0, S(2)});
-        label(title.c_str());
+        caps(title.c_str());
         if (!ImGui::BeginTable(("t" + std::to_string(i)).c_str(), 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) continue;
         ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Amount", ImGuiTableColumnFlags_WidthFixed, S(250));
@@ -415,8 +521,8 @@ inline void give_item(const ItemInfo* info, int amount, int target) {
 }
 
 inline bool chip(const char* text, bool active) {
-    ImGui::PushStyleColor(ImGuiCol_Button, active ? T.accent_soft : ImVec4{1, 1, 1, 0.04f});
-    ImGui::PushStyleColor(ImGuiCol_Text, active ? T.accent : T.text);
+    ImGui::PushStyleColor(ImGuiCol_Button, active ? V(T.accent, 0.16f) : ImVec4{1, 1, 1, 0.04f});
+    ImGui::PushStyleColor(ImGuiCol_Text, active ? V(T.accent) : V(T.soft));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, S(20));
     bool r = ImGui::Button(text);
     ImGui::PopStyleVar();
@@ -531,6 +637,9 @@ inline void tweak_slider(cheats::Tweak& t) {
     else snprintf(text, sizeof text, "x%.1f", v);
     if (ImGui::SliderFloat("##f", &v, 1.0f, t.max, text, ImGuiSliderFlags_NoInput)) t.factor = v;
     if (ImGui::IsItemDeactivatedAfterEdit()) save_config();
+    ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+    float fill = animate(ImGui::GetID("fill"), (t.factor - 1.0f) / (t.max - 1.0f), 18);
+    if (fill > 0.002f) ImGui::GetWindowDrawList()->AddRectFilled(a, {a.x + (b.x - a.x) * fill, b.y}, C(T.accent, 0.16f), R(8));
     ImGui::Dummy({0, S(6)});
     ImGui::PopID();
 }
@@ -669,7 +778,8 @@ inline void spit_keys_card() {
 
 inline void zombie_page() {
     begin_card("about");
-    note("For Be The Zombie matches, where you play the Night Hunter and invade another player's game. Turn these on before or during a match.");
+    note("For Be The Zombie matches, where you play the Night Hunter and invade another player's game. Turn these on before or during a match. "
+         "Ready-made Legit and Rage presets are on the PvP page.");
     end_card();
     begin_card("hunter", "HUNTER");
     cheat_switch("god", "Hunter god mode");
@@ -785,7 +895,71 @@ inline void skills_page() {
     ranks_card();
 }
 
+inline void apply_preset(const cheats::Preset& p) {
+    cheats::apply_profile(cheats::preset_profile(p));
+    auto& e = config::cfg.esp;
+    bool rage = p.esp == cheats::ESP_RAGE;
+    e.on = e.role = e.health_bar = e.distance = true;
+    e.box = e.health_text = e.rank = e.rage = e.snaplines = e.allies = rage;
+    e.max_distance = rage ? 1000.0f : 300.0f;
+    save_config();
+    toast(std::string("Loaded preset ") + p.role + " " + p.style);
+}
+
+inline void preset_tile(const cheats::Preset& p, float w, float h) {
+    ImGui::PushID(p.key);
+    ImGui::BeginGroup();
+    ImVec2 a = ImGui::GetCursorScreenPos(), b{a.x + w, a.y + h};
+    bool on = cheats::preset_active(p);
+    bool rage = p.esp == cheats::ESP_RAGE;
+    float hover = animate(ImGui::GetID("hover"), ImGui::IsMouseHoveringRect(a, b) ? 1.0f : 0.0f);
+    float lit = animate(ImGui::GetID("on"), on ? 1.0f : 0.0f);
+    auto* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(a, b, C(brand::mix(T.frame, IM_COL32(36, 36, 41, 255), hover)), R(10));
+    if (lit > 0.01f) dl->AddRectFilled(a, b, C(T.accent, 0.08f * lit), R(10));
+    dl->AddRect(a, b, C(brand::mix(brand::mix(T.line_soft, T.line, hover), T.accent, lit)), R(10), 0, 1.0f + lit);
+    float pad = S(16), fs = font_size(f_label);
+    std::string role = p.role;
+    std::transform(role.begin(), role.end(), role.begin(), ::toupper);
+    brand::spaced_caps(dl, f_label, fs, {a.x + pad, a.y + pad}, role.c_str(), C(T.muted), S(1.4f));
+    float big = font_size(f_tile);
+    dl->AddText(f_tile, big, {a.x + pad, a.y + pad + fs + S(8)}, C(rage ? T.accent : T.text), p.style);
+    float small = font_size(f_small);
+    dl->AddText(f_small, small, {a.x + pad, a.y + pad + fs + big + S(14)}, C(T.soft), p.summary, nullptr, w - pad * 2);
+    float bh = ImGui::GetFrameHeight();
+    ImGui::Dummy({w, h});
+    ImGui::SetCursorScreenPos({a.x + pad, b.y - pad - bh});
+    if (on) {
+        if (ImGui::Button("Turn off", {S(110), 0})) cheats::all_off(), save_config();
+        ImGui::SameLine(0, S(12));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(V(T.accent), "Active");
+    } else if (accent_button("Load preset", {S(140), 0})) {
+        apply_preset(p);
+    }
+    ImGui::SetCursorScreenPos({a.x, b.y});
+    ImGui::EndGroup();
+    ImGui::PopID();
+}
+
+inline void presets_card() {
+    begin_card("presets", "PRESETS");
+    note("Ready-made setups for Be The Zombie. Legit stays believable to the other players, Rage holds nothing back. Loading one turns everything else off and sets the player ESP to match.");
+    ImGui::Dummy({0, S(4)});
+    float gap = S(12), w = (ImGui::GetContentRegionAvail().x - gap) / 2;
+    float h = S(206);
+    int i = 0;
+    for (auto& p : cheats::PRESETS) {
+        if (i % 2) ImGui::SameLine(0, gap);
+        else if (i) ImGui::Dummy({0, S(2)});
+        preset_tile(p, w, h);
+        i++;
+    }
+    end_card();
+}
+
 inline void pvp_page() {
+    presets_card();
     begin_card("about");
     note("Slide right to reach further. At Max the pounce, dropkick and death from above also hit targets that are not in front of you. Each player's game decides its own attacks.");
     end_card();
@@ -1078,7 +1252,7 @@ inline const Page PAGES[] = {
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "MODES", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
-    {"pvp", "PvP", "How far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
+    {"pvp", "PvP", "Presets and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
      {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_kicks", "h_melee"}},
     {"visuals", "Visuals", "Player ESP and UV light color", visuals_page, always, "MODES", {}},
     {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
@@ -1088,7 +1262,7 @@ inline const Page PAGES[] = {
     {"materials", "Materials", "Crafting parts and consumables", [] { inventory_page(game::K_MATERIALS); }, always, "ITEMS", {}},
     {"tools", "Tools", "Special items", [] { inventory_page(game::K_TOOLS); }, has_tools, "ITEMS", {}},
     {"give", "Give items", "Spawn any item in the game", give_page, always, "ITEMS", {}},
-    {"settings", "Settings", "Look, controls and sidebar", settings_page, always, "", {}},
+    {"settings", "Settings", "Look, controls, configs and version", settings_page, always, "", {}},
 };
 
 inline int active_on(const Page& p) {
@@ -1117,7 +1291,8 @@ inline void profiles_card() {
     static char name[48] = "";
     static std::string confirm_delete;
     begin_card("profiles", "CONFIGS");
-    note("Save the cheats and sliders that are on right now under a name, and load them again with one click. Loading turns everything else off.");
+    note("Save the cheats and sliders that are on right now under a name, and load them again with one click. Loading turns everything else off. "
+         "Ready-made Be The Zombie presets are on the PvP page.");
     ImGui::Dummy({0, S(2)});
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - S(130));
     ImGui::InputTextWithHint("##name", "Config name, e.g. PvP hunter", name, sizeof name);
@@ -1138,8 +1313,8 @@ inline void profiles_card() {
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(n.c_str());
         float right = ImGui::GetWindowContentRegionMax().x;
-        ImGui::SameLine(right - S(150));
-        if (ImGui::Button("Load", {S(70), 0})) {
+        ImGui::SameLine(right - S(156));
+        if (ImGui::Button("Load", {S(72), 0})) {
             config::Profile p;
             if (config::load_profile(n, p)) {
                 cheats::apply_profile(p);
@@ -1151,7 +1326,7 @@ inline void profiles_card() {
         }
         ImGui::SameLine(0, S(8));
         bool sure = confirm_delete == n;
-        if (ImGui::Button(sure ? "Sure?" : "Delete", {S(72), 0})) {
+        if (ImGui::Button(sure ? "Sure?" : "Delete", {S(76), 0})) {
             if (sure) {
                 config::delete_profile(n);
                 confirm_delete.clear();
@@ -1167,50 +1342,110 @@ inline void profiles_card() {
     end_card();
 }
 
-inline void settings_page() {
-    auto& c = config::cfg;
-    bool changed = false;
-    begin_card("look", "APPEARANCE");
-    const float presets[][3] = {{0.953f, 0.604f, 0.118f}, {0.93f, 0.33f, 0.33f}, {0.35f, 0.82f, 0.55f},
-                                {0.33f, 0.62f, 0.98f}, {0.66f, 0.45f, 0.98f}, {0.95f, 0.45f, 0.70f}, {0.85f, 0.87f, 0.90f}};
+inline void setting_label(const char* text) {
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Accent");
-    ImGui::SameLine(S(170));
-    for (int i = 0; i < 7; i++) {
+    ImGui::TextUnformatted(text);
+    ImGui::SameLine(S(190));
+}
+
+inline const char* edition_story() {
+#ifdef FATRAINER_OFFLINE
+    return "You have the Nexus Version, downloaded from Nexus Mods. It never connects to the internet and never checks for updates. "
+           "New versions are posted on the Nexus Mods page; install them with the FaTrainer Installer that comes with them.";
+#else
+    return "You have the Fatum Version, downloaded from the FaTrainer website or GitHub. When the game starts it asks GitHub once which version is the newest. "
+           "If a newer one is out, the trainer turns itself off until you update with the FaTrainer Installer. Nothing else is sent anywhere.";
+#endif
+}
+
+inline void about_card() {
+    begin_card("about_trainer", "ABOUT");
+    auto* dl = ImGui::GetWindowDrawList();
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float big = font_size(f_tile);
+    std::string title = std::string("FaTrainer ") + VERSION;
+    dl->AddText(f_tile, big, p, C(T.text), title.c_str());
+    float tw = f_tile->CalcTextSizeA(big, FLT_MAX, 0, title.c_str()).x;
+    float pulse = motion() > 0 ? fmodf(now(), 2.2f) / 2.2f : -1;
+    pill(dl, {p.x + tw + S(16), p.y + (big - font_size(f_small) - S(10)) / 2}, FATRAINER_EDITION, T.accent, pulse);
+    ImGui::Dummy({0, big + S(2)});
+    label("FaTrainer | Dying Light");
+    ImGui::Dummy({0, S(2)});
+    note(edition_story());
+    end_card();
+}
+
+inline const float ACCENTS[][3] = {{0.910f, 0.592f, 0.227f}, {0.93f, 0.38f, 0.33f}, {0.49f, 0.79f, 0.55f}, {0.38f, 0.63f, 0.96f},
+                                   {0.67f, 0.50f, 0.96f},    {0.94f, 0.49f, 0.71f}, {0.85f, 0.82f, 0.76f}};
+
+inline void accent_swatches(bool& changed) {
+    auto& c = config::cfg;
+    for (int i = 0; i < (int)(sizeof ACCENTS / sizeof ACCENTS[0]); i++) {
         ImGui::PushID(i);
         ImVec2 p = ImGui::GetCursorScreenPos();
         float d = ImGui::GetFrameHeight();
-        if (ImGui::InvisibleButton("sw", {d, d})) memcpy(c.accent, presets[i], sizeof c.accent), changed = true;
-        bool sel = !memcmp(c.accent, presets[i], sizeof c.accent);
+        if (ImGui::InvisibleButton("swatch", {d, d})) memcpy(c.accent, ACCENTS[i], sizeof c.accent), changed = true;
+        bool hovered = ImGui::IsItemHovered();
+        if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        bool selected = !memcmp(c.accent, ACCENTS[i], sizeof c.accent);
+        float ring = animate(ImGui::GetID("ring"), selected ? 1.0f : hovered ? 0.45f : 0.0f, 16);
         auto* dl = ImGui::GetWindowDrawList();
-        dl->AddCircleFilled({p.x + d / 2, p.y + d / 2}, d / 2 - S(3), col({presets[i][0], presets[i][1], presets[i][2], 1}));
-        if (sel || ImGui::IsItemHovered()) dl->AddCircle({p.x + d / 2, p.y + d / 2}, d / 2, col(T.text, sel ? 1.0f : 0.4f), 0, S(2));
+        ImVec2 center{p.x + d / 2, p.y + d / 2};
+        ImU32 color = IM_COL32((int)(ACCENTS[i][0] * 255), (int)(ACCENTS[i][1] * 255), (int)(ACCENTS[i][2] * 255), 255);
+        dl->AddCircleFilled(center, d / 2 - S(4) - (1 - ring) * S(1), C(color));
+        if (ring > 0.01f) dl->AddCircle(center, d / 2 - S(0.5f), C(T.text, ring), 0, S(1.6f));
         ImGui::SameLine(0, S(6));
         ImGui::PopID();
     }
     if (ImGui::ColorEdit3("##custom", c.accent, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) changed = true;
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Interface size");
-    ImGui::SameLine(S(170));
+}
+
+inline void settings_page() {
+    auto& c = config::cfg;
+    auto& look = c.look;
+    bool changed = false;
+    about_card();
+
+    begin_card("look", "APPEARANCE");
+    setting_label("Accent");
+    accent_swatches(changed);
+    setting_label("Interface size");
     static float pending_scale = c.scale;
-    ImGui::SetNextItemWidth(S(200));
+    ImGui::SetNextItemWidth(S(220));
     ImGui::SliderFloat("##scale", &pending_scale, 0.75f, 1.5f, "%.2fx", ImGuiSliderFlags_NoInput);
     ImGui::SameLine();
     ImGui::BeginDisabled(pending_scale == c.scale);
     if (accent_button("Apply")) c.scale = pending_scale, changed = true;
     ImGui::EndDisabled();
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Background dim");
-    ImGui::SameLine(S(170));
-    ImGui::SetNextItemWidth(S(260));
+    setting_label("Window opacity");
+    ImGui::SetNextItemWidth(S(300));
+    float opacity = look.opacity * 100;
+    if (ImGui::SliderFloat("##opacity", &opacity, 60, 100, "%.0f%%")) look.opacity = opacity / 100, changed = true;
+    setting_label("Corner roundness");
+    ImGui::SetNextItemWidth(S(300));
+    float round = look.roundness * 100;
+    if (ImGui::SliderFloat("##round", &round, 0, 160, round < 1 ? "Square" : "%.0f%%")) look.roundness = round / 100, changed = true;
+    setting_label("Background dim");
+    ImGui::SetNextItemWidth(S(300));
     float pct = c.dim * 100;
     if (ImGui::SliderFloat("##dim", &pct, 0, 95, "%.0f%%")) c.dim = pct / 100, changed = true;
+    setting_label("Animations");
+    const char* motions[] = {"Off", "Subtle", "Full"};
+    if (segmented("motion", motions, 3, look.motion, S(300))) changed = true;
+    ImGui::Dummy({0, S(2)});
+    if (switch_row("Harran skyline", "The city at the bottom of the sidebar, with windows that light up.", look.skyline)) changed = true;
+    if (switch_row("Accent glow", "A soft light in your accent color drifts over the page.", look.glow)) changed = true;
+    ImGui::Dummy({0, S(2)});
+    if (ImGui::Button("Reset appearance")) {
+        config::Config fresh;
+        memcpy(c.accent, fresh.accent, sizeof c.accent);
+        c.dim = fresh.dim, c.look = fresh.look;
+        changed = true;
+    }
     end_card();
 
     begin_card("controls", "CONTROLS");
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Menu key");
-    ImGui::SameLine(S(170));
+    setting_label("Menu key");
     ImGui::SetNextItemWidth(S(180));
     const char* current = "Insert";
     for (auto& k : KEYS)
@@ -1221,7 +1456,7 @@ inline void settings_page() {
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    note("F8 always works too.");
+    label("F8 always works too.");
     bool remember = c.remember_cheats;
     if (switch_row("Remember cheats", "Turn your cheats back on the next time the game starts.", remember)) c.remember_cheats = remember, changed = true;
     end_card();
@@ -1275,56 +1510,115 @@ inline void settings_page() {
 }
 
 inline std::string g_page = "player";
+inline float g_opened_at = -10;
 
-inline bool nav_item(const Page& p, bool active, bool marked) {
+inline void open_page(const char* id) {
+    if (g_page == id) return;
+    g_page = id;
+    g_page_at = now();
+}
+
+inline bool nav_item(const Page& p, bool active, bool marked, float& active_y) {
     ImGui::PushID(p.id);
-    float w = ImGui::GetContentRegionAvail().x, h = S(31);
+    float w = ImGui::GetContentRegionAvail().x, h = S(34);
     ImVec2 at = ImGui::GetCursorScreenPos();
+    if (active) active_y = at.y - ImGui::GetWindowPos().y + ImGui::GetScrollY();
     bool clicked = ImGui::InvisibleButton("nav", {w, h});
-    float hover = animate(ImGui::GetID("h"), ImGui::IsItemHovered() ? 1.0f : 0.0f);
+    bool hovered = ImGui::IsItemHovered();
+    if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    float hover = animate(ImGui::GetID("h"), hovered && !active ? 1.0f : 0.0f);
     float on = animate(ImGui::GetID("a"), active ? 1.0f : 0.0f);
     auto* dl = ImGui::GetWindowDrawList();
-    if (hover > 0.01f) dl->AddRectFilled(at, {at.x + w, at.y + h}, col({1, 1, 1, 0.035f * hover}), S(10));
-    if (on > 0.01f) {
-        dl->AddRectFilled(at, {at.x + w, at.y + h}, col(T.accent, 0.13f * on), S(10));
-        dl->AddRectFilled({at.x, at.y + h * 0.28f}, {at.x + S(3), at.y + h * 0.72f}, col(T.accent, on), S(2));
-    }
+    if (hover > 0.01f) dl->AddRectFilled(at, {at.x + w, at.y + h}, C(IM_COL32(255, 255, 255, 255), 0.035f * hover), R(9));
     float fs = ImGui::GetFontSize();
-    dl->AddText(f_body, fs, {at.x + S(18), at.y + (h - fs) / 2}, col(mix(T.dim, T.text, std::max(on, hover * 0.6f))), p.title);
-    if (marked) dl->AddCircleFilled({at.x + w - S(14), at.y + h / 2}, S(4), col(T.accent));
+    float nudge = (on * S(6) + hover * S(3)) * motion();
+    dl->AddText(on > 0.5f ? f_strong : f_body, fs, {at.x + S(16) + nudge, at.y + (h - fs) / 2}, C(brand::mix(brand::mix(T.muted, T.soft, hover), T.text, on)), p.title);
+    if (marked) {
+        ImVec2 dot{at.x + w - S(14), at.y + h / 2};
+        float breathe = motion() > 0 ? 0.5f + 0.5f * sinf(now() * 2.4f) : 0;
+        dl->AddCircleFilled(dot, S(6) + breathe * S(2), C(T.accent, 0.16f));
+        dl->AddCircleFilled(dot, S(3.5f), C(T.accent));
+    }
     ImGui::PopID();
     return clicked;
 }
 
+inline void sidebar_skyline(ImVec2 a, ImVec2 b) {
+    static ImVec2 light{-1, -1};
+    float t = scene_time();
+    ImVec2 mouse = ImGui::GetIO().MousePos;
+    bool inside = mouse.x >= a.x && mouse.x <= b.x && mouse.y >= a.y - S(60) && mouse.y <= b.y;
+    ImVec2 target = inside ? mouse : ImVec2{a.x + (b.x - a.x) * (0.5f + 0.32f * sinf(t * 0.29f)), a.y + (b.y - a.y) * (0.42f + 0.12f * sinf(t * 0.43f))};
+    if (light.x < 0 || motion() == 0) light = target;
+    brand::follow(light.x, target.x, inside ? 8.0f : 1.6f), brand::follow(light.y, target.y, inside ? 8.0f : 1.6f);
+    brand::CityLook look;
+    look.accent = T.accent, look.ground = T.side, look.light_radius = S(110), look.glow = config::cfg.look.glow ? 0.13f : 0, look.center = 1120, look.fog = 0.5f, look.glow_rings = 20;
+    float rise = motion() >= 1 ? now() - g_opened_at + 0.15f : 100;
+    auto* dl = ImGui::GetWindowDrawList();
+    dl->PushClipRect(a, b, true);
+    brand::draw_city(dl, a, b, light, {((light.x - a.x) / (b.x - a.x) - 0.5f) * -S(14) * motion(), 0}, t, rise, look);
+    dl->AddRectFilledMultiColor(a, {b.x, a.y + (b.y - a.y) * 0.35f}, C(T.side), C(T.side), C(T.side, 0), C(T.side, 0));
+    dl->PopClipRect();
+}
+
 inline void sidebar() {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, T.side);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(14), S(20)});
-    ImGui::BeginChild("side", {S(228), 0}, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
-    ImGui::SetCursorPosX(S(18));
-    ImGui::PushFont(f_brand);
-    ImGui::TextColored(T.accent, "FaTrainer");
+    float opacity = config::cfg.look.opacity;
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, V(T.side, opacity));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(16), S(22)});
+    ImGui::BeginChild("side", {S(236), 0}, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
+    auto* dl = ImGui::GetWindowDrawList();
+    ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize();
+    if (config::cfg.look.skyline) sidebar_skyline({wp.x, wp.y + ws.y - S(170)}, {wp.x + ws.x, wp.y + ws.y});
+    dl->AddLine({wp.x + ws.x - 1, wp.y}, {wp.x + ws.x - 1, wp.y + ws.y}, C(T.line_soft));
+
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float brand_size = font_size(f_brand);
+    float letters = motion() >= 1 ? now() - g_opened_at : 10;
+    brand::draw_letters(dl, f_brand, brand_size, {p.x + S(4), p.y}, "FaTrainer", letters, C(T.text));
+    float brand_w = f_brand->CalcTextSizeA(brand_size, FLT_MAX, 0, "FaTrainer").x;
+    float dot_in = motion() >= 1 ? brand::ease_expo((letters - 0.55f) / 0.5f) : 1;
+    dl->AddCircleFilled({p.x + S(4) + brand_w + S(5), p.y + brand_size * 0.78f}, S(3.2f) * dot_in, C(T.accent));
+    ImGui::Dummy({0, brand_size + S(2)});
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + S(4));
+    ImGui::PushFont(f_mono);
+    ImGui::TextColored(V(T.muted), "Dying Light  v%s", VERSION);
     ImGui::PopFont();
-    ImGui::SetCursorPosX(S(19));
-    label(("DYING LIGHT   v" + std::string(VERSION)).c_str());
-    ImGui::SetCursorPosX(S(19));
-    label(FATRAINER_EDITION_CAPS);
-    ImGui::Dummy({0, S(10)});
+    ImVec2 pill_at = ImGui::GetCursorScreenPos();
+    pill(dl, {pill_at.x + S(2), pill_at.y + S(2)}, FATRAINER_EDITION, T.accent, motion() > 0 ? fmodf(now(), 2.6f) / 2.6f : -1);
+    ImGui::Dummy({0, font_size(f_small) + S(18)});
+
     int active = cheats::active_count();
     float footer = ImGui::GetFrameHeight() * (active ? 2 : 1) + S(active ? 64 : 52);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{0, 0, 0, 0});
     ImGui::BeginChild("nav", {0, ImGui::GetContentRegionAvail().y - footer}, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+    ImGui::PopStyleColor();
+    auto* nav = ImGui::GetWindowDrawList();
+    static float pill_y = -1;
+    static float target_y = -1;
+    if (target_y >= 0) {
+        if (pill_y < 0 || motion() == 0) pill_y = target_y;
+        brand::follow(pill_y, target_y, 16);
+        ImVec2 o = ImGui::GetWindowPos();
+        float y = o.y + pill_y - ImGui::GetScrollY(), w = ImGui::GetContentRegionAvail().x, h = S(34);
+        nav->AddRectFilled({o.x, y}, {o.x + w, y + h}, C(T.accent, 0.12f), R(9));
+        nav->AddRectFilled({o.x, y + h * 0.26f}, {o.x + S(3), y + h * 0.74f}, C(T.accent), S(2));
+    }
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {S(10), S(2)});
     std::string section;
+    float found_y = -1;
     for (auto& e : config::cfg.pages) {
-        auto* p = page_by_id(e.id);
-        if (!p || !e.visible || !p->shown()) continue;
-        if (*p->section && p->section != section) {
-            ImGui::Dummy({0, section.empty() ? 0 : S(6)});
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + S(18));
-            label(p->section);
+        auto* pg = page_by_id(e.id);
+        if (!pg || !e.visible || !pg->shown()) continue;
+        if (*pg->section && pg->section != section) {
+            ImGui::Dummy({0, section.empty() ? 0 : S(8)});
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + S(16));
+            caps(pg->section);
+            ImGui::Dummy({0, S(2)});
         }
-        section = p->section;
-        if (nav_item(*p, g_page == p->id, active_on(*p) > 0)) g_page = p->id;
+        section = pg->section;
+        if (nav_item(*pg, g_page == pg->id, active_on(*pg) > 0, found_y)) open_page(pg->id);
     }
+    target_y = found_y;
     ImGui::PopStyleVar();
     ImGui::EndChild();
     if (active) {
@@ -1333,12 +1627,16 @@ inline void sidebar() {
     }
     ImGui::Dummy({0, S(4)});
     const char* st = game::g.scanning ? "Scanning..." : game::g.vt_money ? (cheats::player ? "Connected" : "Waiting for save") : "Game not ready";
-    ImVec4 sc = game::g.scanning ? T.accent : game::g.vt_money ? (cheats::player ? T.ok : T.accent) : T.bad;
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    ImGui::GetWindowDrawList()->AddCircleFilled({p.x + S(10), p.y + S(9)}, S(4), col(sc));
+    ImU32 sc = game::g.scanning ? T.accent : game::g.vt_money ? (cheats::player ? T.ok : T.accent) : T.bad;
+    ImVec2 at = ImGui::GetCursorScreenPos();
+    float fs = font_size(f_small);
+    ImVec2 dot{at.x + S(10), at.y + fs / 2 + S(1)};
+    float pulse = motion() > 0 ? fmodf(now(), game::g.scanning ? 0.9f : 2.2f) / (game::g.scanning ? 0.9f : 2.2f) : 1;
+    ImGui::GetWindowDrawList()->AddCircle(dot, S(4) + S(6) * pulse, C(sc, 0.45f * (1 - pulse)), 0, S(1.2f));
+    ImGui::GetWindowDrawList()->AddCircleFilled(dot, S(4), C(sc));
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + S(22));
     ImGui::PushFont(f_small);
-    ImGui::TextColored(sc, "%s", st);
+    ImGui::TextColored(V(sc), "%s", st);
     ImGui::PopFont();
     ImGui::BeginDisabled(game::g.scanning);
     if (ImGui::Button("Refresh", {-1, 0})) request_refresh();
@@ -1348,9 +1646,69 @@ inline void sidebar() {
     ImGui::PopStyleColor();
 }
 
-inline void draw() {
+inline void draw_toast() {
+    std::string msg;
+    DWORD at;
+    {
+        std::lock_guard<std::mutex> q(g_qmx);
+        msg = g_toast, at = g_toast_at;
+    }
+    const float SHOW = 3.5f;
+    float age = (GetTickCount() - at) / 1000.0f;
+    if (msg.empty() || age > SHOW) return;
+    float m = motion();
+    float in = m > 0 ? brand::ease_expo(age / 0.35f) : 1, out = m > 0 ? brand::clamp01((SHOW - age) / 0.4f) : 1, a = std::min(in, out);
     ImGuiIO& io = ImGui::GetIO();
-    if (config::cfg.dim > 0) ImGui::GetBackgroundDrawList()->AddRectFilled({0, 0}, io.DisplaySize, IM_COL32(0, 0, 0, (int)(config::cfg.dim * 255)));
+    auto* dl = ImGui::GetForegroundDrawList();
+    float fs = font_size(f_body), tw = f_body->CalcTextSizeA(fs, FLT_MAX, 0, msg.c_str()).x;
+    float w = tw + S(58), h = fs + S(26);
+    ImVec2 c{io.DisplaySize.x / 2, io.DisplaySize.y - S(64) + (1 - in) * S(28) * m};
+    ImVec2 p0{c.x - w / 2, c.y - h}, p1{c.x + w / 2, c.y};
+    dl->AddRectFilled({p0.x, p0.y + S(6)}, {p1.x, p1.y + S(10)}, C(IM_COL32(0, 0, 0, 255), 0.35f * a), h / 2);
+    dl->AddRectFilled(p0, p1, C(T.raised, a), h / 2);
+    dl->AddRect(p0, p1, C(T.line, a), h / 2);
+    float life = brand::clamp01(1 - age / SHOW);
+    dl->AddLine({p0.x + h / 2, p1.y - 1}, {p0.x + h / 2 + (w - h) * life, p1.y - 1}, C(T.accent, 0.6f * a), S(1.5f));
+    ImVec2 dot{p0.x + S(22), (p0.y + p1.y) / 2};
+    dl->AddCircleFilled(dot, S(4), C(T.accent, a));
+    if (m > 0) dl->AddCircle(dot, S(4) + S(7) * brand::clamp01(age / 0.8f), C(T.accent, 0.5f * a * (1 - brand::clamp01(age / 0.8f))), 0, S(1.5f));
+    dl->AddText(f_body, fs, {p0.x + S(38), p0.y + (h - fs) / 2}, C(T.text, a), msg.c_str());
+}
+
+inline void draw_cursor() {
+    ImGuiIO& io = ImGui::GetIO();
+    if (!ImGui::IsMousePosValid()) return;
+    ImVec2 m = io.MousePos;
+    static ImVec2 halo{-1, -1};
+    static float clicked_at = -10;
+    if (halo.x < 0 || motion() == 0) halo = m;
+    brand::follow(halo.x, m.x, 20), brand::follow(halo.y, m.y, 20);
+    if (ImGui::IsMouseClicked(0)) clicked_at = now();
+    auto* dl = ImGui::GetForegroundDrawList();
+    float click = motion() > 0 ? brand::clamp01((now() - clicked_at) / 0.4f) : 1;
+    if (click < 1) dl->AddCircle(m, S(6) + S(16) * brand::ease_out(click), C(T.accent, 0.6f * (1 - click)), 0, S(1.6f));
+    dl->AddCircleFilled(halo, S(13), C(T.accent, 0.09f));
+    ImGui::RenderMouseCursor(m, config::cfg.scale, ImGui::GetMouseCursor(), C(T.text), IM_COL32(0, 0, 0, 255), IM_COL32(0, 0, 0, 70));
+}
+
+inline float presence(bool open) {
+    static float v = 0;
+    static DWORD last = GetTickCount();
+    DWORD t = GetTickCount();
+    float dt = std::min(0.1f, (t - last) / 1000.0f);
+    last = t;
+    float m = motion(), speed = m == 0 ? 1000.0f : m < 1 ? 1 / 0.12f : 1 / 0.24f;
+    v = open ? std::min(1.0f, v + dt * speed) : std::max(0.0f, v - dt * speed * 1.4f);
+    return v;
+}
+
+inline void draw(float shown_raw, bool open) {
+    ImGuiIO& io = ImGui::GetIO();
+    static float last = 0;
+    if (last == 0 && shown_raw > 0) g_opened_at = now(), g_page_at = now();
+    last = shown_raw;
+    float shown = brand::ease_out(shown_raw);
+    if (config::cfg.dim > 0) ImGui::GetBackgroundDrawList()->AddRectFilled({0, 0}, io.DisplaySize, IM_COL32(0, 0, 0, (int)(config::cfg.dim * 255 * shown)));
     static bool first = true;
     if (first) {
         first = false;
@@ -1358,84 +1716,96 @@ inline void draw() {
         if (getenv("DLT_SECTIONS"))
             for (int type : {1, 2, 2, 2, 2, 2, 3, 4}) cheats::prison_sections.push_back({0, type, (int)cheats::prison_sections.size(), false, {1, 2, 3}});
     }
-    ImGui::SetNextWindowSize({S(1040), S(700)}, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_FirstUseEver, {0.5f, 0.5f});
-    ImGui::SetNextWindowSizeConstraints({S(760), S(480)}, {FLT_MAX, FLT_MAX});
-    ImGui::Begin(TITLE, nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    static ImVec2 rest{-1, -1};
+    if (rest.x < 0) ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_FirstUseEver, {0.5f, 0.5f});
+    else if (shown < 1) ImGui::SetNextWindowPos({rest.x, rest.y + (1 - shown) * S(22) * motion()});
+    ImGui::SetNextWindowSize({S(1060), S(720)}, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints({S(780), S(500)}, {FLT_MAX, FLT_MAX});
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, shown);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+    if (!open) flags |= ImGuiWindowFlags_NoInputs;
+    ImGui::Begin(TITLE, nullptr, flags);
+    if (shown >= 1 || rest.x < 0) rest = ImGui::GetWindowPos();
     {
         std::lock_guard<std::mutex> l(game::mx);
         const Page* page = page_by_id(g_page);
         if (!page || !page->shown()) page = &PAGES[0], g_page = page->id;
         sidebar();
         ImGui::SameLine(0, 0);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(30), S(24)});
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(32), S(26)});
         ImGui::BeginChild("content", {0, 0}, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
         ImGui::PopStyleVar();
-        ImGui::PushFont(f_head);
-        ImGui::TextUnformatted(page->title);
+        auto* dl = ImGui::GetWindowDrawList();
+        ImVec2 cp = ImGui::GetWindowPos(), cs = ImGui::GetWindowSize();
+        float t = scene_time();
+        if (config::cfg.look.glow)
+            brand::soft_glow(dl, {cp.x + cs.x - S(90) + sinf(t * 0.21f) * S(60), cp.y - S(150) + sinf(t * 0.33f) * S(20)}, S(480), T.accent, 0.075f, 24);
+        float since = motion() >= 1 ? now() - g_page_at : 10;
+        ImVec2 hp = ImGui::GetCursorScreenPos();
+        float hs = font_size(f_head);
+        brand::draw_letters(dl, f_head, hs, hp, page->title, since, C(T.text));
+        ImGui::Dummy({0, hs * 1.02f});
+        ImGui::PushFont(f_small);
+        ImGui::TextColored(V(T.soft), "%s", page->subtitle);
         ImGui::PopFont();
-        label(page->subtitle);
-        ImGui::Dummy({0, S(8)});
-        ImGui::BeginChild("page", {0, 0});
+        ImVec2 up = ImGui::GetCursorScreenPos();
+        float line = motion() > 0 ? brand::ease_expo((since - 0.15f) / 0.6f) : 1;
+        dl->AddRectFilled({up.x, up.y + S(4)}, {up.x + S(48) * line, up.y + S(6)}, C(T.accent), S(1));
+        ImGui::Dummy({0, S(14)});
+        ImGui::BeginChild(page->id, {0, 0});
         static const char* preview_scroll = getenv("DLT_SCROLL");
         if (preview_scroll && ImGui::GetFrameCount() > 5 && ImGui::GetFrameCount() < 30) ImGui::SetScrollY((float)atof(preview_scroll));
+        g_card = 0;
+        g_card_offsets.clear();
         page->draw();
         ImGui::EndChild();
         ImGui::EndChild();
     }
     ImGui::End();
-
-    std::string msg;
-    {
-        std::lock_guard<std::mutex> q(g_qmx);
-        if (GetTickCount() - g_toast_at < 3500) msg = g_toast;
-    }
-    if (!msg.empty()) {
-        ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y - S(60)}, ImGuiCond_Always, {0.5f, 1});
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(18), S(12)});
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, S(24));
-        ImGui::Begin("##toast", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs);
-        ImGui::TextUnformatted(msg.c_str());
-        ImGui::End();
-        ImGui::PopStyleVar(2);
-    }
+    ImGui::PopStyleVar();
+    draw_toast();
+    if (open) draw_cursor();
 }
 
 inline void draw_update_notice(const std::string& latest, float alpha) {
     ImGuiIO& io = ImGui::GetIO();
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(28), S(22)});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(30), S(24)});
     ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, S(48) - (1 - alpha) * S(24)}, ImGuiCond_Always, {0.5f, 0});
-    ImGui::SetNextWindowSize({S(560), 0});
+    ImGui::SetNextWindowSize({S(580), 0});
     ImGui::Begin("##update", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings);
     ImVec2 p = ImGui::GetWindowPos(), sz = ImGui::GetWindowSize();
-    ImGui::GetWindowDrawList()->AddRectFilled({p.x, p.y + S(18)}, {p.x + S(4), p.y + sz.y - S(18)}, col(T.accent, alpha), S(2));
+    auto* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled({p.x, p.y + S(20)}, {p.x + S(4), p.y + sz.y - S(20)}, C(T.accent), S(2));
+    brand::soft_glow(dl, {p.x + sz.x, p.y}, S(200), T.accent, 0.06f, 20);
+    caps("UPDATE");
     ImGui::PushFont(f_head);
     ImGui::TextUnformatted(("FaTrainer " + latest + " is out").c_str());
     ImGui::PopFont();
     ImGui::Dummy({0, S(2)});
     ImGui::PushTextWrapPos(0);
     ImGui::TextUnformatted(("This version (" + std::string(VERSION) +
-                            ") is turned off until you update. Close the game, open the FaTrainer installer and press Update. "
+                            ") is turned off until you update. Close the game, open the FaTrainer Installer and press Update. "
                             "The game itself works as usual.").c_str());
     ImGui::PopTextWrapPos();
     ImGui::PushFont(f_small);
-    ImGui::TextColored(T.dim, "Press your menu key or F8 to show this again.");
+    ImGui::TextColored(V(T.muted), "Press your menu key or F8 to show this again.");
     ImGui::PopFont();
     ImGui::End();
     ImGui::PopStyleVar(2);
 }
 
-inline void load_fonts(const void* ttf, int size) {
-    ImGuiIO& io = ImGui::GetIO();
-    ImFontConfig cfg;
-    cfg.FontDataOwnedByAtlas = false;
-    cfg.OversampleH = 3;
-    f_body = io.Fonts->AddFontFromMemoryTTF((void*)ttf, size, 20.0f, &cfg);
-    f_small = io.Fonts->AddFontFromMemoryTTF((void*)ttf, size, 15.0f, &cfg);
-    f_head = io.Fonts->AddFontFromMemoryTTF((void*)ttf, size, 30.0f, &cfg);
-    f_brand = io.Fonts->AddFontFromMemoryTTF((void*)ttf, size, 26.0f, &cfg);
-    f_big = io.Fonts->AddFontFromMemoryTTF((void*)ttf, size, 54.0f, &cfg);
+inline void load_fonts() {
+    f_body = brand::load_font(brand::BODY, 18);
+    f_strong = brand::load_font(brand::STRONG, 18);
+    f_small = brand::load_font(brand::BODY, 14.5f);
+    f_label = brand::load_font(brand::STRONG, 11.5f);
+    f_mono = brand::load_font(brand::MONO, 12.5f);
+    f_head = brand::load_font(brand::DISPLAY, 36);
+    f_tile = brand::load_font(brand::HEADING, 28);
+    f_brand = brand::load_font(brand::DISPLAY, 24);
+    f_big = brand::load_font(brand::DISPLAY, 58);
+    ImGui::GetIO().FontDefault = f_body;
 }
 
 inline void startup() {

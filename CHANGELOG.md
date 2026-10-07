@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1
+
+- New: a redesigned menu that matches the installer and the website, with the same fonts, colors and Harran skyline. It fades and slides in when you open it, page titles write themselves in, cards appear one after another, the active page marker slides between pages, and buttons, switches, sliders and messages animate. The city at the bottom of the sidebar lights its windows and follows your mouse.
+- New: more ways to make the menu yours in Settings, Appearance: accent color, window opacity, corner roundness, background dim, animations (Full, Subtle or Off), and the skyline and accent glow on or off.
+- New: four ready-made Be The Zombie presets on the PvP page: Survivor Legit, Survivor Rage, Night Hunter Legit and Night Hunter Rage. Legit stays believable to the other players, Rage holds nothing back. Each one also sets the player ESP to match.
+- New: the menu shows whether you have the Fatum Version or the Nexus Version, under the FaTrainer name and in Settings, About, together with what that version does.
+- Fixed: most cheats could stop working for the rest of the session. Sometimes, during a loading screen, the game replaced its window handler and the trainer no longer got the signal it applies the cheats on. The trainer now notices this and takes the window back.
+
 ## 2.0
 
 - New: FaTrainer Installer for Windows and Linux. It finds Dying Light in your Steam libraries (or lets you choose the folder) and puts the trainer next to the game. It also updates and uninstalls, shows this changelog and, on Linux, the Steam launch option with a copy button. The Fatum Version (from the website and GitHub) fetches the trainer from the GitHub release and checks it against the release checksum; the Nexus Version (from Nexus Mods) has the trainer inside and never connects to the internet.

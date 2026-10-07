@@ -3,7 +3,6 @@
 *.log
 *.bak
 src/items.h
-src/font.h
 __pycache__/
 *.pyc
 graphify-out/

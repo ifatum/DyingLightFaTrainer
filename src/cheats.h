@@ -631,6 +631,59 @@ inline void apply_profile(const config::Profile& p) {
         if (auto* t = find_tweak(key)) t->factor = std::clamp(factor, 1.0f, t->max);
 }
 
+enum PresetEsp { ESP_LEGIT, ESP_RAGE };
+
+struct Preset {
+    const char* key;
+    const char* role;
+    const char* style;
+    const char* summary;
+    std::vector<const char*> cheats;
+    std::vector<std::pair<const char*, float>> tweaks;
+    PresetEsp esp;
+};
+
+inline const Preset PRESETS[] = {
+    {"survivor_legit", "Survivor", "Legit",
+     "Looks like a sharp player. A third more reach on death from above and the dropkick, a little more melee reach, endless grappling hook, longer UV and a quiet ESP.",
+     {"hook"},
+     {{"uv_slow", 2.5f}, {"h_dfa", 3.5f}, {"h_dfa_pull", 3.5f}, {"h_dfa_height", 4.0f}, {"h_dropkick", 3.5f}, {"h_kicks", 1.5f}, {"h_melee", 1.3f}},
+     ESP_LEGIT},
+    {"survivor_rage", "Survivor", "Rage",
+     "Nothing holds back. God mode, endless stamina, UV, ammo and supplies, one hit kills, double speed and jump, and every death from above, kick and melee range at Max.",
+     {"god", "stamina", "hook", "uv", "no_fall", "ammo", "no_reload", "supplies", "durability", "one_hit"},
+     {{"speed", 2.0f}, {"jump", 2.0f}, {"h_dfa", 10}, {"h_dfa_pull", 10}, {"h_dfa_height", 10}, {"h_dropkick", 10}, {"h_kicks", 10}, {"h_melee", 10}},
+     ESP_RAGE},
+    {"hunter_legit", "Night Hunter", "Legit",
+     "Feels like a good hunter on a good day. Slightly longer pounce, tackle, claws and ground pound, a wider spit hit and a quiet ESP. Energy and cooldowns stay normal.",
+     {},
+     {{"z_pounce", 3.0f}, {"z_tackle", 2.0f}, {"z_claws", 1.4f}, {"z_pound", 1.5f}, {"z_spit", 1.8f}},
+     ESP_LEGIT},
+    {"hunter_rage", "Night Hunter", "Rage",
+     "Unkillable and everywhere. Hunter god mode, endless energy and spits, no cooldowns, long camouflage, and pounce, tackle, claws, ground pound and spit hits at Max.",
+     {"god", "z_energy", "z_cooldowns", "z_spits", "z_camo"},
+     {{"z_pounce", 10}, {"z_pound", 10}, {"z_tackle", 10}, {"z_claws", 10}, {"z_spit", 6}},
+     ESP_RAGE},
+};
+
+inline config::Profile preset_profile(const Preset& p) {
+    config::Profile out;
+    for (const char* c : p.cheats) out.cheats.push_back(c);
+    for (auto& [k, v] : p.tweaks) out.tweaks.push_back({k, v});
+    return out;
+}
+
+inline bool preset_active(const Preset& p) {
+    for (auto& c : CHEATS)
+        if (c.on != (std::find_if(p.cheats.begin(), p.cheats.end(), [&](const char* k) { return !strcmp(k, c.key); }) != p.cheats.end())) return false;
+    for (auto& t : TWEAKS) {
+        auto it = std::find_if(p.tweaks.begin(), p.tweaks.end(), [&](auto& kv) { return !strcmp(kv.first, t.key); });
+        float want = it == p.tweaks.end() ? 1.0f : std::clamp(it->second, 1.0f, t.max);
+        if (fabsf(t.factor - want) > 0.01f) return false;
+    }
+    return true;
+}
+
 inline int active_count() {
     int n = 0;
     for (auto& c : CHEATS) n += c.on;

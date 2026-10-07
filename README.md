@@ -19,11 +19,12 @@
 - **Skills**: XP multiplier, Level up with XP, or set any skill tree level (+1, +10, max, -1, -10)
 - **Prison**: pause the Harran Prison timers, teleport to every section, save and load your position
 - **Night Hunter**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, spit keys, long camouflage
-- **PvP**: one reach slider per attack (pounce, ground pound, tackle, claws, spit hit radius, death from above, dropkick, kicks, melee). At Max the pounce, dropkick and death from above also hit targets that are not in front of you
+- **PvP**: four ready-made presets (Survivor Legit, Survivor Rage, Night Hunter Legit, Night Hunter Rage) and one reach slider per attack (pounce, ground pound, tackle, claws, spit hit radius, death from above, dropkick, kicks, melee). At Max the pounce, dropkick and death from above also hit targets that are not in front of you
+- **Visuals**: player ESP for Be The Zombie and co-op, custom UV light color and glow
 - **Cash / Backpack / Stash / Materials**: set your money and any stack count
 - **Give items**: spawn any weapon, upgrade, consumable, material or blueprint; each item goes into the inventory the game accepts it in
 - **Weapon editor**: damage, durability, crits, knockback, stamina, reach, magazine, reload time, upgrades, repairs, rarity
-- **Settings**: accent color, interface size, background dim, menu key, sidebar order and visibility, saved to `fatrainer.ini`
+- **Settings**: accent color, window opacity, corner roundness, animations (Full, Subtle, Off), Harran skyline and accent glow, interface size, background dim, menu key, sidebar order and visibility, named configs, all saved to `fatrainer.ini`. About shows your version and whether it is the Fatum Version or the Nexus Version
 
 ### Install
 
