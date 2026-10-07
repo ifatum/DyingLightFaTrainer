@@ -42,13 +42,15 @@ WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 
 When a newer version is released, the trainer stays off in game and asks you to run the installer again. The game itself keeps working, and without internet the trainer works as usual.
 
+The [Nexus Mods](https://www.nexusmods.com/dyinglight/mods/1724) download is an offline edition: its installer has the trainer inside, and neither connects to the internet, so there is no update check. Nexus Mods tells you about updates when you track the mod.
+
 Press **Insert** or **F8** in game to open the menu. While it is open the game ignores your mouse and keyboard. A dot in the sidebar marks pages with something turned on, and **Turn all off** resets every cheat and slider at once.
 
 See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ### Building
 
-`./build.sh` builds the trainer, `./build_installer.sh` both installers and `./release.sh` the release files (all through nix).
+`./build.sh` builds the trainer, `./build_installer.sh` both installers (plus the offline Nexus Mods edition in `dist/nexus/`, built with `-DFATRAINER_OFFLINE`) and `./release.sh` the release files and the Nexus Mods zip (all through nix).
 
 ### Notes
 

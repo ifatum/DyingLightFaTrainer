@@ -33,6 +33,12 @@ EMBED(font_strong_ext, "installer/fonts/strong-latin-ext.ttf")
 EMBED(font_mono, "installer/fonts/mono-latin.ttf")
 EMBED(font_mono_ext, "installer/fonts/mono-latin-ext.ttf")
 EMBED(changelog_md, "CHANGELOG.md")
+#ifdef FATRAINER_OFFLINE
+EMBED(trainer_dll, "dist/nexus/xinput1_3.dll")
+const bool OFFLINE = true;
+#else
+const bool OFFLINE = false;
+#endif
 
 namespace app {
 
@@ -307,6 +313,11 @@ inline void refresh_installed() {
 }
 
 inline void fetch_release() {
+#ifdef FATRAINER_OFFLINE
+    std::string dll((const char*)trainer_dll, (size_t)(trainer_dll_end - trainer_dll));
+    M.latest = {logic::trainer_version_in(dll), logic::sha256_hex(dll), dll.size()};
+    M.fetch = Fetch::ready;
+#else
     {
         std::lock_guard<std::mutex> l(M.mx);
         M.fetch = Fetch::loading;
@@ -326,6 +337,7 @@ inline void fetch_release() {
             if (!parsed.empty()) M.changelog = parsed;
         }
     }).detach();
+#endif
 }
 
 inline void finish(Job job, const std::string& message) {
@@ -349,9 +361,12 @@ inline void start_install() {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working) return;
         game = M.game, latest = M.latest;
-        M.job = Job::working, M.step = "Downloading", M.progress = 0, M.message.clear();
+        M.job = Job::working, M.step = OFFLINE ? "Installing" : "Downloading", M.progress = 0, M.message.clear();
     }
     std::thread([game, latest] {
+#ifdef FATRAINER_OFFLINE
+        std::string data((const char*)trainer_dll, (size_t)(trainer_dll_end - trainer_dll));
+#else
         const unsigned long long LIMIT = 64ull << 20;
         std::string data, error;
         bool ok = platform::net::get(std::string(RELEASE_DOWNLOADS) + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
@@ -362,6 +377,7 @@ inline void start_install() {
             return data.size() <= LIMIT;
         }, error);
         if (!ok) return finish(Job::failed, "Download failed: " + error + ". Nothing was changed.");
+#endif
         {
             std::lock_guard<std::mutex> l(M.mx);
             M.step = "Checking", M.progress = 0.92f;
@@ -530,7 +546,7 @@ inline void status_pill(ImVec2 right_top) {
     {
         std::lock_guard<std::mutex> l(M.mx);
         fetch = M.fetch;
-        if (fetch == Fetch::ready) text = "Latest release " + M.latest.version, dot = GOOD;
+        if (fetch == Fetch::ready) text = (OFFLINE ? "Nexus Mods edition " : "Latest release ") + M.latest.version, dot = GOOD;
         else if (fetch == Fetch::failed) text = "GitHub not reachable", dot = BAD;
         else text = "Checking GitHub";
     }
@@ -614,7 +630,8 @@ inline void detail(float width) {
     bool found = platform::is_game_dir(view.game);
     bool ready = view.fetch == Fetch::ready;
     bool outdated = !view.installed.empty() && ready && (view.installed == logic::LEGACY_VERSION || newer_version(view.latest.version, view.installed));
-    bool current = !view.installed.empty() && ready && !outdated;
+    bool newer_installed = !view.installed.empty() && view.installed != logic::LEGACY_VERSION && ready && newer_version(view.installed, view.latest.version);
+    bool current = !view.installed.empty() && ready && !outdated && !newer_installed;
     float t = (float)ImGui::GetTime();
 
     {
@@ -648,7 +665,7 @@ inline void detail(float width) {
         Stat stats[3] = {
             {"INSTALLED", view.installed.empty() ? "Not yet" : view.installed == logic::LEGACY_VERSION ? "Older than 2.0" : view.installed,
              outdated ? ACCENT : current ? GOOD : SOFT},
-            {"LATEST", ready ? view.latest.version : view.fetch == Fetch::loading ? "Checking" : "Unknown", TEXT},
+            {OFFLINE ? "IN THIS INSTALLER" : "LATEST", ready ? view.latest.version : view.fetch == Fetch::loading ? "Checking" : "Unknown", TEXT},
             {"RUNS ON", platform::LINUX ? "Linux, Proton" : "Windows", TEXT}};
         for (int i = 0; i < 3; i++) {
             ImVec2 c0{a.x + i * (cell + S(12)), a.y}, c1{c0.x + cell, c0.y + S(78)};
@@ -723,6 +740,7 @@ inline void detail(float width) {
         else if (view.fetch == Fetch::failed) text = "Cannot reach GitHub";
         else if (!found) text = "Choose the game folder first";
         else if (outdated) text = "Update to " + view.latest.version, enabled = true;
+        else if (newer_installed) text = "Replace " + view.installed + " with " + view.latest.version, enabled = true;
         else if (current) text = "Reinstall " + view.latest.version, enabled = true;
         else text = "Install FaTrainer " + view.latest.version, enabled = true;
         ImVec2 at = ImGui::GetCursorScreenPos();

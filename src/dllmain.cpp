@@ -11,7 +11,9 @@
 #include "font.h"
 #include "input.h"
 #include "menu.h"
+#ifndef FATRAINER_OFFLINE
 #include "net_win.h"
+#endif
 #include "imgui.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
@@ -397,6 +399,10 @@ static void watch_first_frame() {
 }
 
 static std::string latest_release() {
+#ifdef FATRAINER_OFFLINE
+    logf("update: Nexus Mods edition, no update check and no internet connection");
+    return "";
+#else
     std::string text, error;
     if (!net::get_text(std::string(RELEASE_DOWNLOADS) + "version.txt", text, error)) {
         logf("update: could not check for a new version (%s), the trainer stays on", error.c_str());
@@ -405,6 +411,7 @@ static std::string latest_release() {
     std::string latest = parse_release_info(text).version;
     logf("update: latest release %s, this is %s", latest.empty() ? "unknown" : latest.c_str(), VERSION);
     return latest;
+#endif
 }
 
 static void main_thread() {

@@ -11,7 +11,9 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <shobjidl.h>
+#ifndef FATRAINER_OFFLINE
 #include "net_win.h"
+#endif
 #else
 #include <fcntl.h>
 #include <signal.h>
@@ -30,7 +32,9 @@ const std::string FOLDER_PICKER_MISSING = "\x01";
 #ifdef _WIN32
 const bool LINUX = false;
 inline HWND window = nullptr;
+#ifndef FATRAINER_OFFLINE
 namespace net = ::net;
+#endif
 
 inline std::string utf8(const std::wstring& w) {
     if (w.empty()) return {};
@@ -143,6 +147,7 @@ inline void pick_folder(const std::function<void(std::string)>& done) {
     }).detach();
 }
 
+#ifndef FATRAINER_OFFLINE
 namespace net {
 using Sink = std::function<bool(const char* data, size_t n, unsigned long long total)>;
 
@@ -164,6 +169,7 @@ inline bool get_text(const std::string& url, std::string& out, std::string& erro
     return get(url, [&](const char* d, size_t n, unsigned long long) { out.append(d, n); return out.size() < LIMIT; }, error);
 }
 }
+#endif
 #endif
 
 const char* GAME_EXE = "DyingLightGame.exe";

@@ -2,8 +2,8 @@
 
 ## 2.0
 
-- New: FaTrainer Installer for Windows and Linux. It finds Dying Light in your Steam libraries (or lets you choose the folder), downloads the trainer from the GitHub release, checks it against the release checksum and puts it next to the game. It also updates and uninstalls, shows this changelog and, on Linux, the Steam launch option with a copy button.
-- New: update check. When the game starts, the trainer asks GitHub for the newest version number. If a newer FaTrainer is out, this version stays turned off and shows a short notice; open the installer and press Update. The game itself keeps working. Without internet the trainer works as before.
+- New: FaTrainer Installer for Windows and Linux. It finds Dying Light in your Steam libraries (or lets you choose the folder) and puts the trainer next to the game. It also updates and uninstalls, shows this changelog and, on Linux, the Steam launch option with a copy button. The GitHub download fetches the trainer from the GitHub release and checks it against the release checksum; the Nexus Mods download has the trainer inside and never connects to the internet.
+- New, GitHub download only: update check. When the game starts, the trainer asks GitHub for the newest version number. If a newer FaTrainer is out, this version stays turned off and shows a short notice; open the installer and press Update. The game itself keeps working. Without internet the trainer works as before. The Nexus Mods download has no update check; track the mod on Nexus Mods to hear about new versions.
 - The trainer file now carries its version in its Windows file properties, so the installer and you can see which version is installed.
 
 ## 1.9
