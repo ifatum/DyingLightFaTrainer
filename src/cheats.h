@@ -1,9 +1,12 @@
 #pragma once
 #include <atomic>
+#include <deque>
+#include <random>
 #include <cstdio>
 #include <set>
 #include "config.h"
 #include "game.h"
+#include "input.h"
 
 namespace cheats {
 
@@ -26,7 +29,7 @@ const int GAME_PROFILE = 0x540, PROFILE_RANK_HUMAN = 0x2d98, PROFILE_RANK_ZOMBIE
 const int PRISON_START_TIME = 0x44, PRISON_END_TIME = 0x48, PRISON_REWARD_TIER = 0x4c, PRISON_STATE = 0x54;
 const int SLOT_FLOAT_FIELD_EDITOR = 34, SLOT_PHYSICS_POSITION = 52, SLOT_KILL = 295;
 const float KILL_RADIUS = 80.0f;
-const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, VAR_SLOTS = 1024;
+const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, SLOT_VAR_VEC3 = 116, VAR_SLOTS = 1024;
 const float ONE_HIT_HEALTH = 1.0f;
 inline const uint8_t SPOT_DISTANCE_CLAMP[4] = {0xF3, 0x0F, 0x5F, 0xD3}, SPOT_DISTANCE_ZERO[4] = {0x0F, 0x57, 0xD2, 0x90};
 
@@ -69,6 +72,9 @@ inline Cheat CHEATS[] = {
     {"prison_pause", "Pause prison timers", "The run timer and the reward room countdown stand still. Works when you are the host.", {}, {}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
+    {"dodge_spit", "Dodge spit",
+     "Steps you aside from spit that would hit you, after a human reaction time.",
+     {}, {}},
 };
 
 enum Group { G_GEAR, G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN };
@@ -138,7 +144,9 @@ const float DFA_FALL_SPEED_AT_MAX = 0.5f;
 inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, profile_root = 0;
 inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+using VarVec3Fn = float* (*)(uintptr_t, float*, uintptr_t, uintptr_t, uintptr_t);
 inline VarFloatFn original_var_float = nullptr;
+inline VarVec3Fn original_var_vec3 = nullptr;
 inline uintptr_t var_vtable[VAR_SLOTS + 1];
 inline std::map<std::string, int> param_ids;
 inline uintptr_t immortal_vtable[COPIED_SLOTS + 1];
@@ -148,6 +156,9 @@ inline std::mutex modules_mx;
 inline std::vector<uintptr_t> enemy_modules;
 inline std::map<uintptr_t, bool> nest_modules;
 inline uintptr_t vt_nest_logic = 0;
+inline const char* THROWABLE_CLASSES[] = {"ThrowableObject", "ThrowableLiquid"};
+inline uintptr_t vt_throwable[2] = {};
+inline int throwable_control[2] = {-1, -1};
 const int AI_FIELDS = 0x2000;
 inline std::map<uintptr_t, int> stack_floor;
 inline std::map<uintptr_t, float> condition_floor;
@@ -252,6 +263,10 @@ inline void locate(uintptr_t base) {
     if (auto hits = game::find_code(base, "F3 0F 10 05 ? ? ? ? F3 44 0F 10 15 ? ? ? ? 41 0F 57 C2 0F 2F 40 04"); !hits.empty())
         dfa_fall_speed = game::rip_target(hits[0], 4, 8);
     vt_nest_logic = game::find_vtable(base, "HiveBroodLogicModule");
+    for (int i = 0; i < 2; i++) {
+        vt_throwable[i] = game::find_vtable(base, THROWABLE_CLASSES[i]);
+        throwable_control[i] = vt_throwable[i] ? game::base_offset(base, vt_throwable[i], "IControlObject") : -1;
+    }
     vt_param_float = game::find_vtable(base, "?$Param@M");
     vt_param_bool = game::find_vtable(base, "?$Param@_N");
     read_param_names();
@@ -590,7 +605,26 @@ inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, u
     return best;
 }
 
+inline void tint(float* c, const float color[3], float scale) {
+    float peak = std::max({color[0], color[1], color[2], 0.001f}), bright = std::max({c[0], c[1], c[2]}) * scale;
+    for (int k = 0; k < 3; k++) c[k] = color[k] / peak * bright;
+}
+
+inline bool hunter_glow_var(const char* s) { return !strncmp(s, "v3_btz_zombie_v", 15) && !strstr(s, "not_drained"); }
+
+inline float* tinted_var_vec3(uintptr_t self, float* out, uintptr_t name, uintptr_t scope, uintptr_t extra) {
+    float* v = original_var_vec3(self, out, name, scope, extra);
+    auto& glow = config::cfg.hunter_glow;
+    const char* s = name ? *(const char**)name : nullptr;
+    if (!v || !glow.on || !s || !hunter_glow_var(s)) return v;
+    float c[3] = {v[0], v[1], v[2]};
+    tint(c, glow.color, glow.glow);
+    memcpy(out, c, sizeof c);
+    return out;
+}
+
 inline bool var_hook_needed() {
+    if (config::cfg.hunter_glow.on) return true;
     for (auto& t : TWEAKS)
         if (!t.vars.empty() && t.factor != 1.0f) return true;
     return false;
@@ -600,10 +634,12 @@ inline void install_var_hook() {
     uintptr_t object = rdv<uintptr_t>(var_root), current = rdv<uintptr_t>(object);
     uintptr_t ours = (uintptr_t)&var_vtable[1];
     if (!current || current == ours || !var_hook_needed()) return;
-    for (size_t n = VAR_SLOTS + 1; n > SLOT_VAR_FLOAT + 1; n /= 2)
+    for (size_t n = VAR_SLOTS + 1; n > SLOT_VAR_VEC3 + 1; n /= 2)
         if (rd(current - 8, var_vtable, n * 8)) {
             original_var_float = (VarFloatFn)var_vtable[1 + SLOT_VAR_FLOAT];
+            original_var_vec3 = (VarVec3Fn)var_vtable[1 + SLOT_VAR_VEC3];
             var_vtable[1 + SLOT_VAR_FLOAT] = (uintptr_t)&scaled_var_float;
+            var_vtable[1 + SLOT_VAR_VEC3] = (uintptr_t)&tinted_var_vec3;
             wr<uintptr_t>(object, ours);
             return;
         }
@@ -645,13 +681,13 @@ struct Preset {
 
 inline const Preset PRESETS[] = {
     {"survivor_legit", "Survivor", "Legit",
-     "Looks like a sharp player. A third more reach on death from above and the dropkick, a little more melee reach, endless grappling hook, longer UV and a quiet ESP.",
-     {"hook"},
+     "Looks like a sharp player. A third more reach on death from above and the dropkick, a little more melee reach, endless grappling hook, a human spit dodge, longer UV and a quiet ESP.",
+     {"hook", "dodge_spit"},
      {{"uv_slow", 2.5f}, {"h_dfa", 3.5f}, {"h_dfa_pull", 3.5f}, {"h_dfa_height", 4.0f}, {"h_dropkick", 3.5f}, {"h_kicks", 1.5f}, {"h_melee", 1.3f}},
      ESP_LEGIT},
     {"survivor_rage", "Survivor", "Rage",
-     "Nothing holds back. God mode, endless stamina, UV, ammo and supplies, one hit kills, double speed and jump, and every death from above, kick and melee range at Max.",
-     {"god", "stamina", "hook", "uv", "no_fall", "ammo", "no_reload", "supplies", "durability", "one_hit"},
+     "Nothing holds back. God mode, endless stamina, UV, ammo and supplies, one hit kills, spit dodge, double speed and jump, and every death from above, kick and melee range at Max.",
+     {"god", "stamina", "hook", "uv", "no_fall", "ammo", "no_reload", "supplies", "durability", "one_hit", "dodge_spit"},
      {{"speed", 2.0f}, {"jump", 2.0f}, {"h_dfa", 10}, {"h_dfa_pull", 10}, {"h_dfa_height", 10}, {"h_dropkick", 10}, {"h_kicks", 10}, {"h_melee", 10}},
      ESP_RAGE},
     {"hunter_legit", "Night Hunter", "Legit",
@@ -691,8 +727,14 @@ inline int active_count() {
     return n;
 }
 
+inline uintptr_t skill_container() {
+    if (!alive(player)) return 0;
+    uintptr_t own = rdv<uintptr_t>(player + PARAM_CONTAINER);
+    return own ? own : rdv<uintptr_t>(params_root);
+}
+
 inline uintptr_t tree_record(int type) {
-    uintptr_t trees = alive(player) ? rdv<uintptr_t>(rdv<uintptr_t>(player + PARAM_CONTAINER) + SKILL_TREES) : 0;
+    uintptr_t trees = rdv<uintptr_t>(skill_container() + SKILL_TREES);
     return trees ? trees + type * TREE_RECORD : 0;
 }
 inline int tree_level(int type) { return tree_record(type) ? rdv<uint16_t>(tree_record(type) + TREE_LEVEL) : -1; }
@@ -702,7 +744,7 @@ inline int tree_max(int type) {
 }
 
 inline void level_up_with_xp(int type) {
-    uintptr_t container = alive(player) ? rdv<uintptr_t>(player + PARAM_CONTAINER) : 0, r = tree_record(type);
+    uintptr_t container = skill_container(), r = tree_record(type);
     if (!container || !r || !level_from_xp_fn || tree_level(type) >= tree_max(type)) return;
     uint32_t next = rdv<uint32_t>(r + TREE_LEVEL_START) + rdv<uint32_t>(r + TREE_SPAN);
     if (rdv<uint32_t>(r + TREE_XP) < next) wr<uint32_t>(r + TREE_XP, next);
@@ -710,7 +752,7 @@ inline void level_up_with_xp(int type) {
 }
 
 inline void set_tree_level(int type, int level) {
-    uintptr_t container = alive(player) ? rdv<uintptr_t>(player + PARAM_CONTAINER) : 0;
+    uintptr_t container = skill_container();
     if (!container || !set_level_fn || !tree_max(type)) return;
     level = std::clamp(level, 0, tree_max(type));
     ((void(__fastcall*)(uintptr_t, int16_t, int))set_level_fn)(container, (int16_t)level, type);
@@ -851,11 +893,16 @@ inline uintptr_t float_field_editor = 0;
 
 using EngineGetterFn = uintptr_t (*)(uintptr_t);
 inline EngineGetterFn active_level = nullptr, view_camera = nullptr;
+struct EngineVector { uintptr_t* data; uint32_t size, capacity; };
+using FindInRadiusFn = bool (*)(uintptr_t, EngineVector*, const Vec3*, float, uintptr_t, bool, int*);
+inline FindInRadiusFn find_in_radius = nullptr;
 
 inline void locate_engine(HMODULE engine) {
     if (!engine) return;
     active_level = (EngineGetterFn)GetProcAddress(engine, "?GetActiveLevel@IGame@@QEAAPEAVILevel@@XZ");
     view_camera = (EngineGetterFn)GetProcAddress(engine, "?GetFirstActiveViewCamera@ILevel@@QEAAPEAVIBaseCamera@@XZ");
+    find_in_radius = (FindInRadiusFn)GetProcAddress(
+        engine, "?FindObjectsInRadius@ILevel@@QEAA_NPEAV?$vector@PEAVIControlObject@@@ttl@@AEBVvec3@@MPEBVCRTTI@@_NPEAH@Z");
     get_position = (GetPositionFn)GetProcAddress(engine, "?GetWorldPosition@IControlObject@@QEBA?AVvec3@@XZ");
     set_position = (SetPositionFn)GetProcAddress(engine, "?SetWorldPosition@IControlObject@@QEAAXAEBVvec3@@@Z");
     field_int = (FieldIntFn)GetProcAddress(engine, "?GetFieldInt@CRTTIObject@@QEBAPEBVCRTTIFieldInt@@PEBDAEAH@Z");
@@ -1232,6 +1279,125 @@ inline void track_players() {
     seen_players.swap(now_seen);
 }
 
+const float DODGE_SCAN_RADIUS = 40, DODGE_MIN_SPEED = 8, DODGE_HIT_RADIUS = 1.2f, DODGE_HORIZON = 1.2f, DODGE_STEP = 0.01f;
+const float GRAVITY = 9.81f, BODY_HEIGHT = 1.7f, MAX_OWN_SPEED = 30, MIN_DODGE_SCORE = 0.3f;
+const double VELOCITY_WINDOW = 0.12, MIN_VELOCITY_SPAN = 0.03, DODGE_GAP = 0.25, STALE_DODGE = 0.3;
+const double REACTION_MIN = 0.12, REACTION_SPREAD = 0.12, LEAST_MOVE_TIME = 0.08;
+const DWORD HOLD_MIN_MS = 220, HOLD_SPREAD_MS = 160;
+const BYTE KEY_FORWARD = DIK_W, KEY_BACK = DIK_S, KEY_LEFT = DIK_A, KEY_RIGHT = DIK_D;
+
+struct Flying { std::deque<std::pair<double, Vec3>> samples; bool handled = false; };
+struct Approach { float miss = INFINITY, when = 0; Vec3 away{}; };
+struct PendingDodge { BYTE key = 0; double at = 0; DWORD hold = 0; };
+inline std::map<uintptr_t, Flying> flying;
+inline PendingDodge pending_dodge;
+inline double dodge_free_at = 0;
+inline Vec3 my_last{NAN, NAN, NAN}, my_velocity{};
+inline double my_last_at = 0;
+inline EngineVector nearby{};
+inline std::mt19937 dodge_rng{GetTickCount()};
+
+inline Approach closest_approach(Vec3 p, Vec3 v, Vec3 eye, Vec3 mine) {
+    Approach a;
+    for (float t = 0; t <= DODGE_HORIZON; t += DODGE_STEP) {
+        Vec3 s{p.x + v.x * t, p.y + v.y * t - 0.5f * GRAVITY * t * t, p.z + v.z * t};
+        Vec3 me{eye.x + mine.x * t, eye.y + mine.y * t, eye.z + mine.z * t};
+        float gap = s.y > me.y ? s.y - me.y : s.y < me.y - BODY_HEIGHT ? me.y - BODY_HEIGHT - s.y : 0;
+        float dx = me.x - s.x, dz = me.z - s.z, d = std::sqrt(dx * dx + dz * dz + gap * gap);
+        if (d < a.miss) a = {d, t, {dx, 0, dz}};
+    }
+    return a;
+}
+
+inline bool flat_unit(Vec3& v) {
+    float n = std::sqrt(v.x * v.x + v.z * v.z);
+    if (n < 1e-4f) return false;
+    v = {v.x / n, 0, v.z / n};
+    return true;
+}
+
+inline BYTE dodge_key(const float m[16], Vec3 away, Vec3 flight) {
+    Vec3 forward{m[12], 0, m[14]}, right{m[0], 0, m[2]};
+    if (!flat_unit(forward) || !flat_unit(right)) return 0;
+    if (!flat_unit(away)) {
+        away = {-flight.z, 0, flight.x};
+        if (!flat_unit(away)) return 0;
+        if (dodge_rng() & 1) away = {-away.x, 0, -away.z};
+    }
+    struct Option { BYTE key, opposite; Vec3 dir; };
+    const Option options[] = {{KEY_RIGHT, KEY_LEFT, right}, {KEY_LEFT, KEY_RIGHT, {-right.x, 0, -right.z}},
+                              {KEY_FORWARD, KEY_BACK, forward}, {KEY_BACK, KEY_FORWARD, {-forward.x, 0, -forward.z}}};
+    BYTE best = 0;
+    float best_score = MIN_DODGE_SCORE;
+    for (auto& o : options) {
+        float score = o.dir.x * away.x + o.dir.z * away.z;
+        if (score <= best_score || input::held(o.opposite)) continue;
+        best = o.key, best_score = score;
+    }
+    return best && !input::held(best) ? best : 0;
+}
+
+inline const char* key_name(BYTE key) { return key == KEY_LEFT ? "left" : key == KEY_RIGHT ? "right" : key == KEY_FORWARD ? "forward" : "back"; }
+
+inline void dodge_spits() {
+    double now = now_seconds();
+    float m[16];
+    Vec3 eye;
+    uintptr_t game_object = profile_root ? rdv<uintptr_t>(profile_root) : 0;
+    uintptr_t level = game_object && active_level ? active_level(game_object) : 0;
+    if (!level || !find_in_radius || !view_matrix(m, &eye) || !std::isfinite(eye.x)) return;
+    if (std::isfinite(my_last.x) && now - my_last_at > 0.001) {
+        float k = (float)(1.0 / (now - my_last_at));
+        my_velocity = {(eye.x - my_last.x) * k, (eye.y - my_last.y) * k, (eye.z - my_last.z) * k};
+        if (distance(my_velocity, {}) > MAX_OWN_SPEED) my_velocity = {};
+    }
+    my_last = eye, my_last_at = now;
+
+    if (pending_dodge.key && now >= pending_dodge.at) {
+        BYTE key = pending_dodge.key;
+        pending_dodge.key = 0;
+        if (now - pending_dodge.at < STALE_DODGE && !input::held(key)) {
+            input::press(key, pending_dodge.hold);
+            dodge_free_at = now + pending_dodge.hold / 1000.0 + DODGE_GAP;
+            logf_hook("dodge: stepping %s for %lu ms", key_name(key), (unsigned long)pending_dodge.hold);
+        }
+    }
+
+    nearby.size = 0;
+    find_in_radius(level, &nearby, &eye, DODGE_SCAN_RADIUS, 0, false, nullptr);
+    std::set<uintptr_t> present;
+    for (uint32_t i = 0; i < nearby.size && nearby.data; i++) {
+        uintptr_t control = nearby.data[i];
+        bool spit = false;
+        for (int c = 0; c < 2; c++) spit |= vt_throwable[c] && throwable_control[c] >= 0 && rdv<uintptr_t>(control - throwable_control[c]) == vt_throwable[c];
+        Vec3 p;
+        if (!spit || !position_of(control, &p)) continue;
+        present.insert(control);
+        auto& f = flying[control];
+        if (f.samples.empty() || distance(f.samples.back().second, p) > 0) f.samples.push_back({now, p});
+        while (f.samples.size() > 2 && now - f.samples[1].first > VELOCITY_WINDOW) f.samples.pop_front();
+        double span = f.samples.back().first - f.samples.front().first;
+        if (f.handled || span < MIN_VELOCITY_SPAN) continue;
+        Vec3 a = f.samples.front().second, b = f.samples.back().second;
+        Vec3 v{(float)((b.x - a.x) / span), (float)((b.y - a.y) / span - GRAVITY * span / 2), (float)((b.z - a.z) / span)};
+        Vec3 rel{v.x - my_velocity.x, v.y - my_velocity.y, v.z - my_velocity.z};
+        Vec3 to_me{eye.x - p.x, eye.y - BODY_HEIGHT / 2 - p.y, eye.z - p.z};
+        if (distance(v, {}) < DODGE_MIN_SPEED || rel.x * to_me.x + rel.y * to_me.y + rel.z * to_me.z <= 0) continue;
+        Approach hit = closest_approach(p, v, eye, my_velocity);
+        if (hit.miss > DODGE_HIT_RADIUS) continue;
+        f.handled = true;
+        double reaction = REACTION_MIN + std::uniform_real_distribution<double>(0, REACTION_SPREAD)(dodge_rng);
+        const char* skipped = hit.when < reaction + LEAST_MOVE_TIME ? "too close to react"
+                              : pending_dodge.key || now < dodge_free_at ? "already dodging" : nullptr;
+        BYTE key = skipped ? 0 : dodge_key(m, hit.away, v);
+        if (!skipped && !key) skipped = "no free direction";
+        logf_hook("dodge: throwable %.1f m away at %.1f m/s passes %.2f m from you in %.2f s, %s", distance(eye, p), distance(v, {}), hit.miss,
+                  hit.when, skipped ? skipped : key_name(key));
+        if (key) pending_dodge = {key, now + reaction, HOLD_MIN_MS + (DWORD)(dodge_rng() % HOLD_SPREAD_MS)};
+    }
+    for (auto it = flying.begin(); it != flying.end();) it = present.count(it->first) ? std::next(it) : flying.erase(it);
+}
+
 inline bool esp_snapshot(float m[16], std::vector<EspTarget>& out, float max_distance) {
     std::lock_guard<std::mutex> l(esp_mx);
     if (view.at < 0 || now_seconds() - view.at > HOLD_SECONDS) return false;
@@ -1268,15 +1434,10 @@ inline void apply_uv_light(bool on, const float color[3], float glow) {
         UvOriginal o;
         if (rd(d->second + FLASH_COLORS[0], o.bytes, sizeof o.bytes)) uv_originals[d->second] = o;
     }
-    float peak = std::max({color[0], color[1], color[2], 0.001f});
     for (auto& [desc, o] : uv_originals) {
         uint8_t now[FLASH_PART_BYTES];
         memcpy(now, o.bytes, sizeof now);
-        for (int at : FLASH_COLORS) {
-            float* c = (float*)(now + at - FLASH_COLORS[0]);
-            float bright = std::max({c[0], c[1], c[2]});
-            for (int k = 0; k < 3; k++) c[k] = color[k] / peak * bright;
-        }
+        for (int at : FLASH_COLORS) tint((float*)(now + at - FLASH_COLORS[0]), color, 1.0f);
         for (int at : FLASH_BEAMS)
             for (int k = 0; k < 3; k++) ((float*)(now + at - FLASH_COLORS[0]))[k] *= glow;
         for (int at : FLASH_INTENSITIES) *(float*)(now + at - FLASH_COLORS[0]) *= glow;
@@ -1370,7 +1531,7 @@ inline uint32_t reads_of(const char* name) {
 }
 
 inline std::string tree_report() {
-    uintptr_t container = alive(player) ? rdv<uintptr_t>(player + PARAM_CONTAINER) : 0;
+    uintptr_t container = skill_container();
     char head[64];
     snprintf(head, sizeof head, "container %llx trees %llx ", (unsigned long long)container, (unsigned long long)rdv<uintptr_t>(container + SKILL_TREES));
     std::string out = head;

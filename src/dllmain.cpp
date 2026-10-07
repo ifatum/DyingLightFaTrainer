@@ -287,6 +287,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     poll_spit_keys();
     bool esp = config::cfg.esp.on;
     if (g_ready && esp) cheats::track_players();
+    if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
     float shown = g_ready ? menu::presence(g_open) : 0;
     if (g_ready && (shown > 0 || esp)) {
         ImGuiIO& io = ImGui::GetIO();

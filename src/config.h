@@ -47,7 +47,7 @@ struct Config {
     std::vector<std::pair<std::string, float>> tweaks;
     int spit_keys[SPIT_KEYS] = {};
     Esp esp;
-    UvLight uv;
+    UvLight uv, hunter_glow;
     Look look;
 };
 
@@ -187,9 +187,9 @@ inline void load(const std::string& path) {
         }
         else if (k == "esp_hunter") sscanf(v.c_str(), "%f,%f,%f", &cfg.esp.hunter[0], &cfg.esp.hunter[1], &cfg.esp.hunter[2]);
         else if (k == "esp_survivor") sscanf(v.c_str(), "%f,%f,%f", &cfg.esp.survivor[0], &cfg.esp.survivor[1], &cfg.esp.survivor[2]);
-        else if (k == "uv_light") {
+        else if (k == "uv_light" || k == "hunter_glow") {
             int on = 0;
-            auto& u = cfg.uv;
+            auto& u = k == "uv_light" ? cfg.uv : cfg.hunter_glow;
             if (sscanf(v.c_str(), "%d,%f,%f,%f,%f", &on, &u.color[0], &u.color[1], &u.color[2], &u.glow) == 5) u.on = on != 0;
         }
         else if (k == "look") {
@@ -227,7 +227,8 @@ inline bool save(const std::string& path) {
             e.snaplines, e.allies, e.max_distance);
     fprintf(f, "esp_hunter=%.3f,%.3f,%.3f\nesp_survivor=%.3f,%.3f,%.3f\n", e.hunter[0], e.hunter[1], e.hunter[2], e.survivor[0],
             e.survivor[1], e.survivor[2]);
-    fprintf(f, "uv_light=%d,%.3f,%.3f,%.3f,%.2f\n", cfg.uv.on, cfg.uv.color[0], cfg.uv.color[1], cfg.uv.color[2], cfg.uv.glow);
+    for (auto [key, u] : {std::pair{"uv_light", &cfg.uv}, std::pair{"hunter_glow", &cfg.hunter_glow}})
+        fprintf(f, "%s=%d,%.3f,%.3f,%.3f,%.2f\n", key, u->on, u->color[0], u->color[1], u->color[2], u->glow);
     fprintf(f, "look=%.2f,%.2f,%d,%d,%d\n", cfg.look.opacity, cfg.look.roundness, cfg.look.motion, cfg.look.skyline, cfg.look.glow);
     fclose(f);
     return true;

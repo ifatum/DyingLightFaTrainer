@@ -32,6 +32,8 @@ inline std::vector<Injected> injected;
 inline DWORD injected_sequence = 0x40000000;
 const DWORD INJECT_FORGET = 1000;
 
+inline bool held(BYTE dik) { return GetAsyncKeyState(MapVirtualKeyW(dik, MAPVK_VSC_TO_VK)) & 0x8000; }
+
 inline void press(BYTE dik, DWORD ms) {
     std::lock_guard<std::mutex> l(inject_mx);
     injected.push_back({dik, GetTickCount() + ms, false, false});
@@ -58,7 +60,7 @@ inline void add_injected_events(BYTE* data, DWORD size, DWORD* count, DWORD capa
     };
     for (auto& k : injected) {
         if (!k.down_sent) k.down_sent = emit(k.dik, true);
-        if (k.down_sent && !k.up_sent && (LONG)(k.until - now) <= 0) k.up_sent = emit(k.dik, false);
+        if (k.down_sent && !k.up_sent && (LONG)(k.until - now) <= 0) k.up_sent = held(k.dik) || emit(k.dik, false);
     }
     injected.erase(std::remove_if(injected.begin(), injected.end(),
                                   [&](const Injected& k) { return k.up_sent || (LONG)(now - k.until) > (LONG)INJECT_FORGET; }),

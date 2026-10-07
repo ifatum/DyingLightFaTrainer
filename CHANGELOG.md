@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2
+
+- New: Dodge spit on the PvP page, under As a survivor. When a spit is about to hit you, you step aside on your own: after a human reaction time, for a short random moment, sideways when it can, using W A S D. It only reacts to spit that would really hit you, never presses against a key you hold and never touches your mouse. Also part of both Survivor presets.
+- New: Night Hunter glow color on the Visuals page. The veins that light up when UV hits the Night Hunter glow in your own color and brightness, like the UV light color.
+- Fixed: the Skills page showed no skill trees and could not change them. The trainer looked for them in the wrong place.
+
 ## 2.1
 
 - New: a redesigned menu that matches the installer and the website, with the same fonts, colors and Harran skyline. It fades and slides in when you open it, page titles write themselves in, cards appear one after another, the active page marker slides between pages, and buttons, switches, sliders and messages animate. The city at the bottom of the sidebar lights its windows and follows your mouse.

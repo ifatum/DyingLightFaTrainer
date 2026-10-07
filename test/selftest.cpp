@@ -32,6 +32,12 @@ static float fake_var_float(uintptr_t, uintptr_t name, uintptr_t, uintptr_t) {
     if (!strcmp(s, "f_btz_pvp_grab_below_angle_threshold")) return -50;
     return 7;
 }
+static float* fake_var_vec3(uintptr_t, float* out, uintptr_t name, uintptr_t, uintptr_t) {
+    const char* s = *(const char**)name;
+    float veins[3] = {255, 50, 0}, other[3] = {1, 2, 3};
+    memcpy(out, strstr(s, "veins") && !strstr(s, "not_drained") ? veins : other, sizeof veins);
+    return out;
+}
 static uintptr_t fake_var_vtable[1100];
 static uintptr_t fake_var_object = (uintptr_t)&fake_var_vtable[1];
 static uintptr_t fake_var_holder = (uintptr_t)&fake_var_object;
@@ -39,6 +45,13 @@ static uintptr_t fake_var_holder = (uintptr_t)&fake_var_object;
 static float read_var(const char* name) {
     auto fn = (cheats::VarFloatFn)cheats::slot((uintptr_t)&fake_var_object, cheats::SLOT_VAR_FLOAT);
     return fn((uintptr_t)&fake_var_object, (uintptr_t)&name, 0, 0);
+}
+
+static std::vector<float> read_vec3(const char* name) {
+    auto fn = (cheats::VarVec3Fn)cheats::slot((uintptr_t)&fake_var_object, cheats::SLOT_VAR_VEC3);
+    float out[3];
+    float* v = fn((uintptr_t)&fake_var_object, out, (uintptr_t)&name, 0, 0);
+    return {v[0], v[1], v[2]};
 }
 
 static void __fastcall refuse_add(uintptr_t, void*, int, bool) {}
@@ -154,6 +167,23 @@ int main(int argc, char** argv) {
         for (auto* n : c.switches) CHECK(cheats::param_ids.count(n));
     }
     CHECK(cheats::local_player_root && cheats::params_root && cheats::unlimited_ammo_flag && cheats::var_root);
+    CHECK(cheats::vt_throwable[0] && cheats::vt_throwable[1] && cheats::throwable_control[0] > 0 && cheats::throwable_control[1] > 0);
+    printf("throwables: control +%x +%x\n", cheats::throwable_control[0], cheats::throwable_control[1]);
+    {
+        cheats::Vec3 eye{0, 1.7f, 0}, still{};
+        auto hit = cheats::closest_approach({0, 2.0f, 10}, {0, 0, -20}, eye, still);
+        CHECK(hit.miss < 0.05f && std::fabs(hit.when - 0.5f) < 0.02f);
+        auto wide = cheats::closest_approach({3, 2.0f, 10}, {0, 0, -20}, eye, still);
+        CHECK(std::fabs(wide.miss - 3) < 0.05f && wide.away.x < -2.9f);
+        auto high = cheats::closest_approach({0, 9.0f, 10}, {0, 0, -20}, eye, still);
+        CHECK(high.miss > cheats::DODGE_HIT_RADIUS);
+        float m[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0};
+        CHECK(cheats::dodge_key(m, {-1, 0, 0}, {0, 0, -20}) == cheats::KEY_LEFT);
+        CHECK(cheats::dodge_key(m, {1, 0, 0.2f}, {0, 0, -20}) == cheats::KEY_RIGHT);
+        CHECK(cheats::dodge_key(m, {0, 0, -1}, {20, 0, 0}) == cheats::KEY_BACK);
+        BYTE side = cheats::dodge_key(m, {}, {0, 0, -20});
+        CHECK(side == cheats::KEY_LEFT || side == cheats::KEY_RIGHT);
+    }
     CHECK(cheats::var_root > (uintptr_t)m && cheats::var_root < (uintptr_t)m + 0x4000000);
     CHECK(cheats::level_from_xp_fn && cheats::cache_get_fn);
     uintptr_t lockpick_code = cheats::lockpick_patch;
@@ -175,6 +205,7 @@ int main(int argc, char** argv) {
     cheats::cache_get_original = fake_cache_get;
     cheats::level_from_xp_fn = (uintptr_t)&fake_level_from_xp;
     fake_var_vtable[1 + cheats::SLOT_VAR_FLOAT] = (uintptr_t)&fake_var_float;
+    fake_var_vtable[1 + cheats::SLOT_VAR_VEC3] = (uintptr_t)&fake_var_vec3;
     cheats::var_root = (uintptr_t)&fake_var_holder;
     cheats::local_player_root = cheats::params_root = 0;
     for (auto& p : cheats::PRESETS) {
@@ -246,6 +277,15 @@ int main(int argc, char** argv) {
     game::wr<uint32_t>(w.trees + 2 * 0x20 + 0x10, 500);
     cheats::level_up_with_xp(2);
     CHECK(game::rdv<uint32_t>(w.trees + 2 * 0x20 + 8) == 1500 && fake_level_calls == 1);
+    {
+        static uintptr_t global_container;
+        global_container = game::rdv<uintptr_t>(w.player + cheats::PARAM_CONTAINER);
+        game::wr<uintptr_t>(w.player + cheats::PARAM_CONTAINER, 0);
+        cheats::params_root = (uintptr_t)&global_container;
+        CHECK(cheats::skill_container() == global_container && cheats::tree_level(2) == 7 && cheats::tree_max(2) == 25);
+        game::wr<uintptr_t>(w.player + cheats::PARAM_CONTAINER, global_container);
+        cheats::params_root = 0;
+    }
     game::wr<float>(w.enemy_health + 0x78, 300);
     fatrainer_module_update(w.enemy_health);
     CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
@@ -313,6 +353,17 @@ int main(int argc, char** argv) {
     cheats::all_off();
     CHECK(read_var("f_btz_jump_attack_range") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
+    {
+        auto& glow = config::cfg.hunter_glow;
+        CHECK(read_vec3("v3_btz_zombie_veins_draining_color") == (std::vector<float>{255, 50, 0}));
+        glow.on = true;
+        glow.color[0] = 0, glow.color[1] = 0.5f, glow.color[2] = 0.25f, glow.glow = 2;
+        CHECK(read_vec3("v3_btz_zombie_veins_draining_color") == (std::vector<float>{0, 510, 255}));
+        CHECK(read_vec3("v3_btz_zombie_veins_not_drained_color") == (std::vector<float>{1, 2, 3}));
+        CHECK(read_vec3("v3_btz_zombie_uv_block_color") == (std::vector<float>{1, 2, 3}));
+        glow.on = false;
+        CHECK(read_vec3("v3_btz_zombie_veins_draining_color") == (std::vector<float>{255, 50, 0}));
+    }
 
     {
         uintptr_t equipment = w.alloc(0x80), prison = w.alloc(0x80);

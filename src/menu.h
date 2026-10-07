@@ -967,6 +967,7 @@ inline void pvp_page() {
     tweak_sliders(cheats::G_ZOMBIE);
     end_card();
     begin_card("human", "AS A SURVIVOR");
+    cheat_switch("dodge_spit");
     tweak_sliders(cheats::G_HUMAN);
     end_card();
 }
@@ -1035,6 +1036,28 @@ inline void draw_esp() {
     }
 }
 
+inline bool tint_card(const char* id, const char* title, const char* label, const char* hint, config::UvLight& u, const char* footnote) {
+    bool changed = false;
+    begin_card(id, title);
+    ImGui::PushID(id);
+    changed |= switch_row(label, hint, u.on);
+    ImGui::BeginDisabled(!u.on);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Color");
+    ImGui::SameLine(S(150));
+    changed |= ImGui::ColorEdit3("##color", u.color, ImGuiColorEditFlags_NoInputs);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Glow");
+    ImGui::SameLine(S(150));
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##glow", &u.glow, 0.2f, 4.0f, "x%.1f")) changed = true;
+    ImGui::EndDisabled();
+    note(footnote);
+    ImGui::PopID();
+    end_card();
+    return changed;
+}
+
 inline void visuals_page() {
     auto& e = config::cfg.esp;
     bool changed = false;
@@ -1066,22 +1089,11 @@ inline void visuals_page() {
     note("Allies and enemies come from the game's teams. The ESP keeps drawing when the menu is closed.");
     end_card();
 
-    auto& u = config::cfg.uv;
-    begin_card("uv", "UV LIGHT");
-    changed |= switch_row("Custom UV light color", "Your UV flashlight shines in your own color.", u.on);
-    ImGui::BeginDisabled(!u.on);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Color");
-    ImGui::SameLine(S(150));
-    changed |= ImGui::ColorEdit3("##uvcolor", u.color, ImGuiColorEditFlags_NoInputs);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Glow");
-    ImGui::SameLine(S(150));
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##uvglow", &u.glow, 0.2f, 4.0f, "x%.1f")) changed = true;
-    ImGui::EndDisabled();
-    note("Glow scales the light's brightness and its visible beam. If the color does not change right away, switch the UV light off and on.");
-    end_card();
+    changed |= tint_card("uv", "UV LIGHT", "Custom UV light color", "Your UV flashlight shines in your own color.", config::cfg.uv,
+                         "Glow scales the light's brightness and its visible beam. If the color does not change right away, switch the UV light off and on.");
+    changed |= tint_card("hunter_glow", "NIGHT HUNTER GLOW", "Custom Night Hunter glow color",
+                         "The veins that light up when UV hits the Night Hunter glow in your own color.", config::cfg.hunter_glow,
+                         "Only you see it: as a survivor on the hunter you hit, as the Night Hunter on your own arms. Glow scales how bright the veins get.");
     if (changed) save_config();
 }
 
@@ -1253,8 +1265,8 @@ inline const Page PAGES[] = {
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "MODES", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
     {"pvp", "PvP", "Presets and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
-     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_kicks", "h_melee"}},
-    {"visuals", "Visuals", "Player ESP and UV light color", visuals_page, always, "MODES", {}},
+     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_kicks", "h_melee"}},
+    {"visuals", "Visuals", "Player ESP, UV light and Night Hunter glow colors", visuals_page, always, "MODES", {}},
     {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},
