@@ -14,7 +14,7 @@
 
 ### Features
 
-- **Player**: god mode, infinite stamina, infinite grappling hook, infinite UV flashlight, instant lockpicking, no fall damage, movement speed, jump height, instant refill
+- **Player**: god mode, infinite stamina, take less damage, draggable health and stamina bars, infinite grappling hook, infinite UV flashlight, instant lockpicking, no fall damage, movement speed, jump height, instant refill
 - **Combat**: one hit kill, infinite ammo, no reload, infinite consumables, unbreakable weapons
 - **Skills**: XP multiplier for every skill tree (the game shows the boosted XP), draggable XP bars, +1 point through real XP, -10, -1, +10 and Max for any skill tree, extra skill points without changing the level
 - **Prison**: pause the Harran Prison timers, teleport to every section, save and load your position
