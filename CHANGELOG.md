@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.2
+## 2.2 b1
 
 - The FaTrainer Installer now has its own version (Installer 1.0) and keeps itself up to date.
 - XP gain now multiplies experience in every skill tree, Survivor and Night Hunter included, and the game's XP popup shows the boosted amount. Before it only changed Agility, Power and Driver.

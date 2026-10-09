@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#define FATRAINER_VERSION "2.2"
+#define FATRAINER_VERSION "2.2 b1"
 #define INSTALLER_VERSION "1.0"
 #ifdef FATRAINER_OFFLINE
 #define FATRAINER_EDITION "Nexus Version"
@@ -18,22 +18,39 @@ inline const char* VERSION = VERSION_TAG + sizeof "FaTrainer-version:" - 1;
 inline const char* RELEASE_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/latest/download/";
 inline const char* INSTALLER_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/";
 
+const size_t VERSION_NUMBERS = 4;
+
 inline std::vector<long> version_parts(const std::string& v) {
+    size_t at = v.find(" b");
+    std::string numbers = v.substr(0, at);
     std::vector<long> parts;
-    for (const char* p = v.c_str(); *p;) {
+    for (const char* p = numbers.c_str(); *p;) {
         char* end;
         parts.push_back(strtol(p, &end, 10));
         if (end == p || (*end && *end != '.')) return {};
         p = *end ? end + 1 : end;
     }
+    if (parts.empty() || parts.size() > VERSION_NUMBERS) return {};
+    long build = 0;
+    if (at != std::string::npos) {
+        const char* p = v.c_str() + at + 2;
+        char* end;
+        build = strtol(p, &end, 10);
+        if (end == p || *end || build < 1) return {};
+    }
+    parts.resize(VERSION_NUMBERS);
+    parts.push_back(build);
     return parts;
 }
 
 inline bool newer_version(const std::string& candidate, const std::string& current) {
     std::vector<long> a = version_parts(candidate), b = version_parts(current);
-    if (a.empty() || b.empty()) return false;
-    a.resize(std::max(a.size(), b.size())), b.resize(a.size());
-    return a > b;
+    return !a.empty() && !b.empty() && a > b;
+}
+
+inline std::string version_slug(std::string v) {
+    std::replace(v.begin(), v.end(), ' ', '-');
+    return v;
 }
 
 struct ReleaseInfo { std::string version, sha256; unsigned long long size = 0; };

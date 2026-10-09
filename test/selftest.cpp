@@ -65,6 +65,10 @@ static void __fastcall fake_level_from_xp(uintptr_t, int) { fake_level_calls++; 
 int main(int argc, char** argv) {
     CHECK(newer_version("2.1", "2.0") && newer_version("2.0.1", "2.0") && newer_version("10.0", "9.9"));
     CHECK(!newer_version("2.0", "2.0") && !newer_version("2.0.0", "2.0") && !newer_version("1.9", "2.0") && !newer_version("", "2.0") && !newer_version("2.x", "2.0"));
+    CHECK(newer_version("2.2 b1", "2.2") && newer_version("2.2 b2", "2.2 b1") && newer_version("2.2 b10", "2.2 b9") && newer_version("2.3", "2.2 b9"));
+    CHECK(!newer_version("2.2", "2.2 b1") && !newer_version("2.2 b1", "2.2 b1") && !newer_version("2.2 b0", "2.1") && !newer_version("2.2 bx", "2.1") && !newer_version("2.2b1", "2.1"));
+    CHECK(version_slug("2.2 b1") == "2.2-b1" && parse_release_info("version 2.2 b3\nsha256 ab\n").version == "2.2 b3");
+    CHECK(logic::trainer_version_in(std::string("xx\0FaTrainer-version:2.2 b3\0yy", 31)) == "2.2 b3");
     ReleaseInfo info = parse_release_info("version 2.1\r\nsha256 ab12\nsize 2598750\n");
     CHECK(info.version == "2.1" && info.sha256 == "ab12" && info.size == 2598750);
     CHECK(!strcmp(VERSION, FATRAINER_VERSION));

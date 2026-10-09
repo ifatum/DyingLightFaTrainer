@@ -74,6 +74,8 @@ inline std::string trainer_version_in(const std::string& dll) {
     if (at != std::string::npos) {
         size_t start = at + TAG.size(), end = start;
         while (end < dll.size() && (isdigit((unsigned char)dll[end]) || dll[end] == '.')) end++;
+        if (end + 2 < dll.size() && dll.compare(end, 2, " b") == 0 && isdigit((unsigned char)dll[end + 2]))
+            for (end += 2; end < dll.size() && isdigit((unsigned char)dll[end]);) end++;
         if (end > start) return dll.substr(start, end - start);
     }
     return dll.find("FaTrainer | Dying Light") != std::string::npos ? LEGACY_VERSION : "";
