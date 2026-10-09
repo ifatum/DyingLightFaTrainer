@@ -117,6 +117,9 @@ struct Model {
     bool message_bad = false;
     bool picking = false, picked_ready = false, picker_missing = false;
     std::string picked;
+    std::vector<logic::Release> releases;
+    logic::Release chosen;
+    bool allow_older = false;
 };
 inline Model M;
 
@@ -124,6 +127,19 @@ inline void refresh_installed() {
     std::error_code ec;
     fs::path dll = M.game / platform::DLL_NAME;
     M.installed = !M.game.empty() && fs::exists(dll, ec) ? logic::trainer_version_in(platform::read_file(dll)) : "";
+    fs::path ini = M.game / "fatrainer.ini";
+    M.allow_older = !M.game.empty() && fs::exists(ini, ec) && logic::ini_value(platform::read_file(ini), "allow_older") == "1";
+}
+
+inline bool set_allow_older(bool on) {
+    fs::path ini = M.game / "fatrainer.ini";
+    std::error_code ec;
+    std::string text = fs::exists(ini, ec) ? platform::read_file(ini) : "";
+    std::ofstream out(ini, std::ios::binary | std::ios::trunc);
+    out << logic::with_ini_value(text, "allow_older", on ? "1" : "0");
+    if (!out) return false;
+    M.allow_older = on;
+    return true;
 }
 
 inline void fetch_release() {
@@ -150,9 +166,13 @@ inline void fetch_release() {
         if (!private_dir.empty() && fs::exists(private_dir / platform::INSTALLER_INFO, ec)) installer_text = platform::read_file(private_dir / platform::INSTALLER_INFO);
         else platform::net::get_text(std::string(INSTALLER_DOWNLOADS) + platform::INSTALLER_INFO, installer_text, ignored);
         ReleaseInfo installer = parse_release_info(installer_text);
+        std::string listing;
+        std::vector<logic::Release> releases;
+        if (platform::net::get_text(RELEASES_API, listing, ignored)) releases = logic::installable_releases(listing);
         bool installer_newer = newer_version(installer.version, INSTALLER_VERSION) && installer.sha256.size() == 64;
         std::lock_guard<std::mutex> l(M.mx);
         M.installer_update = installer_newer ? installer : ReleaseInfo{};
+        if (!releases.empty()) M.releases = releases;
         M.private_dir = private_dir;
         M.fetch = ok ? Fetch::ready : Fetch::failed;
         M.fetch_error = error;
@@ -182,20 +202,28 @@ inline std::string replace_hint() {
 inline void start_install() {
     fs::path game, private_dir;
     ReleaseInfo latest;
+    logic::Release chosen;
     {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working) return;
-        game = M.game, latest = M.latest, private_dir = M.private_dir;
+        game = M.game, latest = M.latest, private_dir = M.private_dir, chosen = M.chosen;
         M.job = Job::working, M.step = OFFLINE ? "Installing" : "Downloading", M.progress = 0, M.message.clear();
     }
-    std::thread([game, latest, private_dir] {
+    std::thread([game, latest, private_dir, chosen]() mutable {
 #ifdef FATRAINER_OFFLINE
         std::string data((const char*)trainer_dll, (size_t)(trainer_dll_end - trainer_dll));
 #else
         const unsigned long long LIMIT = 64ull << 20;
-        std::string data, error;
+        std::string data, error, base = RELEASE_DOWNLOADS;
+        if (!chosen.tag.empty()) {
+            base = std::string(RELEASE_TAG_DOWNLOADS) + chosen.tag + "/";
+            std::string text;
+            if (!platform::net::get_text(base + "version.txt", text, error)) return finish(Job::failed, "Download failed: " + error + ". Nothing was changed.");
+            latest = parse_release_info(text), private_dir.clear();
+            if (latest.version.empty() || latest.sha256.size() != 64) return finish(Job::failed, "FaTrainer " + chosen.version + " has no valid version.txt. Nothing was changed.");
+        }
         bool ok = !private_dir.empty() ? !(data = platform::read_file(private_dir / platform::DLL_NAME)).empty() || (error = "the private build has no " + std::string(platform::DLL_NAME), false)
-                                       : platform::net::get(std::string(RELEASE_DOWNLOADS) + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
+                                       : platform::net::get(base + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
             data.append(d, n);
             unsigned long long expected = latest.size ? latest.size : total;
             std::lock_guard<std::mutex> l(M.mx);
@@ -347,6 +375,14 @@ inline void init(float dpi_scale) {
     s.Colors[ImGuiCol_ScrollbarGrab] = ImGui::ColorConvertU32ToFloat4(LINE);
     s.Colors[ImGuiCol_ScrollbarGrabHovered] = s.Colors[ImGuiCol_ScrollbarGrabActive] = ImGui::ColorConvertU32ToFloat4(MUTED);
     s.Colors[ImGuiCol_NavHighlight] = ImGui::ColorConvertU32ToFloat4(ACCENT);
+    s.Colors[ImGuiCol_PopupBg] = ImGui::ColorConvertU32ToFloat4(IM_COL32(24, 24, 28, 255));
+    s.Colors[ImGuiCol_Border] = ImGui::ColorConvertU32ToFloat4(LINE);
+    s.Colors[ImGuiCol_Header] = ImGui::ColorConvertU32ToFloat4(IM_COL32(232, 151, 58, 60));
+    s.Colors[ImGuiCol_HeaderHovered] = ImGui::ColorConvertU32ToFloat4(IM_COL32(232, 151, 58, 40));
+    s.Colors[ImGuiCol_HeaderActive] = ImGui::ColorConvertU32ToFloat4(IM_COL32(232, 151, 58, 80));
+    s.Colors[ImGuiCol_Button] = s.Colors[ImGuiCol_FrameBg];
+    s.Colors[ImGuiCol_ButtonHovered] = s.Colors[ImGuiCol_FrameBgHovered];
+    s.PopupRounding = S(10), s.PopupBorderSize = 1;
     platform::self_path();
     M.changelog = logic::parse_changelog(std::string((const char*)changelog_md, (size_t)(changelog_md_end - changelog_md)));
     M.game = platform::find_game();
@@ -546,6 +582,7 @@ inline void detail(float width) {
         view.job = M.job, view.step = M.step, view.progress = M.progress, view.finished_at = M.finished_at, view.message = M.message;
         view.message_bad = M.message_bad, view.picking = M.picking, view.picker_missing = M.picker_missing;
         view.installer_update = M.installer_update;
+        view.releases = M.releases, view.chosen = M.chosen, view.allow_older = M.allow_older, view.private_dir = M.private_dir;
     }
     bool found = platform::is_game_dir(view.game);
     bool ready = view.fetch == Fetch::ready;
@@ -650,8 +687,65 @@ inline void detail(float width) {
     }
     ImGui::Dummy({0, S(8)});
 
-    {
+    if (!OFFLINE) {
         Reveal r(3);
+        ImVec2 a = ImGui::GetCursorScreenPos();
+        label_caps(dl, a, "VERSION", MUTED);
+        ImGui::Dummy({0, S(14)});
+        std::string latest_label = !ready ? "Latest" : (view.private_dir.empty() ? "Latest, " : "Private build, ") + view.latest.version;
+        std::string current = view.chosen.tag.empty() ? latest_label : view.chosen.version;
+        ImGui::SetNextItemWidth(S(300));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {S(14), S(13)});
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, S(10));
+        if (ImGui::BeginCombo("##version", current.c_str())) {
+            if (ImGui::Selectable(latest_label.c_str(), view.chosen.tag.empty())) {
+                std::lock_guard<std::mutex> l(M.mx);
+                M.chosen = {};
+            }
+            for (const logic::Release& release : view.releases) {
+                if (ready && release.version == view.latest.version && view.private_dir.empty()) continue;
+                if (ImGui::Selectable(release.version.c_str(), release.tag == view.chosen.tag)) {
+                    std::lock_guard<std::mutex> l(M.mx);
+                    M.chosen = release;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        platform::caption_holes.push_back({ImGui::GetItemRectMin().x, ImGui::GetItemRectMin().y, ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y});
+        ImGui::PopStyleVar(2);
+        ImGui::SameLine(0, S(18));
+        ImVec2 box = ImGui::GetCursorScreenPos();
+        box.y += (S(44) - S(20)) / 2;
+        bool older = view.allow_older;
+        ImGui::BeginDisabled(!found);
+        ImGui::SetCursorScreenPos({box.x, box.y - S(6)});
+        bool clicked = ImGui::InvisibleButton("older", {S(220), S(32)});
+        bool hovered = ImGui::IsItemHovered();
+        ImGui::EndDisabled();
+        if (hovered && found) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        float on = follow(anim("older"), older ? 1.0f : 0.0f, 16);
+        ImVec2 b0{box.x, box.y}, b1{box.x + S(20), box.y + S(20)};
+        dl->AddRectFilled(b0, b1, C(mix(RAISED, ACCENT, on)), S(5));
+        dl->AddRect(b0, b1, C(mix(hovered ? MUTED : LINE, ACCENT, on)), S(5));
+        if (on > 0.01f) check_mark(dl, {box.x + S(10), box.y + S(10)}, S(9), on, C(ACCENT_INK));
+        dl->AddText(F.strong, F.strong->FontSize, {box.x + S(30), box.y + (S(20) - F.strong->FontSize) / 2}, C(found ? TEXT : MUTED), "Use older versions");
+        if (clicked && found) {
+            std::lock_guard<std::mutex> l(M.mx);
+            if (!set_allow_older(!older)) M.message = "Could not write fatrainer.ini. " + replace_hint(), M.message_bad = true;
+        }
+        ImGui::SetCursorScreenPos({a.x, a.y + S(14) + S(44) + S(10)});
+        ImGui::PushFont(F.small);
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(MUTED), "%s",
+                           older ? "An older version keeps working in game after a newer one is out. The update notice still shows."
+                                 : "An older version stays turned off in game once a newer one is out, and only shows the update notice. Tick Use older versions to play with it anyway.");
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
+        ImGui::Dummy({0, S(8)});
+    }
+
+    {
+        Reveal r(4);
         std::string text;
         float progress = -1;
         bool enabled = false;
@@ -662,6 +756,7 @@ inline void detail(float width) {
         else if (view.fetch == Fetch::loading) text = "Checking for the latest version";
         else if (view.fetch == Fetch::failed) text = "Cannot reach GitHub";
         else if (!found) text = "Choose the game folder first";
+        else if (!view.chosen.tag.empty()) text = (view.installed == view.chosen.version ? "Reinstall " : "Install ") + view.chosen.version, enabled = true;
         else if (outdated) text = "Update to " + view.latest.version, enabled = true;
         else if (newer_installed) text = "Replace " + view.installed + " with " + view.latest.version, enabled = true;
         else if (current) text = "Reinstall " + view.latest.version, enabled = true;
@@ -692,7 +787,7 @@ inline void detail(float width) {
 
     if (platform::LINUX) {
         ImGui::Dummy({0, S(10)});
-        Reveal r(4);
+        Reveal r(5);
         ImVec2 a = ImGui::GetCursorScreenPos(), b{a.x + width, a.y + S(132)};
         dl->AddRectFilled(a, b, C(RAISED), S(12));
         label_caps(dl, {a.x + S(20), a.y + S(18)}, "STEAM LAUNCH OPTION", MUTED);

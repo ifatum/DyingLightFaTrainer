@@ -42,6 +42,7 @@ struct Config {
     float scale = 1.0f;
     int menu_key = VK_INSERT;
     bool remember_cheats = true;
+    bool allow_older = false;
     std::vector<PageEntry> pages;
     std::vector<std::string> cheats_on;
     std::vector<std::pair<std::string, float>> tweaks;
@@ -199,6 +200,7 @@ inline void load(const std::string& path) {
                 l.motion = motion, l.skyline = skyline != 0, l.glow = glow != 0;
         }
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
+        else if (k == "allow_older") cfg.allow_older = v == "1";
         else if (Profile p; read_cheat_line(k, v, p)) {
             cfg.cheats_on.insert(cfg.cheats_on.end(), p.cheats.begin(), p.cheats.end());
             cfg.tweaks.insert(cfg.tweaks.end(), p.tweaks.begin(), p.tweaks.end());
@@ -215,7 +217,8 @@ inline bool save(const std::string& path) {
     FILE* f = fopen(path.c_str(), "w");
     if (!f) return false;
     fprintf(f, "accent=%.3f,%.3f,%.3f\n", cfg.accent[0], cfg.accent[1], cfg.accent[2]);
-    fprintf(f, "dim=%.2f\nscale=%.2f\nmenu_key=%d\nremember_cheats=%d\n", cfg.dim, cfg.scale, cfg.menu_key, (int)cfg.remember_cheats);
+    fprintf(f, "dim=%.2f\nscale=%.2f\nmenu_key=%d\nremember_cheats=%d\nallow_older=%d\n", cfg.dim, cfg.scale, cfg.menu_key, (int)cfg.remember_cheats,
+            (int)cfg.allow_older);
     for (auto& p : cfg.pages) fprintf(f, "page=%s,%d\n", p.id.c_str(), (int)p.visible);
     if (cfg.remember_cheats)
         for (auto& c : cfg.cheats_on) fprintf(f, "cheat=%s\n", c.c_str());

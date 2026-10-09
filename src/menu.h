@@ -1576,6 +1576,10 @@ inline void settings_page() {
     label("F8 always works too.");
     bool remember = c.remember_cheats;
     if (switch_row("Remember cheats", "Turn your cheats back on the next time the game starts.", remember)) c.remember_cheats = remember, changed = true;
+#ifndef FATRAINER_OFFLINE
+    bool older = c.allow_older;
+    if (switch_row("Use older versions", "Keep this version working after a newer one is out. The update notice still shows.", older)) c.allow_older = older, changed = true;
+#endif
     end_card();
 
     begin_card("sidebar", "SIDEBAR");
@@ -1892,7 +1896,7 @@ inline void draw(float shown_raw, bool open) {
     if (open && cursor) draw_cursor();
 }
 
-inline void draw_update_notice(const std::string& latest, float alpha) {
+inline void draw_update_notice(const std::string& latest, float alpha, bool running) {
     ImGuiIO& io = ImGui::GetIO();
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(30), S(24)});
@@ -1909,13 +1913,19 @@ inline void draw_update_notice(const std::string& latest, float alpha) {
     ImGui::PopFont();
     ImGui::Dummy({0, S(2)});
     ImGui::PushTextWrapPos(0);
-    ImGui::TextUnformatted(("This version (" + std::string(VERSION) +
-                            ") is turned off until you update. Close the game, open the FaTrainer Installer and press Update. "
-                            "The game itself works as usual.").c_str());
+    if (running)
+        ImGui::TextUnformatted(("You are playing with an older version (" + std::string(VERSION) +
+                                ") because Use older versions is on. To update, close the game, open the FaTrainer Installer and press Update.").c_str());
+    else
+        ImGui::TextUnformatted(("This version (" + std::string(VERSION) +
+                                ") is turned off until you update. Close the game, open the FaTrainer Installer and press Update. "
+                                "The game itself works as usual. To keep playing with this version, turn on Use older versions in the installer.").c_str());
     ImGui::PopTextWrapPos();
-    ImGui::PushFont(f_small);
-    ImGui::TextColored(V(T.muted), "Press your menu key or F8 to show this again.");
-    ImGui::PopFont();
+    if (!running) {
+        ImGui::PushFont(f_small);
+        ImGui::TextColored(V(T.muted), "Press your menu key or F8 to show this again.");
+        ImGui::PopFont();
+    }
     ImGui::End();
     ImGui::PopStyleVar(2);
 }

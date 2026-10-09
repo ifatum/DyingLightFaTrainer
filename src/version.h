@@ -16,6 +16,8 @@
 inline const char VERSION_TAG[] = "FaTrainer-version:" FATRAINER_VERSION;
 inline const char* VERSION = VERSION_TAG + sizeof "FaTrainer-version:" - 1;
 inline const char* RELEASE_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/latest/download/";
+inline const char* RELEASE_TAG_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/";
+inline const char* RELEASES_API = "https://api.github.com/repos/ifatum/DyingLightFaTrainer/releases?per_page=100";
 inline const char* INSTALLER_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/";
 
 const size_t VERSION_NUMBERS = 4;

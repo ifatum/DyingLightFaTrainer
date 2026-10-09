@@ -99,6 +99,61 @@ inline std::vector<ChangelogEntry> parse_changelog(const std::string& md) {
 }
 
 
+struct Release { std::string tag, version; };
+
+inline std::vector<Release> installable_releases(const std::string& json) {
+    const std::string TAG = "\"tag_name\"";
+    std::vector<Release> out;
+    size_t at = json.find(TAG);
+    while (at != std::string::npos) {
+        size_t next = json.find(TAG, at + TAG.size());
+        size_t open = json.find('"', json.find(':', at + TAG.size()));
+        size_t close = open == std::string::npos ? open : json.find('"', open + 1);
+        std::string tag = close == std::string::npos ? "" : json.substr(open + 1, close - open - 1);
+        std::string rest = json.substr(at, next == std::string::npos ? std::string::npos : next - at);
+        bool installable = rest.find("/version.txt\"") != std::string::npos && rest.find("/xinput1_3.dll\"") != std::string::npos;
+        if (installable && tag.size() > 1 && tag[0] == 'v') {
+            std::string version = tag.substr(1);
+            for (char& c : version)
+                if (c == '-') c = ' ';
+            out.push_back({tag, version});
+        }
+        at = next;
+    }
+    return out;
+}
+
+inline std::string ini_value(const std::string& text, const std::string& key) {
+    size_t at = 0;
+    while (at < text.size()) {
+        size_t end = text.find('\n', at);
+        std::string line = text.substr(at, end == std::string::npos ? std::string::npos : end - at);
+        at = end == std::string::npos ? text.size() : end + 1;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.rfind(key + "=", 0) == 0) return line.substr(key.size() + 1);
+    }
+    return "";
+}
+
+inline std::string with_ini_value(const std::string& text, const std::string& key, const std::string& value) {
+    std::string out;
+    bool written = false;
+    size_t at = 0;
+    while (at < text.size()) {
+        size_t end = text.find('\n', at);
+        std::string line = text.substr(at, end == std::string::npos ? std::string::npos : end - at);
+        at = end == std::string::npos ? text.size() : end + 1;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.rfind(key + "=", 0) == 0) {
+            if (written) continue;
+            line = key + "=" + value, written = true;
+        }
+        out += line + "\n";
+    }
+    if (!written) out += key + "=" + value + "\n";
+    return out;
+}
+
 struct Area { int x = 0, y = 0, w = 0, h = 0; };
 
 inline Area hyprland_focused_monitor(const std::string& text) {

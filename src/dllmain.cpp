@@ -226,22 +226,29 @@ static void render_overlay(IDXGISwapChain* sc) {
     }
 }
 
-static HRESULT present_update_notice(IDXGISwapChain* sc, UINT sync, UINT flags) {
+static float update_notice_alpha() {
     const DWORD NOTICE_MS = 20000, FADE_IN_MS = 400, FADE_OUT_MS = 800;
     static DWORD shown_at = GetTickCount();
     static bool prev = false;
     bool key = (GetAsyncKeyState(config::cfg.menu_key) | GetAsyncKeyState(VK_F8)) & 0x8000;
-    if (key && !prev) shown_at = GetTickCount();
+    if (key && !prev && !g_open) shown_at = GetTickCount();
     prev = key;
     DWORD age = GetTickCount() - shown_at;
-    if (age < NOTICE_MS) {
+    if (age >= NOTICE_MS) return 0;
+    return std::min({1.0f, age / (float)FADE_IN_MS, (NOTICE_MS - age) / (float)FADE_OUT_MS});
+}
+
+static bool trainer_off() { return !g_outdated.empty() && !config::cfg.allow_older; }
+
+static HRESULT present_update_notice(IDXGISwapChain* sc, UINT sync, UINT flags) {
+    float alpha = update_notice_alpha();
+    if (alpha > 0) {
         if (!g_ready) init_imgui(sc);
         if (g_ready) {
             ImGui_ImplDX11_NewFrame();
             begin_passive_frame(sc);
             ImGui::NewFrame();
-            float alpha = std::min({1.0f, age / (float)FADE_IN_MS, (NOTICE_MS - age) / (float)FADE_OUT_MS});
-            menu::draw_update_notice(g_outdated, alpha);
+            menu::draw_update_notice(g_outdated, alpha, false);
             render_overlay(sc);
         }
     }
@@ -250,7 +257,7 @@ static HRESULT present_update_notice(IDXGISwapChain* sc, UINT sync, UINT flags) 
 
 static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (g_frames++ == 0) logf("first frame (thread %lu)", (unsigned long)GetCurrentThreadId());
-    if (!g_outdated.empty()) return present_update_notice(sc, sync, flags);
+    if (trainer_off()) return present_update_notice(sc, sync, flags);
     static bool prev = false;
     bool key = (GetAsyncKeyState(config::cfg.menu_key) | GetAsyncKeyState(VK_F8)) & 0x8000;
     if (key && !prev) g_open = !g_open;
@@ -289,7 +296,8 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
     float shown = g_ready ? menu::presence(g_open) : 0;
-    if (g_ready && (shown > 0 || esp)) {
+    float notice = g_outdated.empty() ? 0 : update_notice_alpha();
+    if (g_ready && (shown > 0 || esp || notice > 0)) {
         ImGuiIO& io = ImGui::GetIO();
         io.MouseDrawCursor = false;
         ImGui_ImplDX11_NewFrame();
@@ -303,6 +311,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         ImGui::NewFrame();
         if (esp) menu::draw_esp();
         if (shown > 0) menu::draw(shown, g_open);
+        if (notice > 0) menu::draw_update_notice(g_outdated, notice, true);
         render_overlay(sc);
     }
     return oPresent(sc, sync, flags);
@@ -435,12 +444,15 @@ static void main_thread() {
     HMODULE gamedll = nullptr;
     while (!(gamedll = GetModuleHandleA("gamedll_x64_rwdi.dll"))) Sleep(200);
     if (newer_version(latest, VERSION)) {
-        g_outdated = latest;
-        logf("update: FaTrainer %s is out, this version stays off until you update with the installer", latest.c_str());
         config::load(config::default_path());
-        Sleep(4000);
-        hook_d3d();
-        return;
+        g_outdated = latest;
+        if (!config::cfg.allow_older) {
+            logf("update: FaTrainer %s is out, this version stays off until you update with the installer", latest.c_str());
+            Sleep(4000);
+            hook_d3d();
+            return;
+        }
+        logf("update: FaTrainer %s is out, this version keeps running because Use older versions is on", latest.c_str());
     }
     if (game::resolve_classes((uintptr_t)gamedll))
         logf("classes: money +%llx, inventory +%llx, item manager +%llx", (unsigned long long)(game::g.vt_money - game::g.base),

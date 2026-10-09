@@ -86,6 +86,18 @@ int main(int argc, char** argv) {
         CHECK(logic::hyprland_focused_monitor("garbage").w == 0);
         CHECK(newer_version("1.1", INSTALLER_VERSION) && !newer_version(INSTALLER_VERSION, INSTALLER_VERSION));
     }
+    {
+        std::string json = "[{\"tag_name\": \"installer\", \"assets\": [{\"browser_download_url\": \"https://x/installer-linux.txt\"}]},"
+                           "{\"tag_name\": \"v2.2-b1\", \"assets\": [{\"browser_download_url\": \"https://x/v2.2-b1/xinput1_3.dll\"}, {\"browser_download_url\": \"https://x/v2.2-b1/version.txt\"}]},"
+                           "{\"tag_name\": \"v1.4\", \"assets\": [{\"browser_download_url\": \"https://x/v1.4/xinput1_3.dll\"}]},"
+                           "{\"tag_name\": \"v2.1\", \"assets\": [{\"browser_download_url\": \"https://x/v2.1/version.txt\"}, {\"browser_download_url\": \"https://x/v2.1/xinput1_3.dll\"}]}]";
+        auto releases = logic::installable_releases(json);
+        CHECK(releases.size() == 2 && releases[0].tag == "v2.2-b1" && releases[0].version == "2.2 b1" && releases[1].version == "2.1");
+        std::string ini = "accent=1,1,1\r\nallow_older=0\ncheat=god\n";
+        CHECK(logic::ini_value(ini, "allow_older") == "0" && logic::ini_value(ini, "missing").empty());
+        std::string changed = logic::with_ini_value(ini, "allow_older", "1");
+        CHECK(changed == "accent=1,1,1\nallow_older=1\ncheat=god\n" && logic::with_ini_value("", "allow_older", "1") == "allow_older=1\n");
+    }
     auto log = logic::parse_changelog("# Changelog\n\n## 2.0\n\n- One\n  more\n- Two\n\n## 1.9\n\n- Three\n");
     CHECK(log.size() == 2 && log[0].version == "2.0" && log[0].lines.size() == 2 && log[0].lines[0] == "One more" && log[1].lines[0] == "Three");
     HMODULE m = LoadLibraryExA(argv[1], nullptr, DONT_RESOLVE_DLL_REFERENCES);
