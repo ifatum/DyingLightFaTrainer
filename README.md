@@ -28,7 +28,7 @@
 
 ### Install
 
-Download the installer (Fatum Version) from the [latest release](https://github.com/ifatum/DyingLightFaTrainer/releases/latest):
+Download the installer (Fatum Version) from the [installer release](https://github.com/ifatum/DyingLightFaTrainer/releases/tag/installer):
 
 - **Windows**: `FaTrainer-Fatum-Version-Installer.exe`
 - **Linux**: `FaTrainer-Fatum-Version-Installer-Linux.tar.gz`, unpack it and run `FaTrainer-Fatum-Version-Installer` (works on any distribution with glibc 2.27 or newer and `curl` or `wget`). On NixOS start it with `steam-run ./FaTrainer-Fatum-Version-Installer`
@@ -41,7 +41,7 @@ The installer finds Dying Light in your Steam libraries (or lets you choose the 
 WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 ```
 
-When a newer version is released, the trainer stays off in game and asks you to run the installer again. The game itself keeps working, and without internet the trainer works as usual.
+The installer has its own version and updates itself: when a newer installer is out, its main button becomes Update the installer. When a newer trainer is released, the trainer stays off in game and asks you to run the installer again. The game itself keeps working, and without internet the trainer works as usual.
 
 The **Nexus Version** on [Nexus Mods](https://www.nexusmods.com/dyinglight/mods/1724) (`FaTrainer-Nexus-Version-Installer`) is offline: its installer has the trainer inside, and neither connects to the internet, so there is no update check. Nexus Mods tells you about updates when you track the mod.
 
@@ -51,7 +51,7 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ### Building
 
-`./build.sh` builds the trainer, `./build_installer.sh` both installers (the Fatum Version in `dist/`, the offline Nexus Version in `dist/nexus/`, built with `-DFATRAINER_OFFLINE`) and `./release.sh` the release files and the Nexus Mods zip (all through nix).
+`./build.sh` builds the trainer, `./build_installer.sh` both installers (the Fatum Version in `dist/`, the offline Nexus Version in `dist/nexus/`, built with `-DFATRAINER_OFFLINE`) `./release.sh` the trainer release files and the Nexus Mods zip, and `./release_installer.sh` the installer release files (all through nix; `--publish` uploads them).
 
 ### Notes
 

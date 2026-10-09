@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 IM=third_party/imgui
 GLFW=third_party/glfw
-VER=$(sed -n 's/^#define FATRAINER_VERSION "\(.*\)"/\1/p' src/version.h)
+VER=$(sed -n 's/^#define INSTALLER_VERSION "\(.*\)"/\1/p' src/version.h)
 mkdir -p dist/nexus
 ./build.sh --nexus
 RC=$(mktemp -d)

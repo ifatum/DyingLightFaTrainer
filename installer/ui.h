@@ -104,7 +104,8 @@ struct Model {
     Fetch fetch = Fetch::loading;
     std::string fetch_error;
     fs::path private_dir;
-    ReleaseInfo latest;
+    ReleaseInfo latest, installer_update;
+    bool restart = false;
     std::vector<logic::ChangelogEntry> changelog;
     fs::path game;
     std::string installed;
@@ -144,7 +145,14 @@ inline void fetch_release() {
         if (ok && (info.version.empty() || info.sha256.size() != 64)) ok = false, error = "the release has no valid version.txt";
         bool have_changes = ok && (private_dir.empty() ? platform::net::get_text(std::string(RELEASE_DOWNLOADS) + "CHANGELOG.md", changes, ignored)
                                                        : !(changes = platform::read_file(private_dir / "CHANGELOG.md")).empty());
+        std::string installer_text;
+        std::error_code ec;
+        if (!private_dir.empty() && fs::exists(private_dir / platform::INSTALLER_INFO, ec)) installer_text = platform::read_file(private_dir / platform::INSTALLER_INFO);
+        else platform::net::get_text(std::string(INSTALLER_DOWNLOADS) + platform::INSTALLER_INFO, installer_text, ignored);
+        ReleaseInfo installer = parse_release_info(installer_text);
+        bool installer_newer = newer_version(installer.version, INSTALLER_VERSION) && installer.sha256.size() == 64;
         std::lock_guard<std::mutex> l(M.mx);
+        M.installer_update = installer_newer ? installer : ReleaseInfo{};
         M.private_dir = private_dir;
         M.fetch = ok ? Fetch::ready : Fetch::failed;
         M.fetch_error = error;
@@ -235,6 +243,41 @@ inline void start_install() {
     }).detach();
 }
 
+inline void start_self_update() {
+#ifndef FATRAINER_OFFLINE
+    fs::path private_dir;
+    ReleaseInfo update;
+    {
+        std::lock_guard<std::mutex> l(M.mx);
+        if (M.job == Job::working || M.installer_update.version.empty()) return;
+        private_dir = M.private_dir, update = M.installer_update;
+        M.job = Job::working, M.step = "Downloading the installer", M.progress = 0, M.message.clear();
+    }
+    std::thread([private_dir, update] {
+        std::error_code ec;
+        std::string data, error;
+        fs::path local = private_dir.empty() ? fs::path() : private_dir / platform::INSTALLER_ASSET;
+        bool ok = !local.empty() && fs::exists(local, ec) ? !(data = platform::read_file(local)).empty()
+                                                          : platform::net::get(std::string(INSTALLER_DOWNLOADS) + platform::INSTALLER_ASSET, [&](const char* d, size_t n, unsigned long long total) {
+                                                                data.append(d, n);
+                                                                unsigned long long expected = update.size ? update.size : total;
+                                                                std::lock_guard<std::mutex> l(M.mx);
+                                                                M.progress = expected ? 0.9f * std::min(1.0f, (float)data.size() / expected) : 0.5f;
+                                                                return data.size() <= (128ull << 20);
+                                                            }, error);
+        if (!ok) return finish(Job::failed, "Could not download the new installer: " + error + ". This one keeps working.");
+        if ((update.size && data.size() != update.size) || logic::sha256_hex(data) != update.sha256)
+            return finish(Job::failed, "The new installer did not match its checksum, so nothing was changed. Try again in a minute.");
+        if (!platform::replace_self(data, error)) return finish(Job::failed, "Could not update the installer: " + error + ". Download it again from the website.");
+        {
+            std::lock_guard<std::mutex> l(M.mx);
+            M.restart = true;
+        }
+        finish(Job::done, "Updated to FaTrainer Installer " + update.version + ". Restarting.");
+    }).detach();
+#endif
+}
+
 inline void uninstall() {
     std::lock_guard<std::mutex> l(M.mx);
     std::error_code ec;
@@ -304,6 +347,7 @@ inline void init(float dpi_scale) {
     s.Colors[ImGuiCol_ScrollbarGrab] = ImGui::ColorConvertU32ToFloat4(LINE);
     s.Colors[ImGuiCol_ScrollbarGrabHovered] = s.Colors[ImGuiCol_ScrollbarGrabActive] = ImGui::ColorConvertU32ToFloat4(MUTED);
     s.Colors[ImGuiCol_NavHighlight] = ImGui::ColorConvertU32ToFloat4(ACCENT);
+    platform::self_path();
     M.changelog = logic::parse_changelog(std::string((const char*)changelog_md, (size_t)(changelog_md_end - changelog_md)));
     M.game = platform::find_game();
     refresh_installed();
@@ -501,6 +545,7 @@ inline void detail(float width) {
         view.fetch = M.fetch, view.fetch_error = M.fetch_error, view.latest = M.latest, view.game = M.game, view.installed = M.installed;
         view.job = M.job, view.step = M.step, view.progress = M.progress, view.finished_at = M.finished_at, view.message = M.message;
         view.message_bad = M.message_bad, view.picking = M.picking, view.picker_missing = M.picker_missing;
+        view.installer_update = M.installer_update;
     }
     bool found = platform::is_game_dir(view.game);
     bool ready = view.fetch == Fetch::ready;
@@ -613,6 +658,7 @@ inline void detail(float width) {
         bool celebrate = view.job == Job::done && ImGui::GetTime() - view.finished_at < 2.6;
         if (view.job == Job::working) text = view.step + "  " + std::to_string((int)(view.progress * 100)) + "%", progress = view.progress;
         else if (celebrate) text = "Installed", progress = 1;
+        else if (!view.installer_update.version.empty()) text = "Update the installer to " + view.installer_update.version, enabled = true;
         else if (view.fetch == Fetch::loading) text = "Checking for the latest version";
         else if (view.fetch == Fetch::failed) text = "Cannot reach GitHub";
         else if (!found) text = "Choose the game folder first";
@@ -622,7 +668,8 @@ inline void detail(float width) {
         else text = "Install FaTrainer " + view.latest.version, enabled = true;
         ImVec2 at = ImGui::GetCursorScreenPos();
         float shown_progress = progress >= 0 ? follow(anim("progress"), progress, 10) : (anim("progress") = 0);
-        if (button("install", text, {S(300), S(52)}, Kind::primary, enabled, progress >= 0 ? shown_progress : -1)) start_install();
+        if (button("install", text, {S(300), S(52)}, Kind::primary, enabled, progress >= 0 ? shown_progress : -1))
+            view.installer_update.version.empty() ? start_install() : start_self_update();
         if (celebrate) check_mark(dl, {at.x + S(300) / 2 - text_w(F.strong, "Installed") / 2 - S(22), at.y + S(26)}, S(14), (float)(ImGui::GetTime() - view.finished_at) * 2.2f, C(ACCENT_INK));
         if (!view.installed.empty() && view.job != Job::working) {
             ImGui::SameLine(0, S(18));
@@ -630,6 +677,8 @@ inline void detail(float width) {
         }
         std::string message = view.message;
         if (message.empty() && view.fetch == Fetch::failed) message = "Could not check for the latest release: " + view.fetch_error + ".", view.message_bad = true;
+        if (message.empty() && !view.installer_update.version.empty())
+            message = "FaTrainer Installer " + view.installer_update.version + " is out (this is " INSTALLER_VERSION "). Update it first, then install the trainer. Your game is not touched.";
         if (!message.empty()) {
             float shown = ease_out((float)(ImGui::GetTime() - view.finished_at) / 0.5f);
             if (view.finished_at < 0) shown = 1;
@@ -706,6 +755,10 @@ inline void changelog(float width) {
 inline void frame() {
     ImGuiIO& io = ImGui::GetIO();
     float t = (float)ImGui::GetTime();
+    {
+        std::lock_guard<std::mutex> l(M.mx);
+        if (M.restart && ImGui::GetTime() - M.finished_at > 1.2) M.restart = false, platform::restart_self();
+    }
     ImVec2 size = io.DisplaySize;
     ImGui::GetBackgroundDrawList()->AddRectFilled({0, 0}, size, GROUND);
 
@@ -733,7 +786,7 @@ inline void frame() {
     if (shown > 0) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, shown);
         float brand_w = text_w(F.brand, WORD);
-        const char* SUBTITLE = "Installer  \xc2\xb7  " FATRAINER_EDITION;
+        const char* SUBTITLE = "Installer " INSTALLER_VERSION "  \xc2\xb7  " FATRAINER_EDITION;
         dl->AddText(F.small, F.small->FontSize, {MARGIN + brand_w + S(12), S(28) + F.brand->FontSize - F.small->FontSize - S(2)}, C(MUTED), SUBTITLE);
         tabs({MARGIN + brand_w + S(12) + text_w(F.small, SUBTITLE) + S(44), S(32)});
         status_pill({std::min(size.x - MARGIN, controls_left - S(16)), S(24)});

@@ -49,6 +49,43 @@ inline fs::path config_dir() {
     const wchar_t* data = _wgetenv(L"APPDATA");
     return data ? fs::path(data) / "FaTrainer" : fs::path();
 }
+
+const char* INSTALLER_ASSET = "FaTrainer-Fatum-Version-Installer.exe";
+const char* INSTALLER_INFO = "installer-windows.txt";
+
+inline fs::path self_path() {
+    std::wstring path(32768, L'\0');
+    path.resize(GetModuleFileNameW(nullptr, &path[0], (DWORD)path.size()));
+    return path;
+}
+
+inline fs::path old_self() { return self_path().wstring() + L".old"; }
+inline void remove_old_self() {
+    std::error_code ec;
+    fs::remove(old_self(), ec);
+}
+
+inline bool replace_self(const std::string& data, std::string& error) {
+    std::error_code ec;
+    fs::path self = self_path(), fresh = self.wstring() + L".new";
+    std::ofstream(fresh, std::ios::binary | std::ios::trunc).write(data.data(), (std::streamsize)data.size());
+    if (fs::file_size(fresh, ec) != data.size()) return fs::remove(fresh, ec), error = "could not write next to the installer", false;
+    fs::remove(old_self(), ec);
+    fs::rename(self, old_self(), ec);
+    if (ec) return fs::remove(fresh, ec), error = "could not move the running installer aside", false;
+    fs::rename(fresh, self, ec);
+    if (ec) return fs::rename(old_self(), self, ec), error = "could not put the new installer in place", false;
+    return true;
+}
+
+inline void restart_self() {
+    STARTUPINFOW startup{sizeof startup};
+    PROCESS_INFORMATION process{};
+    std::wstring path = self_path().wstring();
+    if (CreateProcessW(path.c_str(), nullptr, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process))
+        CloseHandle(process.hThread), CloseHandle(process.hProcess);
+    PostMessageW(window, WM_CLOSE, 0, 0);
+}
 #ifndef FATRAINER_OFFLINE
 namespace net = ::net;
 #endif
@@ -146,6 +183,36 @@ inline fs::path xdg(const char* variable, const char* fallback) {
 }
 
 inline fs::path config_dir() { return xdg("XDG_CONFIG_HOME", ".config") / "fatrainer"; }
+
+const char* INSTALLER_ASSET = "FaTrainer-Fatum-Version-Installer";
+const char* INSTALLER_INFO = "installer-linux.txt";
+
+inline fs::path self_path() {
+    static const fs::path at_start = [] {
+        std::error_code ec;
+        return fs::read_symlink("/proc/self/exe", ec);
+    }();
+    return at_start;
+}
+
+inline void remove_old_self() {}
+
+inline bool replace_self(const std::string& data, std::string& error) {
+    std::error_code ec;
+    fs::path self = self_path(), fresh = self.string() + ".new";
+    if (self.empty()) return error = "could not find where the installer is", false;
+    std::ofstream(fresh, std::ios::binary | std::ios::trunc).write(data.data(), (std::streamsize)data.size());
+    if (fs::file_size(fresh, ec) != data.size()) return fs::remove(fresh, ec), error = "could not write next to the installer", false;
+    fs::permissions(fresh, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec | fs::perms::others_read | fs::perms::others_exec, ec);
+    fs::rename(fresh, self, ec);
+    if (ec) return fs::remove(fresh, ec), error = "could not replace the installer file", false;
+    return true;
+}
+
+inline void restart_self() {
+    std::string path = self_path().string();
+    execl(path.c_str(), path.c_str(), (char*)nullptr);
+}
 inline fs::path shortcut_file() { return xdg("XDG_DATA_HOME", ".local/share") / "applications" / "fatrainer-installer.desktop"; }
 inline fs::path shortcut_icon() { return xdg("XDG_DATA_HOME", ".local/share") / "icons" / "hicolor" / "256x256" / "apps" / "fatrainer-installer.png"; }
 
@@ -166,8 +233,8 @@ inline std::string desktop_quoted(const std::string& path) {
 
 inline bool add_shortcut(const std::string& icon_png, std::string& error) {
     std::error_code ec;
-    fs::path exe = fs::read_symlink("/proc/self/exe", ec);
-    if (ec) return error = "could not find where the installer is", false;
+    fs::path exe = self_path();
+    if (exe.empty()) return error = "could not find where the installer is", false;
     fs::create_directories(shortcut_file().parent_path(), ec);
     fs::create_directories(shortcut_icon().parent_path(), ec);
     std::ofstream(shortcut_icon(), std::ios::binary | std::ios::trunc).write(icon_png.data(), (std::streamsize)icon_png.size());

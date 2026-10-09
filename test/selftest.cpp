@@ -74,6 +74,14 @@ int main(int argc, char** argv) {
     CHECK(libraries.size() == 2 && libraries[0] == "D:\\Games\\Steam" && libraries[1] == "/home/a b/Steam");
     CHECK(logic::trainer_version_in(std::string("xx\0FaTrainer-version:2.0\0yy", 28)) == "2.0");
     CHECK(logic::trainer_version_in("..FaTrainer | Dying Light..") == logic::LEGACY_VERSION && logic::trainer_version_in("MZ other mod").empty());
+    {
+        const char* hypr = "Monitor DP-5 (ID 1):\n\t1920x1080@179.96400 at 0x500\n\treserved: 0 0 56 0\n\tscale: 1\n\tfocused: no\n"
+                           "Monitor DP-6 (ID 0):\n\t2560x1440@180.00000 at 1920x0\n\treserved: 0 40 0 0\n\tscale: 1.25\n\tfocused: yes\n";
+        logic::Area area = logic::hyprland_focused_monitor(hypr);
+        CHECK(area.x == 1920 && area.y == 40 && area.w == 2048 && area.h == 1112);
+        CHECK(logic::hyprland_focused_monitor("garbage").w == 0);
+        CHECK(newer_version("1.1", INSTALLER_VERSION) && !newer_version(INSTALLER_VERSION, INSTALLER_VERSION));
+    }
     auto log = logic::parse_changelog("# Changelog\n\n## 2.0\n\n- One\n  more\n- Two\n\n## 1.9\n\n- Three\n");
     CHECK(log.size() == 2 && log[0].version == "2.0" && log[0].lines.size() == 2 && log[0].lines[0] == "One more" && log[1].lines[0] == "Three");
     HMODULE m = LoadLibraryExA(argv[1], nullptr, DONT_RESOLVE_DLL_REFERENCES);

@@ -1,5 +1,6 @@
 #pragma once
 #include <cctype>
+#include <cstdio>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -93,6 +94,33 @@ inline std::vector<ChangelogEntry> parse_changelog(const std::string& md) {
         else if (!line.empty() && !out.empty() && !out.back().lines.empty() && line[0] == ' ') out.back().lines.back() += " " + line.substr(line.find_first_not_of(' '));
     }
     return out;
+}
+
+
+struct Area { int x = 0, y = 0, w = 0, h = 0; };
+
+inline Area hyprland_focused_monitor(const std::string& text) {
+    Area found, current;
+    int left = 0, top = 0, right = 0, bottom = 0, width = 0, height = 0;
+    float scale = 1;
+    size_t at = 0;
+    while (at < text.size()) {
+        size_t end = text.find('\n', at);
+        std::string line = text.substr(at, end == std::string::npos ? std::string::npos : end - at);
+        at = end == std::string::npos ? text.size() : end + 1;
+        size_t first = line.find_first_not_of(" \t");
+        if (first == std::string::npos) continue;
+        line = line.substr(first);
+        if (line.rfind("Monitor ", 0) == 0) left = top = right = bottom = width = height = 0, scale = 1, current = {};
+        else if (sscanf(line.c_str(), "%dx%d@%*f at %dx%d", &width, &height, &current.x, &current.y) == 4) {}
+        else if (sscanf(line.c_str(), "reserved: %d %d %d %d", &left, &top, &right, &bottom) == 4) {}
+        else if (sscanf(line.c_str(), "scale: %f", &scale) == 1) {}
+        else if (line == "focused: yes" && width > 0 && scale > 0) {
+            found.x = current.x + left, found.y = current.y + top;
+            found.w = (int)(width / scale) - left - right, found.h = (int)(height / scale) - top - bottom;
+        }
+    }
+    return found;
 }
 
 }

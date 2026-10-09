@@ -45,14 +45,14 @@
         <div>
           <p class="lead">Run the installer, start the game and press <kbd>Insert</kbd>. God mode, items, a weapon editor, skill levels, Harran Prison timers and the reach of every Night Hunter attack, all in a menu over the game.</p>
           <div class="actions">
-            <a class="button" href="https://github.com/ifatum/DyingLightFaTrainer/releases/latest/download/FaTrainer-Fatum-Version-Installer.exe">Download for Windows <span>2.1</span></a>
-            <a class="link-arrow" href="https://github.com/ifatum/DyingLightFaTrainer/releases/latest/download/FaTrainer-Fatum-Version-Installer-Linux.tar.gz">Linux</a>
+            <a class="button" href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer-Fatum-Version-Installer.exe">Download for Windows <span>2.1</span></a>
+            <a class="link-arrow" href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer-Fatum-Version-Installer-Linux.tar.gz">Linux</a>
             <a class="link-arrow" href="https://github.com/ifatum/DyingLightFaTrainer">Source code</a>
           </div>
         </div>
         <div class="hero-side">
           <dl>
-            <dt>Installer</dt><dd>Finds the game, installs, updates and removes the trainer</dd>
+            <dt>Installer</dt><dd>Finds the game, installs, updates and removes the trainer, and keeps itself up to date</dd>
             <dt>Opens with</dt><dd><kbd>Insert</kbd> or <kbd>F8</kbd>, or a key you choose</dd>
             <dt>Game</dt><dd>Steam version, with The Following and Harran Prison</dd>
             <dt>License</dt><dd>Free and open source (MIT)</dd>
@@ -193,13 +193,13 @@
     <div class="wrap">
       <div class="head">
         <h2 id="install-title" class="rise"><span class="line-mask"><span>One installer,</span></span><span class="line-mask" style="--i: 1"><span>one file in the game.</span></span></h2>
-        <p class="fade">The installer downloads the trainer from the GitHub release, checks it against the release checksum and puts <code>xinput1_3.dll</code> next to the game. Run it again to update or remove it.</p>
+        <p class="fade">The installer downloads the trainer from the GitHub release, checks it against the release checksum and puts <code>xinput1_3.dll</code> next to the game. Run it again to update or remove it. It also reads a small version file from GitHub to see whether a newer installer is out, and offers to update itself.</p>
       </div>
       <div class="steps">
         <div class="fade">
           <h3>Windows</h3>
           <ol>
-            <li><p>Download <a href="https://github.com/ifatum/DyingLightFaTrainer/releases/latest/download/FaTrainer-Fatum-Version-Installer.exe"><code>FaTrainer-Fatum-Version-Installer.exe</code></a> and open it.</p></li>
+            <li><p>Download <a href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer-Fatum-Version-Installer.exe"><code>FaTrainer-Fatum-Version-Installer.exe</code></a> and open it.</p></li>
             <li><p>It finds Dying Light in your Steam libraries. If it does not, choose the folder with <code>DyingLightGame.exe</code>.</p></li>
             <li><p>Press Install, start the game and press <kbd>Insert</kbd> or <kbd>F8</kbd>.</p></li>
           </ol>
@@ -208,7 +208,7 @@
           <h3>Linux with Proton</h3>
           <ol>
             <li><p>In Steam, open Dying Light's Properties, then Compatibility, and force a Proton version. The trainer works in the Windows version of the game, not the native Linux one.</p></li>
-            <li><p>Download <a href="https://github.com/ifatum/DyingLightFaTrainer/releases/latest/download/FaTrainer-Fatum-Version-Installer-Linux.tar.gz">the Linux installer</a>, unpack it and run <code>FaTrainer-Fatum-Version-Installer</code>. It needs <code>curl</code> or <code>wget</code>, which almost every distribution has. On NixOS, start it with <code>steam-run ./FaTrainer-Fatum-Version-Installer</code>.</p></li>
+            <li><p>Download <a href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer-Fatum-Version-Installer-Linux.tar.gz">the Linux installer</a>, unpack it and run <code>FaTrainer-Fatum-Version-Installer</code>. It needs <code>curl</code> or <code>wget</code>, which almost every distribution has. On NixOS, start it with <code>steam-run ./FaTrainer-Fatum-Version-Installer</code>.</p></li>
             <li><p>Press Install. The installer finds the game in your Steam libraries, Flatpak and Snap included.</p></li>
             <li>
               <p>In the game's Properties, paste this into Launch options:</p>

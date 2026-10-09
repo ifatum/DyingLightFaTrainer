@@ -2,9 +2,7 @@
 
 ## 2.2
 
-- New: the Windows installer has its own title bar in the FaTrainer style, with minimize, maximize and close. You can still drag it, snap it and resize it from the edges.
-- New: on Linux the installer opens as a floating window, also in tiling window managers like Hyprland, Sway and i3.
-- New: on Linux the installer can add itself to your app menu, so you can search for FaTrainer Installer.
+- The FaTrainer Installer now has its own version (Installer 1.0) and keeps itself up to date.
 
 ## 2.1
 

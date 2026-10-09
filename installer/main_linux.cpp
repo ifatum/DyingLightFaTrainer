@@ -29,6 +29,44 @@ static void ask_to_float(GLFWwindow* window) {
     change(display, glfwGetX11Window(window), type, ATOM_TYPE, FORMAT_32, REPLACE, (const unsigned char*)&dialog, 1);
 }
 
+static logic::Area focused_area() {
+    logic::Area area;
+    if (getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
+        std::string text;
+        platform::run({"hyprctl", "monitors"}, [&](const char* d, size_t n) { text.append(d, n); return true; });
+        area = logic::hyprland_focused_monitor(text);
+        if (area.w > 0) return area;
+    }
+    using DefaultRoot = unsigned long (*)(void*);
+    using QueryPointer = int (*)(void*, unsigned long, unsigned long*, unsigned long*, int*, int*, int*, int*, unsigned int*);
+    void* xlib = dlopen("libX11.so.6", RTLD_LAZY | RTLD_NOLOAD);
+    auto root_of = xlib ? (DefaultRoot)dlsym(xlib, "XDefaultRootWindow") : nullptr;
+    auto query = xlib ? (QueryPointer)dlsym(xlib, "XQueryPointer") : nullptr;
+    void* display = glfwGetX11Display();
+    unsigned long root = 0, child = 0;
+    int px = 0, py = 0, wx = 0, wy = 0;
+    unsigned int mask = 0;
+    bool pointer = root_of && query && display && query(display, root_of(display), &root, &child, &px, &py, &wx, &wy, &mask);
+    int count = 0;
+    GLFWmonitor** monitors = glfwGetMonitors(&count);
+    for (int i = 0; i < count; i++) {
+        logic::Area a;
+        glfwGetMonitorWorkarea(monitors[i], &a.x, &a.y, &a.w, &a.h);
+        bool inside = pointer && px >= a.x && px < a.x + a.w && py >= a.y && py < a.y + a.h;
+        if (inside || (i == 0 && area.w == 0)) area = a;
+        if (inside) break;
+    }
+    return area;
+}
+
+static void center(GLFWwindow* window) {
+    logic::Area area = focused_area();
+    if (area.w <= 0) return;
+    int w = 0, h = 0;
+    glfwGetWindowSize(window, &w, &h);
+    glfwSetWindowPos(window, area.x + std::max(0, (area.w - w) / 2), area.y + std::max(0, (area.h - h) / 2));
+}
+
 static void nixos_hint() {
     if (platform::on_nixos()) fprintf(stderr, "On NixOS, start it through Steam's runtime instead: steam-run %s\n", program);
 }
@@ -65,6 +103,7 @@ int main(int, char** argv) {
     }
     glfwSetWindowSizeLimits(window, 900, 620, GLFW_DONT_CARE, GLFW_DONT_CARE);
     ask_to_float(window);
+    center(window);
     glfwShowWindow(window);
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);

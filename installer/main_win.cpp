@@ -110,8 +110,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.lpszClassName = L"FaTrainerInstaller";
     RegisterClassExW(&wc);
-    POINT origin{0, 0};
-    HMONITOR monitor = MonitorFromPoint(origin, MONITOR_DEFAULTTOPRIMARY);
+    platform::remove_old_self();
+    POINT cursor{0, 0};
+    GetCursorPos(&cursor);
+    HWND focused = GetForegroundWindow();
+    HMONITOR monitor = focused ? MonitorFromWindow(focused, MONITOR_DEFAULTTONULL) : nullptr;
+    if (!monitor) monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTOPRIMARY);
     MONITORINFO info{sizeof info};
     GetMonitorInfoW(monitor, &info);
     UINT dpi = GetDpiForSystem();
