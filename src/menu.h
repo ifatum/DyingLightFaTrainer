@@ -818,6 +818,7 @@ inline void zombie_page() {
     begin_card("abilities", "ABILITIES");
     cheat_switch("z_cooldowns");
     cheat_switch("z_spits");
+    cheat_switch("z_pound_hits");
     cheat_switch("z_camo");
     end_card();
     spit_keys_card();
@@ -1367,7 +1368,7 @@ inline const Page PAGES[] = {
      {"god", "stamina", "damage_taken", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
-    {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_camo"}},
+    {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo"}},
     {"pvp", "PvP", "Presets and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
      {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_kicks", "h_melee"}},
     {"visuals", "Visuals", "Player ESP, UV light and Night Hunter glow colors", visuals_page, always, "MODES", {}},

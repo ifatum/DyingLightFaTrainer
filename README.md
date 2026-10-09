@@ -18,7 +18,7 @@
 - **Combat**: one hit kill, infinite ammo, no reload, infinite consumables, unbreakable weapons
 - **Skills**: XP multiplier for every skill tree (the game shows the boosted XP), draggable XP bars, +1 point through real XP, -10, -1, +10 and Max for any skill tree, extra skill points without changing the level
 - **Prison**: pause the Harran Prison timers, teleport to every section, save and load your position
-- **Night Hunter**: hunter god mode, infinite energy, take less damage, less UV damage, no ability cooldowns, infinite spits, spit keys, long camouflage
+- **Night Hunter**: hunter god mode, infinite energy, take less damage, less UV damage, sure-hit ground pound, no ability cooldowns, infinite spits, spit keys, long camouflage
 - **PvP**: four ready-made presets (Survivor Legit, Survivor Rage, Night Hunter Legit, Night Hunter Rage) and one reach slider per attack (pounce, ground pound, tackle, claws, spit hit radius, death from above, dropkick, kicks, melee). At Max the pounce, dropkick and death from above also hit targets that are not in front of you. As a survivor, Dodge spit steps you aside from spit that would hit you, with a human reaction time, and One hit kill on the Night Hunter drops him to 1 health
 - **Visuals**: player ESP for Be The Zombie and co-op, custom UV light color and glow, custom Night Hunter glow color
 - **Cash / Backpack / Stash / Materials**: set your money and any stack count

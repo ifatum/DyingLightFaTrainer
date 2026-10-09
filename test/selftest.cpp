@@ -197,6 +197,8 @@ int main(int argc, char** argv) {
     uintptr_t lockpick_code = cheats::lockpick_patch;
     CHECK(cheats::profile_root > (uintptr_t)m && cheats::profile_root < (uintptr_t)m + 0x4000000);
     CHECK(cheats::forced_damage_jump == (uintptr_t)m + 0xbae6c3);
+    CHECK(cheats::pound_exposure_check == (uintptr_t)m + 0xd654e7);
+    uintptr_t pound_code = cheats::pound_exposure_check;
     {
         static uint8_t fake_jump[6] = {0x0F, 0x84, 1, 2, 3, 4};
         uintptr_t real = cheats::forced_damage_jump;
@@ -536,6 +538,16 @@ int main(int argc, char** argv) {
         cheats::find("lockpick")->on = false;
         cheats::tick();
         CHECK(!memcmp(fake_check, cheats::SPOT_DISTANCE_CLAMP, 4) && !cheats::lockpick_patched());
+        static uint8_t fake_pound[4];
+        memcpy(fake_pound, (const void*)pound_code, 4);
+        CHECK(!memcmp(fake_pound, cheats::POUND_EXPOSURE_TEST, 4));
+        cheats::pound_exposure_check = (uintptr_t)fake_pound;
+        cheats::find("z_pound_hits")->on = true;
+        cheats::tick();
+        CHECK(cheats::pound_always_hits());
+        cheats::find("z_pound_hits")->on = false;
+        cheats::tick();
+        CHECK(!memcmp(fake_pound, cheats::POUND_EXPOSURE_TEST, 4) && !cheats::pound_always_hits());
     }
 
     {

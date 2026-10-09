@@ -10,6 +10,8 @@
 - New: Take less damage, as a survivor and as the Night Hunter.
 - New: Less UV damage for the Night Hunter.
 - New: One hit kill on the Night Hunter, on the PvP page.
+- New: Sure-hit ground pound for the Night Hunter. The game only counts a survivor as hit when its blast trace reaches his body, so a step or uneven ground could make the ground pound miss even right next to him. Both Night Hunter presets turn it on.
+- The Tackle slider now also widens how far off your aim the survivor may be (normally 45 degrees), and the Ground pound slider also raises how far above or below you a survivor can still be hit (normally 2 m).
 - Fixed: the Night Hunter rank showed a number like 44890 instead of its name. Ranks now show the title and change one title at a time, and the side you are not playing is grayed out.
 - The Night Hunter page moved to Cheats, and the sidebar no longer shows a section twice after you reorder pages.
 

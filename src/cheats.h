@@ -69,6 +69,8 @@ inline Cheat CHEATS[] = {
      {{"TDCooldown", 0}, {"CamouflageCooldown", 0}, {"ZombieGroundPoundCooldown", 0}, {"ChargeLightCooldown", 0}},
      {}},
     {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}},
+    {"z_pound_hits", "Sure-hit ground pound", "Hits every survivor in range, even when a step or uneven ground would make it miss.",
+     {}, {}},
     {"prison_pause", "Pause prison timers", "The run timer and the reward room countdown stand still. Works when you are the host.", {}, {}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
@@ -109,8 +111,10 @@ inline Tweak TWEAKS[] = {
      G_ZOMBIE, {"ZombiePounceHighRageExplosionRange"},
      {{"f_btz_zombie_grab_range", 40}, {"f_btz_zombie_grab_range_velocity_factor", 1}, {"f_btz_zombie_grab_angle_max", 180},
       {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
-    {"z_pound", "Ground pound", "Reach of the ground pound and the aerial ground pound.", G_ZOMBIE, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}},
-    {"z_tackle", "Tackle", "How far away the charge tackle still connects.", G_ZOMBIE, {"ZombieChargeAttackRange"}},
+    {"z_pound", "Ground pound", "Reach of the ground pound and the aerial ground pound, and how far above or below you a survivor can stand and still get hit (normally 2 m).",
+     G_ZOMBIE, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}, {{"f_btz_zombie_groundpound_damage_height", 8}}},
+    {"z_tackle", "Tackle", "How far away the charge tackle still connects (normally 5 m) and how far off your aim the survivor may be (normally 45 degrees, shared with the pounce).",
+     G_ZOMBIE, {"ZombieChargeAttackRange"}, {{"f_btz_zombie_grab_angle_max", 120}, {"f_btz_pvp_grab_sim_pos_angle_max_increase", 60}}},
     {"z_claws", "Claws", "Reach of your claw swipes.", G_ZOMBIE, {"RangeMeleeMul", "BestTargetMeleeRange"}},
     {"z_spit", "Spit hit radius", "How far from a survivor a spit can land and still hit him. Normal is 5 m, x3 is 15 m. Toxic spit puddles grow too.",
      G_ZOMBIE, {}, {}, 6.0f},
@@ -150,7 +154,7 @@ inline uintptr_t player = 0;
 inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
-inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, profile_root = 0;
+inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
 inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0, xp_award_site = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 using VarVec3Fn = float* (*)(uintptr_t, float*, uintptr_t, uintptr_t, uintptr_t);
@@ -264,6 +268,9 @@ inline void locate(uintptr_t base) {
     if (auto hits = game::find_code(base, "4C 8B 35 ? ? ? ? 4D 85 F6 0F 84 ? ? ? ? 4D 8B B6 40 05 00 00 4D 85 F6 0F 84 ? ? ? ? F3 41 0F 10 86 68 2D 00 00");
         !hits.empty())
         profile_root = game::rip_target(hits[0], 3, 7);
+    const int POUND_EXPOSURE_AT = 12;
+    if (auto hits = game::find_code(base, "E8 ? ? ? ? 48 8B 0B 41 0F 2F C3 40 0F 97 C7 48 85 C9 74"); hits.size() == 1)
+        pound_exposure_check = hits[0] + POUND_EXPOSURE_AT;
     const int FORCED_DAMAGE_AT = 16;
     if (auto hits = game::find_code(base, "0F 2F B3 64 09 00 00 73 0D 80 BB 2E 07 00 00 00 0F 84"); !hits.empty())
         forced_damage_jump = hits[0] + FORCED_DAMAGE_AT;
@@ -549,6 +556,14 @@ inline void patch_lockpick(bool on) {
     if (lockpick_patch && lockpick_patched() != on) write_code(lockpick_patch, on ? SPOT_DISTANCE_ZERO : SPOT_DISTANCE_CLAMP, 4);
 }
 
+inline const uint8_t POUND_EXPOSURE_TEST[4] = {0x40, 0x0F, 0x97, 0xC7}, POUND_ALWAYS_HITS[4] = {0x40, 0xB7, 0x01, 0x90};
+
+inline bool pound_always_hits() { return pound_exposure_check && !memcmp((const void*)pound_exposure_check, POUND_ALWAYS_HITS, 4); }
+
+inline void patch_pound(bool on) {
+    if (pound_exposure_check && pound_always_hits() != on) write_code(pound_exposure_check, on ? POUND_ALWAYS_HITS : POUND_EXPOSURE_TEST, 4);
+}
+
 inline bool forced_damage_blocked() { return forced_damage_jump && rdv<uint8_t>(forced_damage_jump) == 0x90; }
 
 inline void block_forced_damage(bool on) {
@@ -738,13 +753,13 @@ inline const Preset PRESETS[] = {
      {{"speed", 2.0f}, {"jump", 2.0f}, {"h_dfa", 10}, {"h_dfa_pull", 10}, {"h_dfa_height", 10}, {"h_dropkick", 10}, {"h_kicks", 10}, {"h_melee", 10}},
      ESP_RAGE},
     {"hunter_legit", "Night Hunter", "Legit",
-     "Feels like a good hunter on a good day. Slightly longer pounce, tackle, claws and ground pound, a wider spit hit and a quiet ESP. Energy and cooldowns stay normal.",
-     {},
+     "Feels like a good hunter on a good day. Slightly longer pounce, tackle, claws and ground pound, a ground pound that does not miss, a wider spit hit and a quiet ESP. Energy and cooldowns stay normal.",
+     {"z_pound_hits"},
      {{"z_pounce", 3.0f}, {"z_tackle", 2.0f}, {"z_claws", 1.4f}, {"z_pound", 1.5f}, {"z_spit", 1.8f}},
      ESP_LEGIT},
     {"hunter_rage", "Night Hunter", "Rage",
      "Unkillable and everywhere. Hunter god mode, endless energy and spits, no cooldowns, long camouflage, and pounce, tackle, claws, ground pound and spit hits at Max.",
-     {"god", "z_energy", "z_cooldowns", "z_spits", "z_camo"},
+     {"god", "z_energy", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo"},
      {{"z_pounce", 10}, {"z_pound", 10}, {"z_tackle", 10}, {"z_claws", 10}, {"z_spit", 6}},
      ESP_RAGE},
 };
@@ -1705,6 +1720,7 @@ inline void tick() {
     else uv_last_charge.clear();
     bool rope_missing = is_on("hook") && !keep_rope_energy();
     patch_lockpick(is_on("lockpick"));
+    patch_pound(is_on("z_pound_hits"));
     block_forced_damage(is_on("god"));
     apply_spit_radius(std::clamp(find_tweak("z_spit")->factor.load(), 1.0f, find_tweak("z_spit")->max));
     route_tick();
@@ -1756,13 +1772,13 @@ inline std::string describe() {
     char b[1600];
     snprintf(b, sizeof b,
              "player %s (%zu scanned, local root %s, local %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
-             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, spit radii %zu, pvp rank survivor %d hunter %d, trees %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
+             "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, pound patch %s, spit radii %zu, pvp rank survivor %d hunter %d, trees %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
              "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s (player +%x, sensor +%x/+%x)",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", local_class().c_str(), health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
              level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", !lockpick_patch ? "missing" : lockpick_patched() ? "on" : "ready",
-             !forced_damage_jump ? "missing" : forced_damage_blocked() ? "on" : "ready", spit_radius_originals.size(), pvp_rank(false), pvp_rank(true), tree_report().c_str(),
+             !forced_damage_jump ? "missing" : forced_damage_blocked() ? "on" : "ready", !pound_exposure_check ? "missing" : pound_always_hits() ? "on" : "ready", spit_radius_originals.size(), pvp_rank(false), pvp_rank(true), tree_report().c_str(),
              enemy_modules.size(), saved_bytes.size(),
              g.equipment.size(), g.ropes.size(), g.prison_data.size(), g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_START_TIME, NAN),
              g.prison_data.empty() ? NAN : rdv<float>(g.prison_data[0] + PRISON_END_TIME, NAN), g.prison_sensors.size(),
