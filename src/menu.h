@@ -221,7 +221,33 @@ inline void cheat_switch(const char* key, const char* override_label = nullptr) 
     }
 }
 
-inline void stat_tile(const char* id, const char* name, float value, float full, ImU32 color, float width) {
+inline bool drag_bar(const char* id, float frac, ImU32 color, float& picked) {
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x, h = S(18), y = p.y + h / 2;
+    ImGui::InvisibleButton(id, {w, h});
+    bool active = ImGui::IsItemActive(), hovered = ImGui::IsItemHovered();
+    if (hovered || active) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    ImGuiID bar = ImGui::GetItemID();
+    ImGuiStorage* st = ImGui::GetStateStorage();
+    float* held = st->GetFloatRef(bar + 1, -1);
+    float* released_at = st->GetFloatRef(bar + 2, -10);
+    if (active) *held = brand::clamp01((ImGui::GetIO().MousePos.x - p.x) / w);
+    bool released = ImGui::IsItemDeactivated() && *held >= 0;
+    if (released) picked = *held, *released_at = now();
+    if (!active && !released && now() - *released_at > 0.8f) *held = -1;
+    float target = *held >= 0 ? *held : brand::clamp01(frac);
+    float shown = active ? target : animate(bar + 3, target, 10);
+    float lift = animate(bar + 4, hovered || active ? 1.0f : 0.0f, 16), thick = S(2.5f) + lift * S(1.5f);
+    auto* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled({p.x, y - thick}, {p.x + w, y + thick}, C(IM_COL32(255, 255, 255, 255), 0.06f + lift * 0.04f), S(3));
+    dl->AddRectFilled({p.x, y - thick}, {p.x + w * shown, y + thick}, C(color), S(3));
+    if (shown > 0.02f || lift > 0.01f) dl->AddCircleFilled({p.x + w * shown, y}, S(6) + lift * S(2), C(color, 0.25f + lift * 0.2f));
+    if (lift > 0.01f) dl->AddCircleFilled({p.x + w * shown, y}, S(4) * lift, C(IM_COL32(255, 252, 246, 255), lift));
+    return released;
+}
+
+inline void stat_tile(const char* id, const char* name, float value, float full, ImU32 color, float width,
+                      const std::function<void(float)>& set = nullptr) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, V(T.raised, std::max(0.75f, config::cfg.look.opacity)));
     ImGui::PushStyleColor(ImGuiCol_Border, V(T.line_soft));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(18), S(16)});
@@ -233,13 +259,8 @@ inline void stat_tile(const char* id, const char* name, float value, float full,
     if (std::isnan(value)) ImGui::TextDisabled("--");
     else ImGui::Text("%.0f", value);
     ImGui::PopFont();
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    float w = ImGui::GetContentRegionAvail().x, frac = full > 0 && !std::isnan(value) ? std::clamp(value / full, 0.0f, 1.0f) : 0;
-    auto* dl = ImGui::GetWindowDrawList();
-    float shown = animate(ImGui::GetID("bar"), frac, 6);
-    dl->AddRectFilled({p.x, p.y + S(4)}, {p.x + w, p.y + S(9)}, C(IM_COL32(255, 255, 255, 255), 0.06f), S(3));
-    dl->AddRectFilled({p.x, p.y + S(4)}, {p.x + w * shown, p.y + S(9)}, C(color), S(3));
-    if (shown > 0.02f) dl->AddCircleFilled({p.x + w * shown, p.y + S(6.5f)}, S(6), C(color, 0.25f));
+    float frac = full > 0 && !std::isnan(value) ? std::clamp(value / full, 0.0f, 1.0f) : 0, picked = 0;
+    if (drag_bar("bar", frac, color, picked) && set && full > 0) set(picked * full);
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
@@ -658,9 +679,13 @@ inline void player_page() {
         static float best_health = 0;
         if (cheats::health() > best_health) best_health = cheats::health();
         float tile = (ImGui::GetContentRegionAvail().x - S(12)) / 2;
-        stat_tile("health", "HEALTH", cheats::health(), best_health, T.bad, tile);
+        stat_tile("health", "HEALTH", cheats::health(), best_health, T.bad, tile, [](float v) {
+            on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_health(std::max(v, 1.0f)); });
+        });
         ImGui::SameLine(0, S(12));
-        stat_tile("stamina", "STAMINA", cheats::stamina(), cheats::stamina_full(), T.ok, tile);
+        stat_tile("stamina", "STAMINA", cheats::stamina(), cheats::stamina_full(), T.ok, tile, [](float v) {
+            on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_stamina(v); });
+        });
         ImGui::Dummy({0, S(2)});
         if (accent_button("Refill health & stamina", {ImGui::GetContentRegionAvail().x, S(38)})) on_game_thread([] {
             std::lock_guard<std::mutex> l(game::mx);
@@ -671,6 +696,8 @@ inline void player_page() {
     begin_card("survival", "SURVIVAL");
     cheat_switch("god");
     cheat_switch("stamina");
+    ImGui::Dummy({0, S(4)});
+    tweak_sliders(cheats::G_SURVIVAL);
     end_card();
     begin_card("gear", "GEAR");
     cheat_switch("hook");
@@ -784,6 +811,9 @@ inline void zombie_page() {
     begin_card("hunter", "HUNTER");
     cheat_switch("god", "Hunter god mode");
     cheat_switch("z_energy");
+    ImGui::Dummy({0, S(4)});
+    tweak_slider(*cheats::find_tweak("damage_taken"));
+    tweak_sliders(cheats::G_HUNTER);
     end_card();
     begin_card("abilities", "ABILITIES");
     cheat_switch("z_cooldowns");
@@ -800,34 +830,38 @@ inline const char* HUNTER_RANKS[] = {"Walker", "Runner", "Biter", "Bolter", "Sta
                                      "Mauler", "Juggernaut", "Widow Maker", "Carnivore", "Hunter", "Apex Predator"};
 
 inline void rank_row(const char* label, bool zombie, const char* const* names) {
-    int rank = cheats::pvp_rank(zombie);
-    if (rank < 0) return;
+    int points = cheats::pvp_rank(zombie);
+    if (points < 0) return;
+    int title = cheats::rank_title(points);
     ImGui::PushID(label);
     ImGui::TableNextRow(0, S(44));
+    ImGui::BeginDisabled(cheats::player && zombie != cheats::playing_hunter());
     ImGui::TableNextColumn();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
     ImGui::TableNextColumn();
     ImGui::AlignTextToFramePadding();
-    if (rank < 12) ImGui::Text("%s", names[rank]);
-    else ImGui::Text("%d", rank);
+    ImGui::TextUnformatted(names[title]);
+    ImGui::SameLine(0, S(6));
+    ImGui::TextDisabled("%s pts", thousands(points).c_str());
     ImGui::TableNextColumn();
-    struct Step { const char* text; int delta; };
-    for (Step st : {Step{"-10", -10}, Step{"-1", -1}, Step{"+1", 1}, Step{"+10", 10}}) {
-        if (ImGui::Button(st.text, {S(56), 0})) {
-            int target = rank + st.delta;
-            on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_pvp_rank(zombie, target); });
+    struct Step { const char* text; int target; };
+    for (Step st : {Step{"Lowest", 0}, Step{"-1", title - 1}, Step{"+1", title + 1}, Step{"Highest", cheats::RANK_TITLES}}) {
+        if (ImGui::Button(st.text, {S(st.text[0] == '-' || st.text[0] == '+' ? 56 : 84), 0})) {
+            int target = st.target;
+            on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_pvp_title(zombie, target); });
         }
         ImGui::SameLine(0, S(6));
     }
     ImGui::NewLine();
+    ImGui::EndDisabled();
     ImGui::PopID();
 }
 
 inline void ranks_card() {
     if (cheats::pvp_rank(false) < 0 && cheats::pvp_rank(true) < 0) return;
     begin_card("ranks", "BE THE ZOMBIE RANKS");
-    note("Your PvP rank as a survivor and as the Night Hunter. The game may adjust it again after your next Be The Zombie match.");
+    note("Your PvP rank as a survivor and as the Night Hunter. The side you are not playing right now is grayed out. The game may adjust it again after your next Be The Zombie match.");
     ImGui::Dummy({0, S(4)});
     if (ImGui::BeginTable("ranks", 3, ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(130));
@@ -840,21 +874,25 @@ inline void ranks_card() {
     end_card();
 }
 
-struct TreeView { const char* name; int type, level, max; float progress; };
+struct TreeView { const char* name; int type, level, max; float progress, points; uint32_t xp, span; };
 
 inline std::vector<TreeView> tree_views() {
     static const bool sample = getenv("DLT_SKILLS") != nullptr;
     std::vector<TreeView> out;
     if (sample) {
-        int levels[] = {12, 18, 21, 37, 9, 0, 0, 3}, maxes[] = {25, 24, 24, 250, 25, 0, 0, 0};
-        float progress[] = {0.62f, 0.35f, 0.88f, 0.14f, 0.5f, 0, 0, 0};
+        int levels[] = {12, 18, 24, 37, 9, 0, 0, 3}, maxes[] = {25, 24, 24, 250, 25, 0, 0, 0};
+        float progress[] = {0.62f, 0.35f, 1, 0.14f, 0.5f, 0, 0, 0}, points[] = {3, 0, 2, 5, NAN, 0, 0, 0};
         for (size_t i = 0; i < std::size(cheats::TREES); i++)
-            if (maxes[i]) out.push_back({cheats::TREES[i].name, cheats::TREES[i].type, levels[i], maxes[i], progress[i]});
+            if (maxes[i])
+                out.push_back({cheats::TREES[i].name, cheats::TREES[i].type, levels[i], maxes[i], progress[i], points[i],
+                               (uint32_t)(progress[i] * 48000), 48000});
         return out;
     }
     for (auto& t : cheats::TREES) {
         int max = cheats::tree_max(t.type), level = cheats::tree_level(t.type);
-        if (max && level >= 0) out.push_back({t.name, t.type, level, max, cheats::tree_progress(t.type)});
+        if (max && level >= 0)
+            out.push_back({t.name, t.type, level, max, cheats::tree_progress(t.type), cheats::skill_points(t.type),
+                           cheats::tree_xp(t.type) - cheats::tree_level_start(t.type), cheats::tree_span(t.type)});
     }
     return out;
 }
@@ -865,39 +903,72 @@ inline void tree_tile(const TreeView& t, float width) {
     ImGui::PushStyleColor(ImGuiCol_Border, V(T.line_soft));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(18), S(16)});
     ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
-    ImGui::BeginChild("tree", {width, S(168)}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders);
+    bool has_points = !std::isnan(t.points);
+    ImGui::BeginChild("tree", {width, S(has_points ? 262 : 214)}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    bool maxed = t.level >= t.max;
     std::string caption = t.name;
     for (auto& ch : caption) ch = (char)toupper((unsigned char)ch);
-    caps(caption.c_str(), t.level >= t.max ? T.accent : 0);
+    caps(caption.c_str(), maxed ? T.accent : 0);
     ImGui::Dummy({0, S(2)});
     ImGui::PushFont(f_tile);
     ImGui::Text("%d", t.level);
     ImGui::PopFont();
     ImGui::SameLine(0, S(6));
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + S(10));
-    ImGui::TextDisabled(t.level >= t.max ? "/ %d  max" : "/ %d", t.max);
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    float w = ImGui::GetContentRegionAvail().x, shown = animate(ImGui::GetID("bar"), t.progress, 6);
-    auto* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled({p.x, p.y + S(2)}, {p.x + w, p.y + S(7)}, C(IM_COL32(255, 255, 255, 255), 0.06f), S(3));
-    dl->AddRectFilled({p.x, p.y + S(2)}, {p.x + w * shown, p.y + S(7)}, C(T.accent), S(3));
-    if (shown > 0.02f) dl->AddCircleFilled({p.x + w * shown, p.y + S(4.5f)}, S(6), C(T.accent, 0.25f));
-    ImGui::Dummy({0, S(16)});
+    ImGui::TextDisabled(maxed ? "/ %d  max" : "/ %d", t.max);
     int type = t.type, level = t.level;
-    float gap = S(6), small = S(52), add = w - small * 2 - gap * 2;
-    ImGui::BeginDisabled(level <= 0);
-    if (ImGui::Button("-1", {small, 0})) on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, level - 1); });
+    float picked = 0;
+    ImGui::BeginDisabled(maxed);
+    if (drag_bar("xp", t.progress, T.accent, picked))
+        on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_progress(type, picked); });
     ImGui::EndDisabled();
-    ImGui::SameLine(0, gap);
-    ImGui::BeginDisabled(level >= t.max);
+    ImGui::PushFont(f_small);
+    if (maxed) ImGui::TextDisabled("Highest level reached");
+    else ImGui::TextDisabled("%s / %s XP to the next level", thousands(t.xp).c_str(), thousands(t.span).c_str());
+    ImGui::PopFont();
+    ImGui::Dummy({0, S(4)});
+    float w = ImGui::GetContentRegionAvail().x, gap = S(5), small = S(44);
+    float add = std::max(S(80), w - small * 4 - gap * 4);
+    auto step = [&](const char* text, int target) {
+        if (ImGui::Button(text, {small, 0})) on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, target); });
+        ImGui::SameLine(0, gap);
+    };
+    ImGui::BeginDisabled(level <= 0);
+    step("-10", level - 10);
+    step("-1", level - 1);
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(maxed);
     if (accent_button("+1 point", {add, 0})) on_game_thread([=] {
         std::lock_guard<std::mutex> l(game::mx);
         if (cheats::level_from_xp_fn) cheats::level_up_with_xp(type);
         else cheats::set_tree_level(type, level + 1);
     });
     ImGui::SameLine(0, gap);
+    step("+10", level + 10);
     if (ImGui::Button("Max", {small, 0})) on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, cheats::tree_max(type)); });
     ImGui::EndDisabled();
+    if (has_points) {
+        ImGui::Dummy({0, S(4)});
+        ImVec2 line = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddLine(line, {line.x + w, line.y}, C(T.line_soft));
+        ImGui::Dummy({0, S(8)});
+        float right = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Skill points");
+        ImGui::SameLine(0, S(8));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(V(T.accent), "%.0f", t.points);
+        int extra = cheats::extra_skill_points[type];
+        if (extra) {
+            ImGui::SameLine(0, S(6));
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("(%+d from FaTrainer)", extra);
+        }
+        ImGui::SameLine(right - small * 2 - gap);
+        if (ImGui::Button("-##points", {small, 0})) cheats::extra_skill_points[type]--;
+        ImGui::SameLine(0, gap);
+        if (ImGui::Button("+##points", {small, 0})) cheats::extra_skill_points[type]++;
+    }
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
@@ -914,7 +985,8 @@ inline void skills_page() {
     auto trees = tree_views();
     if (trees.empty()) return empty_state("Your skill trees could not be read yet. Wait until your save has fully loaded, then press Refresh.");
     begin_card("trees", "SKILL POINTS");
-    note("Each level is one skill point to spend in the game's skill menu. +1 point gives you exactly the XP for the next level, like playing would.");
+    note("Each level is one skill point to spend in the game's skill menu. +1 point gives you exactly the XP for the next level, like playing would. "
+         "Drag an XP bar to set the XP within a level. Skill points - and + add points without changing the level; they last until you close the game.");
     end_card();
     float tile = (ImGui::GetContentRegionAvail().x - S(12)) / 2;
     for (size_t i = 0; i < trees.size(); i++) {
@@ -998,6 +1070,7 @@ inline void pvp_page() {
     end_card();
     begin_card("human", "AS A SURVIVOR");
     cheat_switch("dodge_spit");
+    cheat_switch("one_hit_hunter");
     tweak_sliders(cheats::G_HUMAN);
     end_card();
 }
@@ -1290,12 +1363,13 @@ inline bool always() { return true; }
 inline void settings_page();
 inline bool has_tools() { return game::find_inventory(game::K_TOOLS) != nullptr; }
 inline const Page PAGES[] = {
-    {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS", {"god", "stamina", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
+    {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS",
+     {"god", "stamina", "damage_taken", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
-    {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "MODES", {"z_energy", "z_cooldowns", "z_spits", "z_camo"}},
+    {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_camo"}},
     {"pvp", "PvP", "Presets and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
-     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_kicks", "h_melee"}},
+     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_kicks", "h_melee"}},
     {"visuals", "Visuals", "Player ESP, UV light and Night Hunter glow colors", visuals_page, always, "MODES", {}},
     {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
@@ -1648,9 +1722,16 @@ inline void sidebar() {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {S(10), S(2)});
     std::string section;
     float found_y = -1;
-    for (auto& e : config::cfg.pages) {
-        auto* pg = page_by_id(e.id);
-        if (!pg || !e.visible || !pg->shown()) continue;
+    std::vector<std::string> sections;
+    for (auto& pg : PAGES)
+        if (std::find(sections.begin(), sections.end(), pg.section) == sections.end()) sections.push_back(pg.section);
+    std::vector<const Page*> ordered;
+    for (auto& sec : sections)
+        for (auto& e : config::cfg.pages) {
+            auto* pg = page_by_id(e.id);
+            if (pg && e.visible && pg->shown() && sec == pg->section) ordered.push_back(pg);
+        }
+    for (const Page* pg : ordered) {
         if (*pg->section && pg->section != section) {
             ImGui::Dummy({0, section.empty() ? 0 : S(8)});
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + S(16));

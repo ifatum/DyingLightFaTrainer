@@ -23,7 +23,7 @@ const int REPL_OWNED = 0x28;
 const int PARAM_SLOTS = 1100, CACHED_VALUE = 8, CACHED_FLAGS = 0x18, CACHED_VERSION = -8, PARAM_PROVIDER = 0x9c0;
 const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_XP = 8, TREE_LEVEL_START = 0xc, TREE_SPAN = 0x10, TREE_LEVEL = 0x14, TREE_MAX = 0x16;
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
-const int SLOT_IS_IMMORTAL = 3, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
+const int SLOT_IS_IMMORTAL = 3, SLOT_SET_HEALTH = 4, HEALTH_VALUE = 0x964, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
 const int UV_CHARGE = 0x50, UV_EXHAUSTED = 0x55;
 const int GAME_PROFILE = 0x540, PROFILE_RANK_HUMAN = 0x2d98, PROFILE_RANK_ZOMBIE = 0x2dd0, PLAYER_RANK_HUMAN = 0x74c, PLAYER_RANK_ZOMBIE = 0x750;
 const int PRISON_START_TIME = 0x44, PRISON_END_TIME = 0x48, PRISON_REWARD_TIER = 0x4c, PRISON_STATE = 0x54;
@@ -75,9 +75,11 @@ inline Cheat CHEATS[] = {
     {"dodge_spit", "Dodge spit",
      "Steps you aside from spit that would hit you, after a human reaction time.",
      {}, {}},
+    {"one_hit_hunter", "One hit kill on the Night Hunter", "The Night Hunter drops to 1 health, so your next hit kills him. His own game decides his health in a real match.",
+     {}, {}},
 };
 
-enum Group { G_GEAR, G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN };
+enum Group { G_GEAR, G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN, G_SURVIVAL, G_HUNTER };
 
 struct ScriptVar { const char* name; float at_max; };
 
@@ -98,7 +100,11 @@ inline Tweak TWEAKS[] = {
     {"speed", "Movement speed", "Walk, sprint and wall run faster.", G_MOVEMENT,
      {"MoveSprintSpeed", "MoveForwardMaxSpeed", "MoveStrafeMaxSpeed", "MoveBackwardMaxSpeed", "WallrunSpeed"}, {}, 3.0f},
     {"jump", "Jump height", "Jump higher.", G_MOVEMENT, {"JumpMaxHeight", "JumpMinHeight"}, {}, 4.0f},
-    {"xp", "XP gain", "Experience in every skill tree, Survivor included.", G_PROGRESS, {}},
+    {"xp", "XP gain", "Experience in every skill tree, Survivor and Night Hunter included. The game shows the boosted amount.", G_PROGRESS, {}},
+    {"damage_taken", "Take less damage", "Damage you take is divided by this, as a survivor and as the Night Hunter. God mode overrides it.", G_SURVIVAL, {}},
+    {"z_uv", "Less UV damage", "The UV flashlights and UV lamps hurt you slower. At Max they do not hurt you at all.", G_HUNTER, {},
+     {{"f_btz_flashlight_health_damage_per_second_min", 0}, {"f_btz_flashlight_health_damage_per_second_max", 0},
+      {"f_btz_zombie_world_light_damage_percent", 0}, {"f_btz_zombie_world_light_damage_percent_hub", 0}}},
     {"z_pounce", "Pounce", "At Max you pounce survivors 40 m away, even when they are not in front of you. Also grows the pounce slam blast.",
      G_ZOMBIE, {"ZombiePounceHighRageExplosionRange"},
      {{"f_btz_zombie_grab_range", 40}, {"f_btz_zombie_grab_range_velocity_factor", 1}, {"f_btz_zombie_grab_angle_max", 180},
@@ -128,6 +134,9 @@ inline Tweak* find_tweak(const std::string& key) {
 }
 
 struct Tree { int type; const char* name; };
+inline const char* SKILL_POINT_PARAMS[8] = {"SkillPointsPrestigeLevel0", "SkillPointsRunner", "SkillPointsFighter", "SkillPointsStatus",
+                                            "SkillPointsReputation", "SkillPointsLegend", "SkillPointsDriver", "SkillPointsHellraid"};
+inline std::atomic<int> extra_skill_points[8] = {};
 inline const Tree TREES[] = {{3, "Survivor"}, {1, "Agility"}, {2, "Power"}, {5, "Legend"}, {6, "Driver"}, {7, "Hellraid"}, {4, "Reputation"}, {0, "Night Hunter"}};
 
 inline Cheat* find(const std::string& key) {
@@ -142,7 +151,7 @@ inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
 inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, profile_root = 0;
-inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0;
+inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0, xp_award_site = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 using VarVec3Fn = float* (*)(uintptr_t, float*, uintptr_t, uintptr_t, uintptr_t);
 inline VarFloatFn original_var_float = nullptr;
@@ -248,6 +257,7 @@ inline void locate(uintptr_t base) {
         !hits.empty())
         level_from_xp_fn = hits[0];
     if (auto hits = game::find_code(base, "8B ? C0 09 00 00 BA ? ? ? ? E8"); !hits.empty()) cache_get_fn = game::rip_target(hits[0] + 11, 1, 5);
+    if (auto hits = game::find_code(base, "45 85 FF 0F 8E ? ? ? ? 48 8B 9E E8 13 00 00 0F 29 7C 24 60"); hits.size() == 1) xp_award_site = hits[0];
     const int CLAMP_AT = 0x2e;
     auto spot = game::find_code(base, "F3 0F 10 56 50 B1 01 F3 0F 5C 90 18 01 00 00 F3 0F 10 4E 54 F3 0F 59 0D ? ? ? ? 0F 54 15 ? ? ? ? 0F 54 0D ? ? ? ? F3 0F 5C D1");
     if (!spot.empty() && !memcmp((const void*)(spot[0] + CLAMP_AT), SPOT_DISTANCE_CLAMP, 4)) lockpick_patch = spot[0] + CLAMP_AT;
@@ -298,16 +308,31 @@ inline uintptr_t stamina_object(int i) { return alive(player) ? rdv<uintptr_t>(p
 inline float stamina() { return rdv<float>(stamina_object(0) + STAMINA_CURRENT, NAN); }
 inline float stamina_full() { return rdv<float>(stamina_object(0) + STAMINA_FULL, NAN); }
 
-inline bool __fastcall always_immortal(uintptr_t) { return true; }
+inline std::atomic<bool> immortal{false};
+inline std::atomic<float> damage_divisor{1.0f};
 
-inline void set_immortal(bool enable) {
+inline bool __fastcall immortal_check(uintptr_t self) {
+    return immortal || ((bool(__fastcall*)(uintptr_t))rdv<uintptr_t>(original_vtable + SLOT_IS_IMMORTAL * 8))(self);
+}
+
+inline uintptr_t __fastcall scaled_set_health(uintptr_t self, float value, bool flag) {
+    float cur = rdv<float>(self + HEALTH_VALUE, NAN), divisor = damage_divisor;
+    if (!immortal && divisor > 1.0f && value < cur) value = cur - (cur - value) / divisor;
+    return ((uintptr_t(__fastcall*)(uintptr_t, float, bool))rdv<uintptr_t>(original_vtable + SLOT_SET_HEALTH * 8))(self, value, flag);
+}
+
+inline void hook_health(bool god, float divisor) {
+    immortal = god;
+    damage_divisor = divisor;
+    bool enable = god || divisor > 1.0f;
     uintptr_t health_object = player + HEALTH_OBJECT;
     uintptr_t current = rdv<uintptr_t>(health_object);
     uintptr_t ours = (uintptr_t)&immortal_vtable[1];
     if (enable && current != ours && in_game_module(current)) {
         if (!rd(current - 8, immortal_vtable, sizeof immortal_vtable)) return;
-        immortal_vtable[1 + SLOT_IS_IMMORTAL] = (uintptr_t)&always_immortal;
         original_vtable = current;
+        immortal_vtable[1 + SLOT_IS_IMMORTAL] = (uintptr_t)&immortal_check;
+        immortal_vtable[1 + SLOT_SET_HEALTH] = (uintptr_t)&scaled_set_health;
         wr<uintptr_t>(health_object, ours);
     } else if (!enable && current == ours && original_vtable) {
         wr<uintptr_t>(health_object, original_vtable);
@@ -334,6 +359,21 @@ inline void refill() {
         if (s && top > 0 && top < 100000) wr<float>(s + STAMINA_CURRENT, top);
     }
     logf_hook("refill: health %.0f -> %.0f (max %.0f), stamina %.0f", before, health(), full, stamina());
+}
+
+inline void set_health(float v) {
+    int off = float_getter_offset(slot(player, SLOT_HEALTH));
+    float full = max_health();
+    if (alive(player) && off > 0 && full > 0 && full < 100000) wr<float>(player + off, std::clamp(v, 1.0f, full));
+}
+
+inline void set_stamina(float v) {
+    for (int i = 0; i < 2; i++) {
+        uintptr_t s = stamina_object(i);
+        float top = rdv<float>(s + STAMINA_FULL, NAN);
+        if (s && top > 0 && top < 100000) wr<float>(s + STAMINA_CURRENT, std::clamp(v / stamina_full() * top, 0.0f, top));
+    }
+    best_stamina[0] = best_stamina[1] = 0;
 }
 
 inline void keep_stamina() {
@@ -572,6 +612,13 @@ inline void apply_overrides() {
             if (it == want.end() || v > it->second.first) want[name] = {v, false};
         }
     }
+    for (int type = 0; type < 8 && !containers.empty(); type++) {
+        int extra = extra_skill_points[type];
+        uintptr_t at = param_value(containers[0], SKILL_POINT_PARAMS[type]);
+        if (!extra || !at || rdv<uintptr_t>(at - PARAM_VALUE) != vt_param_float) continue;
+        float base = original_float(at);
+        if (!std::isnan(base)) want[SKILL_POINT_PARAMS[type]] = {std::max(0.0f, base + extra), false};
+    }
     std::set<uintptr_t> touched;
     for (auto& [name, w] : want) set_param(name, w.first, w.second, containers, touched);
     apply_cached(want);
@@ -743,6 +790,28 @@ inline int tree_max(int type) {
     return m > 0 && m < 1000 ? m : 0;
 }
 
+inline std::map<int, uint32_t> xp_seen;
+inline uintptr_t xp_seen_player = 0;
+
+inline float skill_points(int type) {
+    std::vector<uintptr_t> containers = param_containers();
+    uintptr_t at = containers.empty() || type < 0 || type > 7 ? 0 : param_value(containers[0], SKILL_POINT_PARAMS[type]);
+    return at && rdv<uintptr_t>(at - PARAM_VALUE) == vt_param_float ? rdv<float>(at, NAN) : NAN;
+}
+
+inline uint32_t tree_xp(int type) { return tree_record(type) ? rdv<uint32_t>(tree_record(type) + TREE_XP) : 0; }
+inline uint32_t tree_level_start(int type) { return tree_record(type) ? rdv<uint32_t>(tree_record(type) + TREE_LEVEL_START) : 0; }
+inline uint32_t tree_span(int type) { return tree_record(type) ? rdv<uint32_t>(tree_record(type) + TREE_SPAN) : 0; }
+
+inline void set_tree_progress(int type, float frac) {
+    uintptr_t r = tree_record(type);
+    if (!r || tree_level(type) >= tree_max(type) || !tree_span(type)) return;
+    uint32_t span = tree_span(type);
+    uint32_t xp = tree_level_start(type) + std::min(span - 1, (uint32_t)(std::clamp(frac, 0.0f, 1.0f) * span));
+    wr<uint32_t>(r + TREE_XP, xp);
+    xp_seen.clear();
+}
+
 inline float tree_progress(int type) {
     uintptr_t r = tree_record(type);
     if (!r || tree_level(type) >= tree_max(type)) return 1;
@@ -750,8 +819,69 @@ inline float tree_progress(int type) {
     return span ? std::clamp((float)((double)xp - start) / span, 0.0f, 1.0f) : 0;
 }
 
-inline std::map<int, uint32_t> xp_seen;
-inline uintptr_t xp_seen_player = 0;
+inline uint8_t* xp_stub = nullptr;
+const int XP_STUB_FACTOR = 0x100, XP_STUB_SCALE = 0x108, XP_STUB_COUNTS = 0x110, XP_SITE_BYTES = 16;
+const int64_t XP_SCALE = 1000;
+inline uint32_t xp_counts_seen[8] = {};
+
+inline uint8_t* build_xp_stub(uintptr_t site) {
+    auto* stub = (uint8_t*)VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!stub) return nullptr;
+    std::vector<uint8_t> c;
+    auto bytes = [&](std::initializer_list<uint8_t> b) { c.insert(c.end(), b); };
+    auto rip_to = [&](int target) {
+        int32_t d = target - (int)(c.size() + 4);
+        for (int i = 0; i < 4; i++) c.push_back((uint8_t)(d >> (i * 8)));
+    };
+    auto absolute_jump = [&](uintptr_t to) {
+        bytes({0xFF, 0x25, 0, 0, 0, 0});
+        for (int i = 0; i < 8; i++) c.push_back((uint8_t)(to >> (i * 8)));
+    };
+    bytes({0x50, 0x52, 0x49, 0x63, 0xC7, 0x48, 0x0F, 0xAF, 0x05});
+    rip_to(XP_STUB_FACTOR);
+    bytes({0x48, 0x99, 0x48, 0xF7, 0x3D});
+    rip_to(XP_STUB_SCALE);
+    bytes({0x41, 0x89, 0xC7, 0x4C, 0x89, 0xF0, 0x83, 0xE0, 0x07, 0x48, 0x8D, 0x15});
+    rip_to(XP_STUB_COUNTS);
+    bytes({0xF0, 0xFF, 0x04, 0x82, 0x5A, 0x58, 0x45, 0x85, 0xFF, 0x7F, 0x0E});
+    absolute_jump(site + 9 + rdv<int32_t>(site + 5));
+    for (int i = 9; i < XP_SITE_BYTES; i++) c.push_back(rdv<uint8_t>(site + i));
+    absolute_jump(site + XP_SITE_BYTES);
+    memcpy(stub, c.data(), c.size());
+    *(int64_t*)(stub + XP_STUB_FACTOR) = XP_SCALE;
+    *(int64_t*)(stub + XP_STUB_SCALE) = XP_SCALE;
+    return stub;
+}
+
+inline bool install_xp_hook() {
+    if (xp_stub) return true;
+    if (!xp_award_site || rdv<uint32_t>(xp_award_site) != 0x0FFF8545) return false;
+    uint8_t* stub = build_xp_stub(xp_award_site);
+    if (!stub) return false;
+    uint8_t jump[XP_SITE_BYTES] = {0xFF, 0x25, 0, 0, 0, 0};
+    memcpy(jump + 6, &stub, 8);
+    jump[14] = jump[15] = 0x90;
+    DWORD old;
+    if (!VirtualProtect((void*)xp_award_site, XP_SITE_BYTES, PAGE_EXECUTE_READWRITE, &old)) return false;
+    memcpy((void*)xp_award_site, jump, XP_SITE_BYTES);
+    VirtualProtect((void*)xp_award_site, XP_SITE_BYTES, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)xp_award_site, XP_SITE_BYTES);
+    xp_stub = stub;
+    return true;
+}
+
+inline void set_xp_factor(float factor) {
+    if (factor != 1.0f) install_xp_hook();
+    if (xp_stub) *(volatile int64_t*)(xp_stub + XP_STUB_FACTOR) = (int64_t)llroundf(factor * XP_SCALE);
+}
+
+inline bool xp_awarded_by_hook(int type) {
+    if (!xp_stub || type < 0 || type > 7) return false;
+    uint32_t now = ((volatile uint32_t*)(xp_stub + XP_STUB_COUNTS))[type];
+    bool changed = now != xp_counts_seen[type];
+    xp_counts_seen[type] = now;
+    return changed;
+}
 
 inline void level_up_with_xp(int type) {
     uintptr_t container = skill_container(), r = tree_record(type);
@@ -773,10 +903,14 @@ inline void boost_xp(float factor) {
     for (auto& t : TREES)
         if (tree_max(t.type)) now[t.type] = rdv<uint32_t>(tree_record(t.type) + TREE_XP);
     int gained = 0;
-    for (auto& [type, xp] : now) gained += xp_seen.count(type) && xp > xp_seen[type];
+    std::set<int> hooked;
+    for (auto& [type, xp] : now) {
+        gained += xp_seen.count(type) && xp > xp_seen[type];
+        if (xp_awarded_by_hook(type)) hooked.insert(type);
+    }
     if (gained < TREES_CHANGED_ON_LOAD)
         for (auto& [type, xp] : now) {
-            if (!xp_seen.count(type) || xp <= xp_seen[type] || tree_level(type) >= tree_max(type)) continue;
+            if (!xp_seen.count(type) || xp <= xp_seen[type] || hooked.count(type) || tree_level(type) >= tree_max(type)) continue;
             double boosted = xp_seen[type] + (double)(xp - xp_seen[type]) * factor;
             xp = (uint32_t)std::min(boosted, (double)INT32_MAX);
             wr<uint32_t>(tree_record(type) + TREE_XP, xp);
@@ -1070,6 +1204,21 @@ inline void replay_route() {
 
 inline uintptr_t game_profile() { return profile_root ? rdv<uintptr_t>(rdv<uintptr_t>(profile_root) + GAME_PROFILE) : 0; }
 
+const int RANK_TITLES = 11, RANK_WINS_PER_TITLE = 3;
+const float RANK_TITLE_GROWTH = 1.3f;
+
+inline int rank_start(int title) {
+    int edge = 0;
+    for (int i = 0; i < title && i < RANK_TITLES; i++) edge = (int)(powf(RANK_TITLE_GROWTH, (float)i) * (RANK_WINS_PER_TITLE * 100) + (float)edge);
+    return edge;
+}
+
+inline int rank_title(int points) {
+    for (int i = 0; i < RANK_TITLES; i++)
+        if (points < rank_start(i + 1)) return i;
+    return RANK_TITLES;
+}
+
 inline int pvp_rank(bool zombie) {
     uintptr_t p = game_profile();
     return p ? rdv<int>(p + (zombie ? PROFILE_RANK_ZOMBIE : PROFILE_RANK_HUMAN), -1) : -1;
@@ -1090,6 +1239,8 @@ inline void set_pvp_rank(bool zombie, int rank) {
     }
     logf_hook("pvp rank %s: %d -> %d (%d player copies)", zombie ? "night hunter" : "survivor", old, rank, mirrored);
 }
+
+inline void set_pvp_title(bool zombie, int title) { set_pvp_rank(zombie, rank_start(std::clamp(title, 0, RANK_TITLES))); }
 
 inline int kill_enemies(float radius) {
     Vec3 me = player_position();
@@ -1239,6 +1390,21 @@ inline float health_of(uintptr_t p) {
 inline float max_health_of(uintptr_t p) {
     auto fn = (float(__fastcall*)(uintptr_t, int))slot(p, SLOT_MAX_HEALTH);
     return in_game_module((uintptr_t)fn) ? fn(p, -1) : NAN;
+}
+
+inline bool playing_hunter() {
+    uintptr_t lp = alive(player) ? logical_player(player) : 0;
+    return lp && rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER;
+}
+
+inline void weaken_hunter() {
+    std::lock_guard<std::mutex> l(esp_mx);
+    for (uintptr_t p : esp_players) {
+        uintptr_t lp = p != player && alive(p) ? logical_player(p) : 0;
+        int off = float_getter_offset(slot(p, SLOT_HEALTH));
+        float cur = off > 0 ? rdv<float>(p + off, NAN) : NAN;
+        if (lp && rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER && cur > ONE_HIT_HEALTH && cur < 1e7f) wr<float>(p + off, ONE_HIT_HEALTH);
+    }
 }
 
 inline double now_seconds() {
@@ -1547,6 +1713,7 @@ inline void tick() {
     keep_stacks(is_on("ammo"), is_on("supplies"));
     keep_durability(is_on("durability"));
     if (is_on("one_hit")) weaken_enemies();
+    if (is_on("one_hit_hunter")) weaken_hunter();
     player = find_player();
     uintptr_t provider = alive(player) ? rdv<uintptr_t>(player + PARAM_PROVIDER) : 0;
     uintptr_t before = player_provider.exchange(provider);
@@ -1559,8 +1726,9 @@ inline void tick() {
     apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
     apply_overrides();
     if (!player) return;
+    set_xp_factor(find_tweak("xp")->factor);
     boost_xp(find_tweak("xp")->factor);
-    set_immortal(is_on("god"));
+    hook_health(is_on("god"), std::clamp(find_tweak("damage_taken")->factor.load(), 1.0f, find_tweak("damage_taken")->max));
     if (is_on("stamina") || is_on("z_energy")) keep_stamina();
     else best_stamina[0] = best_stamina[1] = 0;
 }

@@ -461,7 +461,7 @@ static void main_thread() {
         const DWORD ENEMY_RESCAN = 3000, PLAYER_RESCAN = 10000;
         DWORD last_players = 0;
         for (;;) {
-            bool players = config::cfg.esp.on && GetTickCount() - last_players >= PLAYER_RESCAN;
+            bool players = (config::cfg.esp.on || cheats::is_on("one_hit_hunter")) && GetTickCount() - last_players >= PLAYER_RESCAN;
             if (players) last_players = GetTickCount();
             cheats::scan_targets(cheats::is_on("one_hit"), players);
             Sleep(ENEMY_RESCAN);

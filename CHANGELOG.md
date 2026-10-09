@@ -3,9 +3,15 @@
 ## 2.2
 
 - The FaTrainer Installer now has its own version (Installer 1.0) and keeps itself up to date.
-- XP gain now multiplies experience in every skill tree, Survivor included. Before it only changed Agility, Power and Driver.
+- XP gain now multiplies experience in every skill tree, Survivor and Night Hunter included, and the game's XP popup shows the boosted amount. Before it only changed Agility, Power and Driver.
 - Fixed: Unbreakable weapons did not protect weapons you picked up after turning it on, until you pressed Refresh.
-- Skills page: each skill tree is a tile with its level, an XP bar toward the next skill point and -1, +1 point and Max buttons.
+- Skills page: each skill tree is a tile with its level, an XP bar you can drag to set the XP, -10, -1, +1 point, +10 and Max, and Skill points - and + that add points without changing the level.
+- Health and stamina bars on the Player page can be dragged to set them.
+- New: Take less damage, as a survivor and as the Night Hunter.
+- New: Less UV damage for the Night Hunter.
+- New: One hit kill on the Night Hunter, on the PvP page.
+- Fixed: the Night Hunter rank showed a number like 44890 instead of its name. Ranks now show the title and change one title at a time, and the side you are not playing is grayed out.
+- The Night Hunter page moved to Cheats, and the sidebar no longer shows a section twice after you reorder pages.
 
 ## 2.1
 

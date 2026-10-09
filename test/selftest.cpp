@@ -306,6 +306,56 @@ int main(int argc, char** argv) {
         for (int type : {1, 3}) game::wr<uint16_t>(w.trees + type * 0x20 + 0x16, 0);
     }
     {
+        CHECK(cheats::xp_award_site);
+        const uint8_t harness[] = {0x41, 0x57, 0x41, 0x56, 0x56, 0x53, 0x41, 0x89, 0xCF, 0x41, 0x89, 0xD6, 0x4C, 0x89, 0xC6,
+                                   0x45, 0x85, 0xFF, 0x0F, 0x8E, 0x0C, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x9E, 0xE8, 0x13, 0x00, 0x00,
+                                   0x44, 0x89, 0xF8, 0xEB, 0x05, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF, 0x5B, 0x5E, 0x41, 0x5E, 0x41, 0x5F, 0xC3};
+        const int SITE = 15;
+        auto* code = (uint8_t*)VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        memcpy(code, harness, sizeof harness);
+        auto award = (int(*)(int, int, uintptr_t))code;
+        static uint8_t award_owner[0x1400];
+        CHECK(award(70, 2, (uintptr_t)award_owner) == 70 && award(0, 2, (uintptr_t)award_owner) == -1);
+        uintptr_t real_site = cheats::xp_award_site;
+        uint8_t* real_stub = cheats::xp_stub;
+        cheats::xp_stub = nullptr;
+        cheats::xp_award_site = (uintptr_t)code + SITE;
+        cheats::set_xp_factor(2.5f);
+        CHECK(cheats::xp_stub && code[SITE] == 0xFF && code[SITE + 1] == 0x25);
+        CHECK(award(70, 2, (uintptr_t)award_owner) == 175 && award(0, 2, (uintptr_t)award_owner) == -1 && award(-5, 3, (uintptr_t)award_owner) == -1);
+        CHECK(cheats::xp_awarded_by_hook(2) && !cheats::xp_awarded_by_hook(2) && cheats::xp_awarded_by_hook(3) && !cheats::xp_awarded_by_hook(1));
+        cheats::set_xp_factor(1.0f);
+        CHECK(award(70, 6, (uintptr_t)award_owner) == 70);
+        cheats::xp_award_site = real_site;
+        cheats::xp_stub = real_stub;
+    }
+    {
+        static float set_to = 0;
+        static uintptr_t fake_health_vtable[8] = {};
+        fake_health_vtable[cheats::SLOT_IS_IMMORTAL] = (uintptr_t) + [](uintptr_t) -> bool { return false; };
+        fake_health_vtable[cheats::SLOT_SET_HEALTH] = (uintptr_t) + [](uintptr_t, float v, bool) -> uintptr_t { set_to = v; return 0; };
+        uintptr_t real_original = cheats::original_vtable;
+        bool god_was = cheats::immortal;
+        cheats::immortal = false;
+        cheats::original_vtable = (uintptr_t)fake_health_vtable;
+        uintptr_t health_object = w.player + cheats::HEALTH_OBJECT;
+        float before = game::rdv<float>(health_object + cheats::HEALTH_VALUE);
+        game::wr<float>(health_object + cheats::HEALTH_VALUE, 100.0f);
+        cheats::damage_divisor = 4.0f;
+        cheats::scaled_set_health(health_object, 60.0f, false);
+        CHECK(set_to == 90.0f);
+        cheats::scaled_set_health(health_object, 130.0f, false);
+        CHECK(set_to == 130.0f && !cheats::immortal_check(health_object));
+        cheats::damage_divisor = 1.0f;
+        cheats::scaled_set_health(health_object, 60.0f, false);
+        CHECK(set_to == 60.0f);
+        cheats::immortal = true;
+        CHECK(cheats::immortal_check(health_object));
+        cheats::immortal = god_was;
+        game::wr<float>(health_object + cheats::HEALTH_VALUE, before);
+        cheats::original_vtable = real_original;
+    }
+    {
         static uintptr_t global_container;
         global_container = game::rdv<uintptr_t>(w.player + cheats::PARAM_CONTAINER);
         game::wr<uintptr_t>(w.player + cheats::PARAM_CONTAINER, 0);
@@ -369,6 +419,21 @@ int main(int argc, char** argv) {
     game::wr<uint32_t>(w.backpack + 0x48, bag_count);
     cheats::tick();
     CHECK(!cheats::condition_floor.count(picked_up));
+    {
+        uintptr_t fighter = param("SkillPointsFighter");
+        game::wr<uintptr_t>(fighter - 8, cheats::vt_param_float);
+        game::wr<float>(fighter, 4.0f);
+        CHECK(cheats::skill_points(2) == 4.0f);
+        cheats::extra_skill_points[2] = 3;
+        cheats::tick();
+        CHECK(cheats::skill_points(2) == 7.0f);
+        cheats::extra_skill_points[2] = -10;
+        cheats::tick();
+        CHECK(cheats::skill_points(2) == 0.0f);
+        cheats::extra_skill_points[2] = 0;
+        cheats::tick();
+        CHECK(cheats::skill_points(2) == 4.0f);
+    }
     cheats::find("durability")->on = false;
     cheats::tick();
     game::wr<float>(blade + cheats::ITEM_CONDITION, 12.5f);
@@ -537,6 +602,12 @@ int main(int argc, char** argv) {
         CHECK(cheats::pvp_rank(false) == 14 && game::rdv<int>(mine + 0x74c) == 14 && game::rdv<int>(other + 0x74c) == 9);
         cheats::set_pvp_rank(true, -3);
         CHECK(cheats::pvp_rank(true) == 0);
+        CHECK(cheats::rank_title(0) == 0 && cheats::rank_title(299) == 0 && cheats::rank_title(300) == 1 && cheats::rank_title(44890) == 11);
+        CHECK(cheats::rank_start(1) == 300 && cheats::rank_start(2) == 690 && cheats::rank_title(cheats::rank_start(10)) == 10);
+        cheats::set_pvp_title(true, 11);
+        CHECK(cheats::rank_title(cheats::pvp_rank(true)) == 11);
+        cheats::set_pvp_title(true, 3);
+        CHECK(cheats::pvp_rank(true) == cheats::rank_start(3));
         cheats::profile_root = real_root;
         game::g.logical_players.clear();
     }
