@@ -1,5 +1,6 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <dlfcn.h>
 #include <cstdio>
 #include <fstream>
 #include <string>
@@ -10,10 +11,26 @@
 
 static const char* program = "FaTrainer-Installer";
 
+extern "C" void* glfwGetX11Display(void);
+extern "C" unsigned long glfwGetX11Window(GLFWwindow* window);
+
+static void ask_to_float(GLFWwindow* window) {
+    using InternAtom = unsigned long (*)(void*, const char*, int);
+    using ChangeProperty = int (*)(void*, unsigned long, unsigned long, unsigned long, int, int, const unsigned char*, int);
+    const unsigned long ATOM_TYPE = 4;
+    const int FORMAT_32 = 32, REPLACE = 0;
+    void* xlib = dlopen("libX11.so.6", RTLD_LAZY | RTLD_NOLOAD);
+    if (!xlib) xlib = dlopen("libX11.so.6", RTLD_LAZY);
+    auto intern = xlib ? (InternAtom)dlsym(xlib, "XInternAtom") : nullptr;
+    auto change = xlib ? (ChangeProperty)dlsym(xlib, "XChangeProperty") : nullptr;
+    void* display = glfwGetX11Display();
+    if (!intern || !change || !display) return;
+    unsigned long type = intern(display, "_NET_WM_WINDOW_TYPE", 0), dialog = intern(display, "_NET_WM_WINDOW_TYPE_DIALOG", 0);
+    change(display, glfwGetX11Window(window), type, ATOM_TYPE, FORMAT_32, REPLACE, (const unsigned char*)&dialog, 1);
+}
+
 static void nixos_hint() {
-    std::ifstream release("/etc/os-release");
-    std::string text((std::istreambuf_iterator<char>(release)), std::istreambuf_iterator<char>());
-    if (text.find("ID=nixos") != std::string::npos) fprintf(stderr, "On NixOS, start it through Steam's runtime instead: steam-run %s\n", program);
+    if (platform::on_nixos()) fprintf(stderr, "On NixOS, start it through Steam's runtime instead: steam-run %s\n", program);
 }
 
 int main(int, char** argv) {
@@ -27,6 +44,7 @@ int main(int, char** argv) {
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
     glfwWindowHintString(GLFW_X11_CLASS_NAME, "fatrainer-installer");
     glfwWindowHintString(GLFW_X11_INSTANCE_NAME, "fatrainer-installer");
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     struct Context { int major, minor; const char* glsl; };
     const Context contexts[] = {{3, 0, "#version 130"}, {2, 1, "#version 120"}};
     GLFWwindow* window = nullptr;
@@ -46,6 +64,8 @@ int main(int, char** argv) {
         return 1;
     }
     glfwSetWindowSizeLimits(window, 900, 620, GLFW_DONT_CARE, GLFW_DONT_CARE);
+    ask_to_float(window);
+    glfwShowWindow(window);
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
     float scale_x = 1, scale_y = 1;

@@ -14,6 +14,9 @@
 #include "platform.h"
 
 EMBED(changelog_md, "CHANGELOG.md")
+#ifndef _WIN32
+EMBED(icon_png, "installer/icon.png")
+#endif
 #ifdef FATRAINER_OFFLINE
 EMBED(trainer_dll, "dist/nexus/xinput1_3.dll")
 const bool OFFLINE = true;
@@ -100,6 +103,7 @@ struct Model {
     std::mutex mx;
     Fetch fetch = Fetch::loading;
     std::string fetch_error;
+    fs::path private_dir;
     ReleaseInfo latest;
     std::vector<logic::ChangelogEntry> changelog;
     fs::path game;
@@ -133,11 +137,15 @@ inline void fetch_release() {
     }
     std::thread([] {
         std::string text, error, changes, ignored;
-        bool ok = platform::net::get_text(std::string(RELEASE_DOWNLOADS) + "version.txt", text, error);
+        fs::path private_dir = platform::private_release();
+        bool ok = private_dir.empty() ? platform::net::get_text(std::string(RELEASE_DOWNLOADS) + "version.txt", text, error)
+                                      : !(text = platform::read_file(private_dir / "version.txt")).empty();
         ReleaseInfo info = parse_release_info(text);
         if (ok && (info.version.empty() || info.sha256.size() != 64)) ok = false, error = "the release has no valid version.txt";
-        bool have_changes = ok && platform::net::get_text(std::string(RELEASE_DOWNLOADS) + "CHANGELOG.md", changes, ignored);
+        bool have_changes = ok && (private_dir.empty() ? platform::net::get_text(std::string(RELEASE_DOWNLOADS) + "CHANGELOG.md", changes, ignored)
+                                                       : !(changes = platform::read_file(private_dir / "CHANGELOG.md")).empty());
         std::lock_guard<std::mutex> l(M.mx);
+        M.private_dir = private_dir;
         M.fetch = ok ? Fetch::ready : Fetch::failed;
         M.fetch_error = error;
         if (ok) M.latest = info;
@@ -164,21 +172,22 @@ inline std::string replace_hint() {
 }
 
 inline void start_install() {
-    fs::path game;
+    fs::path game, private_dir;
     ReleaseInfo latest;
     {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working) return;
-        game = M.game, latest = M.latest;
+        game = M.game, latest = M.latest, private_dir = M.private_dir;
         M.job = Job::working, M.step = OFFLINE ? "Installing" : "Downloading", M.progress = 0, M.message.clear();
     }
-    std::thread([game, latest] {
+    std::thread([game, latest, private_dir] {
 #ifdef FATRAINER_OFFLINE
         std::string data((const char*)trainer_dll, (size_t)(trainer_dll_end - trainer_dll));
 #else
         const unsigned long long LIMIT = 64ull << 20;
         std::string data, error;
-        bool ok = platform::net::get(std::string(RELEASE_DOWNLOADS) + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
+        bool ok = !private_dir.empty() ? !(data = platform::read_file(private_dir / platform::DLL_NAME)).empty() || (error = "the private build has no " + std::string(platform::DLL_NAME), false)
+                                       : platform::net::get(std::string(RELEASE_DOWNLOADS) + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
             data.append(d, n);
             unsigned long long expected = latest.size ? latest.size : total;
             std::lock_guard<std::mutex> l(M.mx);
@@ -334,6 +343,7 @@ inline void tabs(ImVec2 pos) {
         ImGui::SetCursorScreenPos({x - S(10), pos.y - S(10)});
         ImGui::PushID(i);
         if (ImGui::InvisibleButton("tab", {w + S(20), F.strong->FontSize + S(20)}) && tab != i) tab = i, tab_changed_at = ImGui::GetTime();
+        platform::caption_holes.push_back({ImGui::GetItemRectMin().x, ImGui::GetItemRectMin().y, ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y});
         bool hovered = ImGui::IsItemHovered();
         ImGui::PopID();
         if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
@@ -355,7 +365,8 @@ inline void status_pill(ImVec2 right_top) {
     {
         std::lock_guard<std::mutex> l(M.mx);
         fetch = M.fetch;
-        if (fetch == Fetch::ready) text = OFFLINE ? FATRAINER_EDITION " " + M.latest.version : FATRAINER_EDITION ", latest " + M.latest.version, dot = GOOD;
+        if (fetch == Fetch::ready && !M.private_dir.empty()) text = "Private build " + M.latest.version, dot = ACCENT;
+        else if (fetch == Fetch::ready) text = OFFLINE ? FATRAINER_EDITION " " + M.latest.version : FATRAINER_EDITION ", latest " + M.latest.version, dot = GOOD;
         else if (fetch == Fetch::failed) text = "GitHub not reachable", dot = BAD;
         else text = "Checking GitHub";
     }
@@ -371,9 +382,64 @@ inline void status_pill(ImVec2 right_top) {
     dl->AddText(F.small, F.small->FontSize, {a.x + S(30), a.y + (h - F.small->FontSize) / 2}, C(SOFT), text.c_str());
     if (fetch == Fetch::failed) {
         ImGui::SetCursorScreenPos({b.x - retry_w - S(6), a.y});
+        platform::caption_holes.push_back({b.x - retry_w - S(6), a.y, b.x, b.y});
         if (button("retry", "Retry", {retry_w, h}, Kind::quiet)) fetch_release();
     }
 }
+
+inline float window_controls(float width) {
+    if (!platform::CUSTOM_CAPTION) return width;
+    const float W = S(46), H = S(34);
+    float left = width - 3 * W;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    for (int i = 0; i < 3; i++) {
+        ImVec2 a{left + i * W, 0}, b{a.x + W, H}, c{(a.x + b.x) / 2, (a.y + b.y) / 2};
+        ImGui::SetCursorScreenPos(a);
+        ImGui::PushID(i);
+        bool pressed = ImGui::InvisibleButton("window", {W, H});
+        float h = follow(anim("hover"), ImGui::IsItemHovered() ? 1.0f : 0.0f, 18);
+        ImGui::PopID();
+        bool close = i == platform::CLOSE;
+        dl->AddRectFilled(a, b, close ? C(IM_COL32(196, 43, 28, 255), h) : C(RAISED, h));
+        ImU32 ink = C(close ? mix(SOFT, IM_COL32(255, 255, 255, 255), h) : mix(SOFT, TEXT, h));
+        float r = S(5);
+        if (i == platform::MINIMIZE) dl->AddLine({c.x - r, c.y}, {c.x + r, c.y}, ink, S(1));
+        else if (i == platform::MAXIMIZE && platform::maximized()) {
+            dl->AddRect({c.x - r + S(2), c.y - r - S(1)}, {c.x + r + S(1), c.y + r - S(2)}, ink, 0, 0, S(1));
+            dl->AddRectFilled({c.x - r - S(1), c.y - r + S(2)}, {c.x + r - S(2), c.y + r + S(1)}, C(mix(GROUND, RAISED, h)));
+            dl->AddRect({c.x - r - S(1), c.y - r + S(2)}, {c.x + r - S(2), c.y + r + S(1)}, ink, 0, 0, S(1));
+        } else if (i == platform::MAXIMIZE) dl->AddRect({c.x - r, c.y - r}, {c.x + r, c.y + r}, ink, 0, 0, S(1));
+        else dl->AddLine({c.x - r, c.y - r}, {c.x + r, c.y + r}, ink, S(1)), dl->AddLine({c.x - r, c.y + r}, {c.x + r, c.y - r}, ink, S(1));
+        if (pressed) platform::window_command((platform::WindowCommand)i);
+    }
+    platform::caption_holes.push_back({left, 0, width, H});
+    return left;
+}
+
+#ifndef _WIN32
+inline void shortcut_card(float width) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 a = ImGui::GetCursorScreenPos(), b{a.x + width, a.y + S(108)};
+    dl->AddRectFilled(a, b, C(RAISED), S(12));
+    label_caps(dl, {a.x + S(20), a.y + S(18)}, "APP MENU SHORTCUT", MUTED);
+    static std::string note;
+    static bool bad = false;
+    std::error_code ec;
+    bool exists = fs::exists(platform::shortcut_file(), ec);
+    if (note.empty()) note = exists ? "FaTrainer Installer is in your app menu. Press again after you move this file." : "Adds FaTrainer Installer to your app menu, so you can search for it.";
+    ImGui::PushClipRect(a, {b.x - S(190), b.y}, true);
+    dl->AddText(F.small, F.small->FontSize, {a.x + S(20), a.y + S(42)}, C(bad ? BAD : SOFT), note.c_str());
+    ImGui::PopClipRect();
+    ImGui::SetCursorScreenPos({b.x - S(178), a.y + S(32)});
+    if (button("shortcut", exists ? "Update shortcut" : "Add shortcut", {S(158), S(44)}, Kind::ghost)) {
+        std::string error;
+        bad = !platform::add_shortcut(std::string((const char*)icon_png, (size_t)(icon_png_end - icon_png)), error);
+        note = bad ? "Could not add the shortcut: " + error + "." : "Added. Search for FaTrainer in your app menu.";
+    }
+    ImGui::SetCursorScreenPos({a.x, b.y});
+    ImGui::Dummy({width, 0});
+}
+#endif
 
 inline void game_list(ImVec2 a, float width, const std::string& state) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -594,6 +660,10 @@ inline void detail(float width) {
         }
         ImGui::SetCursorScreenPos({a.x, b.y});
         ImGui::Dummy({width, 0});
+#ifndef _WIN32
+        ImGui::Dummy({0, S(2)});
+        shortcut_card(width);
+#endif
     }
     ImGui::Dummy({0, S(24)});
 }
@@ -645,6 +715,9 @@ inline void frame() {
                                                      ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBackground);
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float MARGIN = S(36), BAR = S(84);
+    platform::caption_height = BAR;
+    platform::caption_holes.clear();
+    float controls_left = window_controls(size.x);
     const char* WORD = "FaTrainer";
     float move = ease_in_out((t - 0.95f) / 0.8f);
     float font_size = lerp(F.intro->FontSize, F.brand->FontSize, move);
@@ -663,7 +736,7 @@ inline void frame() {
         const char* SUBTITLE = "Installer  \xc2\xb7  " FATRAINER_EDITION;
         dl->AddText(F.small, F.small->FontSize, {MARGIN + brand_w + S(12), S(28) + F.brand->FontSize - F.small->FontSize - S(2)}, C(MUTED), SUBTITLE);
         tabs({MARGIN + brand_w + S(12) + text_w(F.small, SUBTITLE) + S(44), S(32)});
-        status_pill({size.x - MARGIN, S(24)});
+        status_pill({std::min(size.x - MARGIN, controls_left - S(16)), S(24)});
         dl->AddLine({MARGIN, BAR}, {MARGIN + (size.x - 2 * MARGIN) * shown, BAR}, C(LINE_SOFT));
         ImGui::PopStyleVar();
 

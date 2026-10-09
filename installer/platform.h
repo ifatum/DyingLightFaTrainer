@@ -29,9 +29,26 @@ namespace platform {
 
 const std::string FOLDER_PICKER_MISSING = "\x01";
 
+struct Rect { float x0, y0, x1, y1; };
+inline float caption_height = 0;
+inline std::vector<Rect> caption_holes;
+
 #ifdef _WIN32
-const bool LINUX = false;
+const bool LINUX = false, CUSTOM_CAPTION = true;
 inline HWND window = nullptr;
+
+enum WindowCommand { MINIMIZE, MAXIMIZE, CLOSE };
+inline bool maximized() { return window && IsZoomed(window); }
+inline void window_command(WindowCommand c) {
+    if (c == MINIMIZE) ShowWindow(window, SW_MINIMIZE);
+    else if (c == MAXIMIZE) ShowWindow(window, maximized() ? SW_RESTORE : SW_MAXIMIZE);
+    else PostMessageW(window, WM_CLOSE, 0, 0);
+}
+
+inline fs::path config_dir() {
+    const wchar_t* data = _wgetenv(L"APPDATA");
+    return data ? fs::path(data) / "FaTrainer" : fs::path();
+}
 #ifndef FATRAINER_OFFLINE
 namespace net = ::net;
 #endif
@@ -81,7 +98,10 @@ inline void pick_folder(const std::function<void(std::string)>& done) {
 }
 
 #else
-const bool LINUX = true;
+const bool LINUX = true, CUSTOM_CAPTION = false;
+enum WindowCommand { MINIMIZE, MAXIMIZE, CLOSE };
+inline bool maximized() { return false; }
+inline void window_command(WindowCommand) {}
 
 const int NOT_STARTED = -1, NOT_FOUND = 127;
 
@@ -118,6 +138,47 @@ inline int run(const std::vector<std::string>& args, const std::function<bool(co
 inline std::string home() {
     const char* h = getenv("HOME");
     return h ? h : "";
+}
+
+inline fs::path xdg(const char* variable, const char* fallback) {
+    const char* v = getenv(variable);
+    return v && *v ? fs::path(v) : fs::path(home()) / fallback;
+}
+
+inline fs::path config_dir() { return xdg("XDG_CONFIG_HOME", ".config") / "fatrainer"; }
+inline fs::path shortcut_file() { return xdg("XDG_DATA_HOME", ".local/share") / "applications" / "fatrainer-installer.desktop"; }
+inline fs::path shortcut_icon() { return xdg("XDG_DATA_HOME", ".local/share") / "icons" / "hicolor" / "256x256" / "apps" / "fatrainer-installer.png"; }
+
+inline bool on_nixos() {
+    std::ifstream release("/etc/os-release");
+    std::string text((std::istreambuf_iterator<char>(release)), std::istreambuf_iterator<char>());
+    return text.find("ID=nixos") != std::string::npos;
+}
+
+inline std::string desktop_quoted(const std::string& path) {
+    std::string out = "\"";
+    for (char c : path) {
+        if (c == '"' || c == '`' || c == '$' || c == '\\') out += "\\\\";
+        out += c;
+    }
+    return out + "\"";
+}
+
+inline bool add_shortcut(const std::string& icon_png, std::string& error) {
+    std::error_code ec;
+    fs::path exe = fs::read_symlink("/proc/self/exe", ec);
+    if (ec) return error = "could not find where the installer is", false;
+    fs::create_directories(shortcut_file().parent_path(), ec);
+    fs::create_directories(shortcut_icon().parent_path(), ec);
+    std::ofstream(shortcut_icon(), std::ios::binary | std::ios::trunc).write(icon_png.data(), (std::streamsize)icon_png.size());
+    std::ofstream desktop(shortcut_file(), std::ios::trunc);
+    desktop << "[Desktop Entry]\nType=Application\nName=FaTrainer Installer\nGenericName=Game trainer installer\n"
+            << "Comment=Install, update or remove FaTrainer | Dying Light\n"
+            << "Exec=" << (on_nixos() ? "steam-run " : "") << desktop_quoted(exe.string()) << "\n"
+            << "Path=" << exe.parent_path().string() << "\nIcon=fatrainer-installer\nTerminal=false\nCategories=Game;\n"
+            << "Keywords=Dying Light;trainer;FaTrainer;cheats;\nStartupWMClass=fatrainer-installer\n";
+    if (!desktop) return error = "could not write " + shortcut_file().string(), false;
+    return true;
 }
 
 inline std::vector<fs::path> steam_roots() {
@@ -181,6 +242,14 @@ const char* APP_ID = "239140";
 inline std::string read_file(const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
     return std::string(std::istreambuf_iterator<char>(f), {});
+}
+
+inline fs::path private_release() {
+    std::string text = read_file(config_dir() / "private-release.txt");
+    while (!text.empty() && isspace((unsigned char)text.back())) text.pop_back();
+    std::error_code ec;
+    fs::path dir = fs::u8path(text);
+    return !text.empty() && !config_dir().empty() && fs::is_regular_file(dir / "version.txt", ec) ? dir : fs::path();
 }
 
 inline bool is_game_dir(const fs::path& dir) {

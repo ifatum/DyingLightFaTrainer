@@ -38,7 +38,43 @@ static bool create_device(HWND window) {
     return false;
 }
 
+static int frame_size(HWND window) {
+    UINT dpi = GetDpiForWindow(window);
+    return GetSystemMetricsForDpi(SM_CXFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+}
+
+static LRESULT hit_test(HWND window, LPARAM l) {
+    POINT p{(short)LOWORD(l), (short)HIWORD(l)};
+    ScreenToClient(window, &p);
+    RECT r;
+    GetClientRect(window, &r);
+    int edge = IsZoomed(window) ? 0 : frame_size(window);
+    bool left = p.x < edge, right = p.x >= r.right - edge, top = p.y < edge, bottom = p.y >= r.bottom - edge;
+    if (top && left) return HTTOPLEFT;
+    if (top && right) return HTTOPRIGHT;
+    if (bottom && left) return HTBOTTOMLEFT;
+    if (bottom && right) return HTBOTTOMRIGHT;
+    if (left) return HTLEFT;
+    if (right) return HTRIGHT;
+    if (bottom) return HTBOTTOM;
+    if (p.y < platform::caption_height) {
+        for (const platform::Rect& hole : platform::caption_holes)
+            if (p.x >= hole.x0 && p.x < hole.x1 && p.y >= hole.y0 && p.y < hole.y1) return HTCLIENT;
+        return top ? HTTOP : HTCAPTION;
+    }
+    return HTCLIENT;
+}
+
 static LRESULT WINAPI window_proc(HWND window, UINT msg, WPARAM w, LPARAM l) {
+    if (msg == WM_NCCALCSIZE && w) {
+        if (IsZoomed(window)) {
+            RECT* r = &((NCCALCSIZE_PARAMS*)l)->rgrc[0];
+            int inset = frame_size(window);
+            r->left += inset, r->top += inset, r->right -= inset, r->bottom -= inset;
+        }
+        return 0;
+    }
+    if (msg == WM_NCHITTEST) return hit_test(window, l);
     if (ImGui_ImplWin32_WndProcHandler(window, msg, w, l)) return true;
     switch (msg) {
         case WM_SIZE:
@@ -87,6 +123,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     BOOL dark = TRUE;
     const DWORD IMMERSIVE_DARK_MODE = 20;
     DwmSetWindowAttribute(window, IMMERSIVE_DARK_MODE, &dark, sizeof dark);
+    MARGINS shadow{0, 0, 1, 0};
+    DwmExtendFrameIntoClientArea(window, &shadow);
+    SetWindowPos(window, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     if (!create_device(window)) {
         MessageBoxW(window, L"FaTrainer Installer could not start Direct3D 11 on this PC.", L"FaTrainer Installer", MB_ICONERROR);
         return 1;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2
+
+- New: the Windows installer has its own title bar in the FaTrainer style, with minimize, maximize and close. You can still drag it, snap it and resize it from the edges.
+- New: on Linux the installer opens as a floating window, also in tiling window managers like Hyprland, Sway and i3.
+- New: on Linux the installer can add itself to your app menu, so you can search for FaTrainer Installer.
+
 ## 2.1
 
 - New: Dodge spit on the PvP page, under As a survivor. When a spit is about to hit you, you step aside on your own: after a human reaction time, for a short random moment, sideways when it can, using W A S D. It only reacts to spit that would really hit you, never presses against a key you hold and never touches your mouse. Also part of both Survivor presets.
