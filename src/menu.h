@@ -836,7 +836,7 @@ inline void rank_row(const char* label, bool zombie, const char* const* names) {
     int title = cheats::rank_title(points);
     ImGui::PushID(label);
     ImGui::TableNextRow(0, S(44));
-    ImGui::BeginDisabled(cheats::player && zombie != cheats::playing_hunter());
+    ImGui::BeginDisabled(zombie ? cheats::hunter_is_someone_else() : cheats::playing_hunter());
     ImGui::TableNextColumn();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
@@ -862,7 +862,7 @@ inline void rank_row(const char* label, bool zombie, const char* const* names) {
 inline void ranks_card() {
     if (cheats::pvp_rank(false) < 0 && cheats::pvp_rank(true) < 0) return;
     begin_card("ranks", "BE THE ZOMBIE RANKS");
-    note("Your PvP rank as a survivor and as the Night Hunter. The side you are not playing right now is grayed out. The game may adjust it again after your next Be The Zombie match.");
+    note("Your PvP rank as a survivor and as the Night Hunter. In a Be The Zombie match the side you are not playing is grayed out. The game may adjust it again after your next Be The Zombie match.");
     ImGui::Dummy({0, S(4)});
     if (ImGui::BeginTable("ranks", 3, ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(130));

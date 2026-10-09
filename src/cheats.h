@@ -1412,6 +1412,19 @@ inline bool playing_hunter() {
     return lp && rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER;
 }
 
+inline bool hunter_is_someone_else() {
+    std::vector<uintptr_t> players = g.players;
+    {
+        std::lock_guard<std::mutex> l(esp_mx);
+        players.insert(players.end(), esp_players.begin(), esp_players.end());
+    }
+    for (uintptr_t p : players) {
+        uintptr_t lp = p != player && alive(p) ? logical_player(p) : 0;
+        if (lp && rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER) return true;
+    }
+    return false;
+}
+
 inline void weaken_hunter() {
     std::lock_guard<std::mutex> l(esp_mx);
     for (uintptr_t p : esp_players) {
