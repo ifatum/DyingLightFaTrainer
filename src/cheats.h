@@ -113,8 +113,7 @@ inline Tweak TWEAKS[] = {
       {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"z_pound", "Ground pound", "Reach of the ground pound and the aerial ground pound, and how far above or below you a survivor can stand and still get hit (normally 2 m).",
      G_ZOMBIE, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}, {{"f_btz_zombie_groundpound_damage_height", 8}}},
-    {"z_tackle", "Tackle", "How far away the charge tackle still connects (normally 5 m) and how far off your aim the survivor may be (normally 45 degrees, shared with the pounce).",
-     G_ZOMBIE, {"ZombieChargeAttackRange"}, {{"f_btz_zombie_grab_angle_max", 120}, {"f_btz_pvp_grab_sim_pos_angle_max_increase", 60}}},
+    {"z_tackle", "Tackle", "How far away the charge tackle still connects. Normally 5 m.", G_ZOMBIE, {"ZombieChargeAttackRange"}},
     {"z_claws", "Claws", "Reach of your claw swipes.", G_ZOMBIE, {"RangeMeleeMul", "BestTargetMeleeRange"}},
     {"z_spit", "Spit hit radius", "How far from a survivor a spit can land and still hit him. Normal is 5 m, x3 is 15 m. Toxic spit puddles grow too.",
      G_ZOMBIE, {}, {}, 6.0f},
@@ -155,7 +154,7 @@ inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
 inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
-inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0, xp_award_site = 0;
+inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0, xp_award_site = 0, tackle_aim_return = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 using VarVec3Fn = float* (*)(uintptr_t, float*, uintptr_t, uintptr_t, uintptr_t);
 inline VarFloatFn original_var_float = nullptr;
@@ -268,6 +267,9 @@ inline void locate(uintptr_t base) {
     if (auto hits = game::find_code(base, "4C 8B 35 ? ? ? ? 4D 85 F6 0F 84 ? ? ? ? 4D 8B B6 40 05 00 00 4D 85 F6 0F 84 ? ? ? ? F3 41 0F 10 86 68 2D 00 00");
         !hits.empty())
         profile_root = game::rip_target(hits[0], 3, 7);
+    const int TACKLE_AIM_CALL = 0x83, TACKLE_AIM_RETURN = 0x89;
+    if (auto hits = game::find_code(base, "48 8B 81 00 18 00 00 8B CE F3 0F 10 78 08"); hits.size() == 1 && rdv<uint16_t>(hits[0] + TACKLE_AIM_CALL) == 0x93FF)
+        tackle_aim_return = hits[0] + TACKLE_AIM_RETURN;
     const int POUND_EXPOSURE_AT = 12;
     if (auto hits = game::find_code(base, "E8 ? ? ? ? 48 8B 0B 41 0F 2F C3 40 0F 97 C7 48 85 C9 74"); hits.size() == 1)
         pound_exposure_check = hits[0] + POUND_EXPOSURE_AT;
@@ -654,6 +656,7 @@ inline void apply_overrides() {
 
 inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, uintptr_t extra) {
     float v = original_var_float(self, name, scope, extra);
+    if (tackle_aim_return && (uintptr_t)__builtin_return_address(0) == tackle_aim_return) return v;
     const char* s = name ? *(const char**)name : nullptr;
     if (!s || strncmp(s, "f_btz_", 6)) return v;
     float best = v;

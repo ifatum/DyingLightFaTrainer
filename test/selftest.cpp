@@ -198,6 +198,7 @@ int main(int argc, char** argv) {
     CHECK(cheats::profile_root > (uintptr_t)m && cheats::profile_root < (uintptr_t)m + 0x4000000);
     CHECK(cheats::forced_damage_jump == (uintptr_t)m + 0xbae6c3);
     CHECK(cheats::pound_exposure_check == (uintptr_t)m + 0xd654e7);
+    CHECK(cheats::tackle_aim_return == (uintptr_t)m + 0xd5fc90);
     uintptr_t pound_code = cheats::pound_exposure_check;
     {
         static uint8_t fake_jump[6] = {0x0F, 0x84, 1, 2, 3, 4};
