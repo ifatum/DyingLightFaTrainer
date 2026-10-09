@@ -3,6 +3,8 @@
 ## 1.0
 
 - The installer now has its own version, separate from the trainer it installs.
+- New: pick which FaTrainer version to install. Every version is still checked against its own checksum.
+- New: Use older versions keeps an older FaTrainer working in game after a newer one is out. The update notice still shows.
 - New: the installer checks for a newer installer and updates itself: press Update the installer, it checks the download against its checksum and restarts.
 - New: the installer opens centered on the screen you are working on.
 - New: the Windows installer has its own title bar in the FaTrainer style, with minimize, maximize and close. You can still drag it, snap it and resize it from the edges.

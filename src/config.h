@@ -132,6 +132,10 @@ inline bool load_profile(const std::string& name, Profile& p) {
 
 inline bool delete_profile(const std::string& name) { return DeleteFileA(profile_path(name).c_str()); }
 
+inline bool rename_profile(const std::string& from, const std::string& to) {
+    return !to.empty() && MoveFileA(profile_path(from).c_str(), profile_path(to).c_str());
+}
+
 inline void normalize(const std::vector<std::string>& known) {
     std::vector<PageEntry> out;
     for (auto& p : cfg.pages)

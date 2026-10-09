@@ -19,12 +19,12 @@
 - **Skills**: XP multiplier for every skill tree (the game shows the boosted XP), draggable XP bars, +1 point through real XP, -10, -1, +10 and Max for any skill tree, extra skill points without changing the level
 - **Prison**: pause the Harran Prison timers, teleport to every section, save and load your position
 - **Night Hunter**: hunter god mode, infinite energy, take less damage, less UV damage, sure-hit ground pound, no ability cooldowns, infinite spits, spit keys, long camouflage
-- **PvP**: four ready-made presets (Survivor Legit, Survivor Rage, Night Hunter Legit, Night Hunter Rage) and one reach slider per attack (pounce, ground pound, tackle, claws, spit hit radius, death from above, dropkick, kicks, melee). At Max the pounce, dropkick and death from above also hit targets that are not in front of you. As a survivor, Dodge spit steps you aside from spit that would hit you, with a human reaction time, and One hit kill on the Night Hunter drops him to 1 health
+- **PvP**: configs (four built-in ones: Survivor Legit, Survivor Rage, Night Hunter Legit, Night Hunter Rage, plus your own) and one reach slider per attack (pounce, ground pound, tackle, claws, spit hit radius, death from above, dropkick, kicks, melee). At Max the pounce, dropkick and death from above also hit targets that are not in front of you. As a survivor, Dodge spit steps you aside from spit that would hit you, with a human reaction time, and One hit kill on the Night Hunter drops him to 1 health
 - **Visuals**: player ESP for Be The Zombie and co-op, custom UV light color and glow, custom Night Hunter glow color
 - **Cash / Backpack / Stash / Materials**: set your money and any stack count
 - **Give items**: spawn any weapon, upgrade, consumable, material or blueprint; each item goes into the inventory the game accepts it in
 - **Weapon editor**: damage, durability, crits, knockback, stamina, reach, magazine, reload time, upgrades, repairs, rarity
-- **Settings**: accent color, window opacity, corner roundness, animations (Full, Subtle, Off), Harran skyline and accent glow, interface size, background dim, menu key, sidebar order and visibility, named configs, all saved to `fatrainer.ini`. About shows your version and whether it is the Fatum Version or the Nexus Version
+- **Settings**: accent color, window opacity, corner roundness, animations (Full, Subtle, Off), Harran skyline and accent glow, interface size, background dim, menu key, sidebar order and visibility, configs you can create, load, save over, rename and delete, all saved to `fatrainer.ini`. About shows your version and whether it is the Fatum Version or the Nexus Version
 
 ### Install
 
@@ -41,7 +41,7 @@ The installer finds Dying Light in your Steam libraries (or lets you choose the 
 WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 ```
 
-The installer has its own version and updates itself: when a newer installer is out, its main button becomes Update the installer. When a newer trainer is released, the trainer stays off in game and asks you to run the installer again. The game itself keeps working, and without internet the trainer works as usual.
+The installer has its own version and updates itself: when a newer installer is out, its main button becomes Update the installer. When a newer trainer is released, the trainer stays off in game and asks you to run the installer again, unless you tick Use older versions in the installer. The installer also lets you pick an older version to install. Versions can have build numbers, like 2.2 b1. The game itself keeps working, and without internet the trainer works as usual.
 
 The **Nexus Version** on [Nexus Mods](https://www.nexusmods.com/dyinglight/mods/1724) (`FaTrainer-Nexus-Version-Installer`) is offline: its installer has the trainer inside, and neither connects to the internet, so there is no update check. Nexus Mods tells you about updates when you track the mod.
 

@@ -732,6 +732,17 @@ inline void apply_profile(const config::Profile& p) {
         if (auto* t = find_tweak(key)) t->factor = std::clamp(factor, 1.0f, t->max);
 }
 
+inline bool profile_active(const config::Profile& p) {
+    for (auto& c : CHEATS)
+        if (c.on != (std::find(p.cheats.begin(), p.cheats.end(), c.key) != p.cheats.end())) return false;
+    for (auto& t : TWEAKS) {
+        auto it = std::find_if(p.tweaks.begin(), p.tweaks.end(), [&](auto& kv) { return kv.first == t.key; });
+        float want = it == p.tweaks.end() ? 1.0f : std::clamp(it->second, 1.0f, t.max);
+        if (fabsf(t.factor - want) > 0.01f) return false;
+    }
+    return true;
+}
+
 enum PresetEsp { ESP_LEGIT, ESP_RAGE };
 
 struct Preset {
