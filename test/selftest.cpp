@@ -286,6 +286,26 @@ int main(int argc, char** argv) {
     cheats::level_up_with_xp(2);
     CHECK(game::rdv<uint32_t>(w.trees + 2 * 0x20 + 8) == 1500 && fake_level_calls == 1);
     {
+        auto xp_of = [&](int type) { return w.trees + type * 0x20 + 8; };
+        for (int type : {1, 3}) game::wr<uint16_t>(w.trees + type * 0x20 + 0x16, 20);
+        cheats::find_tweak("xp")->factor = 5.0f;
+        cheats::tick();
+        game::wr<uint32_t>(xp_of(2), 1600);
+        cheats::tick();
+        CHECK(game::rdv<uint32_t>(xp_of(2)) == 2000 && fake_level_calls == 2);
+        cheats::tick();
+        CHECK(game::rdv<uint32_t>(xp_of(2)) == 2000);
+        for (int type : {1, 2, 3}) game::wr<uint32_t>(xp_of(type), 9000);
+        cheats::tick();
+        CHECK(game::rdv<uint32_t>(xp_of(1)) == 9000 && game::rdv<uint32_t>(xp_of(2)) == 9000 && fake_level_calls == 2);
+        cheats::find_tweak("xp")->factor = 1.0f;
+        game::wr<uint32_t>(xp_of(2), 9100);
+        cheats::tick();
+        CHECK(game::rdv<uint32_t>(xp_of(2)) == 9100);
+        for (int type : {1, 2, 3}) game::wr<uint32_t>(xp_of(type), 0);
+        for (int type : {1, 3}) game::wr<uint16_t>(w.trees + type * 0x20 + 0x16, 0);
+    }
+    {
         static uintptr_t global_container;
         global_container = game::rdv<uintptr_t>(w.player + cheats::PARAM_CONTAINER);
         game::wr<uintptr_t>(w.player + cheats::PARAM_CONTAINER, 0);
@@ -337,6 +357,18 @@ int main(int argc, char** argv) {
     game::wr<float>(blade + cheats::ITEM_CONDITION, 12.5f);
     cheats::tick();
     CHECK(game::rdv<float>(blade + cheats::ITEM_CONDITION) == 30.0f);
+    uintptr_t picked_up = w.item("Melee_MacheteAGen", 1), bag = game::rdv<uintptr_t>(w.backpack + 0x40);
+    uint32_t bag_count = game::rdv<uint32_t>(w.backpack + 0x48);
+    game::wr<uintptr_t>(bag + bag_count * 8, picked_up);
+    game::wr<uint32_t>(w.backpack + 0x48, bag_count + 1);
+    game::wr<float>(picked_up + cheats::ITEM_CONDITION, 40.0f);
+    cheats::tick();
+    game::wr<float>(picked_up + cheats::ITEM_CONDITION, 20.0f);
+    cheats::tick();
+    CHECK(game::rdv<float>(picked_up + cheats::ITEM_CONDITION) == 40.0f);
+    game::wr<uint32_t>(w.backpack + 0x48, bag_count);
+    cheats::tick();
+    CHECK(!cheats::condition_floor.count(picked_up));
     cheats::find("durability")->on = false;
     cheats::tick();
     game::wr<float>(blade + cheats::ITEM_CONDITION, 12.5f);

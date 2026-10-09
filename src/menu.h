@@ -840,58 +840,88 @@ inline void ranks_card() {
     end_card();
 }
 
+struct TreeView { const char* name; int type, level, max; float progress; };
+
+inline std::vector<TreeView> tree_views() {
+    static const bool sample = getenv("DLT_SKILLS") != nullptr;
+    std::vector<TreeView> out;
+    if (sample) {
+        int levels[] = {12, 18, 21, 37, 9, 0, 0, 3}, maxes[] = {25, 24, 24, 250, 25, 0, 0, 0};
+        float progress[] = {0.62f, 0.35f, 0.88f, 0.14f, 0.5f, 0, 0, 0};
+        for (size_t i = 0; i < std::size(cheats::TREES); i++)
+            if (maxes[i]) out.push_back({cheats::TREES[i].name, cheats::TREES[i].type, levels[i], maxes[i], progress[i]});
+        return out;
+    }
+    for (auto& t : cheats::TREES) {
+        int max = cheats::tree_max(t.type), level = cheats::tree_level(t.type);
+        if (max && level >= 0) out.push_back({t.name, t.type, level, max, cheats::tree_progress(t.type)});
+    }
+    return out;
+}
+
+inline void tree_tile(const TreeView& t, float width) {
+    ImGui::PushID(t.type);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, V(T.raised, std::max(0.75f, config::cfg.look.opacity)));
+    ImGui::PushStyleColor(ImGuiCol_Border, V(T.line_soft));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(18), S(16)});
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+    ImGui::BeginChild("tree", {width, S(168)}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders);
+    std::string caption = t.name;
+    for (auto& ch : caption) ch = (char)toupper((unsigned char)ch);
+    caps(caption.c_str(), t.level >= t.max ? T.accent : 0);
+    ImGui::Dummy({0, S(2)});
+    ImGui::PushFont(f_tile);
+    ImGui::Text("%d", t.level);
+    ImGui::PopFont();
+    ImGui::SameLine(0, S(6));
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + S(10));
+    ImGui::TextDisabled(t.level >= t.max ? "/ %d  max" : "/ %d", t.max);
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x, shown = animate(ImGui::GetID("bar"), t.progress, 6);
+    auto* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled({p.x, p.y + S(2)}, {p.x + w, p.y + S(7)}, C(IM_COL32(255, 255, 255, 255), 0.06f), S(3));
+    dl->AddRectFilled({p.x, p.y + S(2)}, {p.x + w * shown, p.y + S(7)}, C(T.accent), S(3));
+    if (shown > 0.02f) dl->AddCircleFilled({p.x + w * shown, p.y + S(4.5f)}, S(6), C(T.accent, 0.25f));
+    ImGui::Dummy({0, S(16)});
+    int type = t.type, level = t.level;
+    float gap = S(6), small = S(52), add = w - small * 2 - gap * 2;
+    ImGui::BeginDisabled(level <= 0);
+    if (ImGui::Button("-1", {small, 0})) on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, level - 1); });
+    ImGui::EndDisabled();
+    ImGui::SameLine(0, gap);
+    ImGui::BeginDisabled(level >= t.max);
+    if (accent_button("+1 point", {add, 0})) on_game_thread([=] {
+        std::lock_guard<std::mutex> l(game::mx);
+        if (cheats::level_from_xp_fn) cheats::level_up_with_xp(type);
+        else cheats::set_tree_level(type, level + 1);
+    });
+    ImGui::SameLine(0, gap);
+    if (ImGui::Button("Max", {small, 0})) on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, cheats::tree_max(type)); });
+    ImGui::EndDisabled();
+    ImGui::EndChild();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
+    ImGui::PopID();
+}
+
 inline void skills_page() {
     begin_card("xp", "EXPERIENCE");
     tweak_sliders(cheats::G_PROGRESS);
     end_card();
-    if (!cheats::player) return empty_state("Your character was not found yet. Load into your save, then press Refresh.");
-    if (!cheats::set_level_fn) return empty_state("The game's level function was not found. Check fatrainer.log.");
-    begin_card("trees", "SKILL TREES");
-    note("Level up gives you exactly the XP for the next level, like playing would. The other buttons set the level directly. Skill points appear in the skill menu right away.");
-    ImGui::Dummy({0, S(4)});
-    if (ImGui::BeginTable("trees", 4, ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(130));
-        ImGui::TableSetupColumn("level", ImGuiTableColumnFlags_WidthFixed, S(90));
-        ImGui::TableSetupColumn("xp", ImGuiTableColumnFlags_WidthFixed, S(120));
-        ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthStretch);
-        for (auto& t : cheats::TREES) {
-            int max = cheats::tree_max(t.type), level = cheats::tree_level(t.type);
-            if (!max || level < 0) continue;
-            ImGui::PushID(t.type);
-            ImGui::TableNextRow(0, S(44));
-            ImGui::TableNextColumn();
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(t.name);
-            ImGui::TableNextColumn();
-            ImGui::AlignTextToFramePadding();
-            ImGui::Text("%d", level);
-            ImGui::SameLine(0, S(4));
-            ImGui::TextDisabled("/ %d", max);
-            ImGui::TableNextColumn();
-            ImGui::BeginDisabled(!cheats::level_from_xp_fn || level >= max);
-            if (accent_button("Level up", {S(110), 0})) {
-                int type = t.type;
-                on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::level_up_with_xp(type); });
-            }
-            ImGui::EndDisabled();
-            ImGui::TableNextColumn();
-            struct Step { const char* text; int delta; };
-            for (Step st : {Step{"-10", -10}, Step{"-1", -1}, Step{"+1", 1}, Step{"+10", 10}}) {
-                if (ImGui::Button(st.text, {S(56), 0})) {
-                    int type = t.type, target = level + st.delta;
-                    on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, target); });
-                }
-                ImGui::SameLine(0, S(6));
-            }
-            if (ImGui::Button("Max", {S(64), 0})) {
-                int type = t.type;
-                on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, cheats::tree_max(type)); });
-            }
-            ImGui::PopID();
-        }
-        ImGui::EndTable();
-    }
+    static const bool sample = getenv("DLT_SKILLS") != nullptr;
+    if (!cheats::player && !sample) return empty_state("Your character was not found yet. Load into your save, then press Refresh.");
+    if (!cheats::set_level_fn && !sample) return empty_state("The game's level function was not found. Check fatrainer.log.");
+    auto trees = tree_views();
+    if (trees.empty()) return empty_state("Your skill trees could not be read yet. Wait until your save has fully loaded, then press Refresh.");
+    begin_card("trees", "SKILL POINTS");
+    note("Each level is one skill point to spend in the game's skill menu. +1 point gives you exactly the XP for the next level, like playing would.");
     end_card();
+    float tile = (ImGui::GetContentRegionAvail().x - S(12)) / 2;
+    for (size_t i = 0; i < trees.size(); i++) {
+        if (i % 2) ImGui::SameLine(0, S(12));
+        tree_tile(trees[i], tile);
+        if (i % 2 || i + 1 == trees.size()) ImGui::Dummy({0, S(4)});
+    }
     ranks_card();
 }
 

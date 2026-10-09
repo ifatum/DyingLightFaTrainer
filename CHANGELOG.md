@@ -3,6 +3,9 @@
 ## 2.2
 
 - The FaTrainer Installer now has its own version (Installer 1.0) and keeps itself up to date.
+- XP gain now multiplies experience in every skill tree, Survivor included. Before it only changed Agility, Power and Driver.
+- Fixed: Unbreakable weapons did not protect weapons you picked up after turning it on, until you pressed Refresh.
+- Skills page: each skill tree is a tile with its level, an XP bar toward the next skill point and -1, +1 point and Max buttons.
 
 ## 2.1
 

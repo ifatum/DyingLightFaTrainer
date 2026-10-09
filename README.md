@@ -16,7 +16,7 @@
 
 - **Player**: god mode, infinite stamina, infinite grappling hook, infinite UV flashlight, instant lockpicking, no fall damage, movement speed, jump height, instant refill
 - **Combat**: one hit kill, infinite ammo, no reload, infinite consumables, unbreakable weapons
-- **Skills**: XP multiplier, Level up with XP, or set any skill tree level (+1, +10, max, -1, -10)
+- **Skills**: XP multiplier for every skill tree, +1 skill point through real XP, -1 and Max for any skill tree
 - **Prison**: pause the Harran Prison timers, teleport to every section, save and load your position
 - **Night Hunter**: hunter god mode, infinite energy, no ability cooldowns, infinite spits, spit keys, long camouflage
 - **PvP**: four ready-made presets (Survivor Legit, Survivor Rage, Night Hunter Legit, Night Hunter Rage) and one reach slider per attack (pounce, ground pound, tackle, claws, spit hit radius, death from above, dropkick, kicks, melee). At Max the pounce, dropkick and death from above also hit targets that are not in front of you. As a survivor, Dodge spit steps you aside from spit that would hit you, with a human reaction time

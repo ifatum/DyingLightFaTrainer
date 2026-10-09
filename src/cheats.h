@@ -98,7 +98,7 @@ inline Tweak TWEAKS[] = {
     {"speed", "Movement speed", "Walk, sprint and wall run faster.", G_MOVEMENT,
      {"MoveSprintSpeed", "MoveForwardMaxSpeed", "MoveStrafeMaxSpeed", "MoveBackwardMaxSpeed", "WallrunSpeed"}, {}, 3.0f},
     {"jump", "Jump height", "Jump higher.", G_MOVEMENT, {"JumpMaxHeight", "JumpMinHeight"}, {}, 4.0f},
-    {"xp", "XP gain", "Agility, Power and Driver experience.", G_PROGRESS, {"RunnerXPFactor", "FighterXPFactor", "DriverXPFactor"}},
+    {"xp", "XP gain", "Experience in every skill tree, Survivor included.", G_PROGRESS, {}},
     {"z_pounce", "Pounce", "At Max you pounce survivors 40 m away, even when they are not in front of you. Also grows the pounce slam blast.",
      G_ZOMBIE, {"ZombiePounceHighRageExplosionRange"},
      {{"f_btz_zombie_grab_range", 40}, {"f_btz_zombie_grab_range_velocity_factor", 1}, {"f_btz_zombie_grab_angle_max", 180},
@@ -743,12 +743,47 @@ inline int tree_max(int type) {
     return m > 0 && m < 1000 ? m : 0;
 }
 
+inline float tree_progress(int type) {
+    uintptr_t r = tree_record(type);
+    if (!r || tree_level(type) >= tree_max(type)) return 1;
+    uint32_t start = rdv<uint32_t>(r + TREE_LEVEL_START), span = rdv<uint32_t>(r + TREE_SPAN), xp = rdv<uint32_t>(r + TREE_XP);
+    return span ? std::clamp((float)((double)xp - start) / span, 0.0f, 1.0f) : 0;
+}
+
+inline std::map<int, uint32_t> xp_seen;
+inline uintptr_t xp_seen_player = 0;
+
 inline void level_up_with_xp(int type) {
     uintptr_t container = skill_container(), r = tree_record(type);
     if (!container || !r || !level_from_xp_fn || tree_level(type) >= tree_max(type)) return;
     uint32_t next = rdv<uint32_t>(r + TREE_LEVEL_START) + rdv<uint32_t>(r + TREE_SPAN);
     if (rdv<uint32_t>(r + TREE_XP) < next) wr<uint32_t>(r + TREE_XP, next);
     ((void(__fastcall*)(uintptr_t, int))level_from_xp_fn)(container, type);
+    xp_seen.clear();
+}
+
+const int TREES_CHANGED_ON_LOAD = 3;
+
+inline void boost_xp(float factor) {
+    uintptr_t container = skill_container();
+    if (factor <= 1.0f || !container || !level_from_xp_fn || player != xp_seen_player) xp_seen.clear();
+    xp_seen_player = player;
+    if (factor <= 1.0f || !container || !level_from_xp_fn) return;
+    std::map<int, uint32_t> now;
+    for (auto& t : TREES)
+        if (tree_max(t.type)) now[t.type] = rdv<uint32_t>(tree_record(t.type) + TREE_XP);
+    int gained = 0;
+    for (auto& [type, xp] : now) gained += xp_seen.count(type) && xp > xp_seen[type];
+    if (gained < TREES_CHANGED_ON_LOAD)
+        for (auto& [type, xp] : now) {
+            if (!xp_seen.count(type) || xp <= xp_seen[type] || tree_level(type) >= tree_max(type)) continue;
+            double boosted = xp_seen[type] + (double)(xp - xp_seen[type]) * factor;
+            xp = (uint32_t)std::min(boosted, (double)INT32_MAX);
+            wr<uint32_t>(tree_record(type) + TREE_XP, xp);
+            ((void(__fastcall*)(uintptr_t, int))level_from_xp_fn)(container, type);
+            xp = rdv<uint32_t>(tree_record(type) + TREE_XP);
+        }
+    xp_seen.swap(now);
 }
 
 inline void set_tree_level(int type, int level) {
@@ -756,6 +791,7 @@ inline void set_tree_level(int type, int level) {
     if (!container || !set_level_fn || !tree_max(type)) return;
     level = std::clamp(level, 0, tree_max(type));
     ((void(__fastcall*)(uintptr_t, int16_t, int))set_level_fn)(container, (int16_t)level, type);
+    xp_seen.clear();
 }
 
 inline bool is_health_module(uintptr_t m) {
@@ -843,18 +879,21 @@ inline void keep_stacks(bool ammo, bool supplies) {
 
 inline void keep_durability(bool on) {
     if (!on) return condition_floor.clear();
+    std::map<uintptr_t, float> kept;
     for (auto& inv : g.invs) {
         if (inv.kind != game::K_BACKPACK) continue;
-        auto present = items_present(inv.obj);
-        for (auto& it : inv.items) {
-            if (!it.info || !(it.info->st[ST_Condition] > 0) || !present.count(it.addr)) continue;
-            float cur = rdv<float>(it.addr + ITEM_CONDITION, NAN);
+        for (uintptr_t addr : items_present(inv.obj)) {
+            const ItemInfo* info = game::resolve(addr, g.rule);
+            if (!info || !(info->st[ST_Condition] > 0)) continue;
+            float cur = rdv<float>(addr + ITEM_CONDITION, NAN);
             if (!(cur > 0)) continue;
-            auto f = condition_floor.emplace(it.addr, cur).first;
-            if (cur > f->second) f->second = cur;
-            if (cur < f->second) wr<float>(it.addr + ITEM_CONDITION, f->second);
+            auto f = condition_floor.find(addr);
+            float floor = f == condition_floor.end() ? cur : std::max(cur, f->second);
+            if (cur < floor) wr<float>(addr + ITEM_CONDITION, floor);
+            kept[addr] = floor;
         }
     }
+    condition_floor.swap(kept);
 }
 
 extern "C" {
@@ -1520,6 +1559,7 @@ inline void tick() {
     apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
     apply_overrides();
     if (!player) return;
+    boost_xp(find_tweak("xp")->factor);
     set_immortal(is_on("god"));
     if (is_on("stamina") || is_on("z_energy")) keep_stamina();
     else best_stamina[0] = best_stamina[1] = 0;
