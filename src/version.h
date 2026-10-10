@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#define FATRAINER_VERSION "2.2 b1"
+#define FATRAINER_VERSION "2.2 b2"
 #define INSTALLER_VERSION "1.0"
 #ifdef FATRAINER_OFFLINE
 #define FATRAINER_EDITION "Nexus Version"
