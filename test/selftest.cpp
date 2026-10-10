@@ -62,6 +62,38 @@ static int ownership_requests = 0;
 static void fake_request_ownership(uintptr_t repl) { ownership_requests++; *(uint8_t*)(repl + 0x28) = 1; }
 static void __fastcall fake_level_from_xp(uintptr_t, int) { fake_level_calls++; }
 
+static std::map<int, int> fake_learned;
+static std::vector<std::vector<uint8_t>> fake_nodes;
+static int fake_skill_calls = 0;
+
+static void fake_store_learned(uintptr_t container) {
+    const size_t NODE = 0x30, AT = 0x10;
+    fake_nodes.clear();
+    for (size_t i = 0; i < fake_learned.size(); i++) fake_nodes.emplace_back(NODE);
+    uintptr_t next = 0;
+    auto it = fake_learned.rbegin();
+    for (size_t i = 0; i < fake_nodes.size(); i++, ++it) {
+        uintptr_t node = (uintptr_t)fake_nodes[i].data() + AT;
+        *(int16_t*)(node - 0x10) = (int16_t)it->first;
+        *(int16_t*)(node - 0xa) = (int16_t)it->second;
+        *(uintptr_t*)(node + 0x10) = next;
+        next = node;
+    }
+    *(uintptr_t*)(container + 0xd8) = next;
+}
+static int __fastcall fake_add_skill(uintptr_t container, uint16_t index, int, bool, bool skip_checks) {
+    fake_skill_calls++;
+    if (!skip_checks) return 3;
+    fake_learned[index]++;
+    fake_store_learned(container);
+    return 0;
+}
+static void __fastcall fake_remove_skill(uintptr_t container, uint16_t index) {
+    fake_skill_calls++;
+    fake_learned.erase(index);
+    fake_store_learned(container);
+}
+
 int main(int argc, char** argv) {
     CHECK(newer_version("2.1", "2.0") && newer_version("2.0.1", "2.0") && newer_version("10.0", "9.9"));
     CHECK(!newer_version("2.0", "2.0") && !newer_version("2.0.0", "2.0") && !newer_version("1.9", "2.0") && !newer_version("", "2.0") && !newer_version("2.x", "2.0"));
@@ -457,6 +489,65 @@ int main(int argc, char** argv) {
         cheats::extra_skill_points[2] = 0;
         cheats::tick();
         CHECK(cheats::skill_points(2) == 4.0f);
+        CHECK(cheats::vt_player_float);
+        game::wr<uintptr_t>(fighter - 8, cheats::vt_player_float);
+        cheats::extra_skill_points[2] = 2;
+        cheats::tick();
+        CHECK(cheats::skill_points(2) == 6.0f);
+        cheats::extra_skill_points[2] = 0;
+        cheats::tick();
+        CHECK(cheats::skill_points(2) == 4.0f);
+        game::wr<uintptr_t>(fighter - 8, cheats::vt_param_float);
+    }
+    {
+        const char* ids[] = {"StunAttacks", "Stunning", "Multithrow", "Finisher", "LegendSkill_MaxHealth"};
+        const int GAME_SKILLS = 5;
+        uintptr_t manager = w.alloc(0x40), list = w.alloc(8 * GAME_SKILLS);
+        for (int i = 0; i < GAME_SKILLS; i++) {
+            uintptr_t skill = w.alloc(0x80);
+            w.put<uintptr_t>(skill + 8, (uintptr_t)ids[i]);
+            w.put<uint16_t>(skill + 0x1c, i == 4 ? 25 : 1);
+            w.put<uintptr_t>(list + i * 8, skill);
+        }
+        w.put<uintptr_t>(manager + 0x30, list);
+        w.put<int>(manager + 0x38, GAME_SKILLS);
+        uintptr_t saved_manager = cheats::skill_manager, saved_add = cheats::add_skill_fn, saved_remove = cheats::remove_skill_fn;
+        CHECK(cheats::skill_manager && cheats::add_skill_fn && cheats::remove_skill_fn);
+        cheats::skill_manager = manager, cheats::add_skill_fn = (uintptr_t)&fake_add_skill, cheats::remove_skill_fn = (uintptr_t)&fake_remove_skill;
+        cheats::skill_slots.clear();
+        uintptr_t container = cheats::skill_container();
+        CHECK(container);
+        fake_learned.clear();
+        fake_store_learned(container);
+        cheats::tick();
+        int stun = cheats::skill_index("StunAttacks"), kick = cheats::skill_index("Stunning"), multi = cheats::skill_index("Multithrow"),
+            finisher = cheats::skill_index("Finisher"), legend = cheats::skill_index("LegendSkill_MaxHealth"), other = cheats::skill_index("Dodge");
+        CHECK(stun >= 0 && kick >= 0 && multi >= 0 && finisher >= 0 && legend >= 0 && other >= 0);
+        CHECK(cheats::skill_slots[stun] == 0 && cheats::skill_slots[finisher] == 3 && cheats::skill_slots[other] == -1);
+        CHECK(cheats::skill_levels_now()[stun] == 0 && cheats::skill_levels_now()[other] == -1);
+        cheats::learn_skill(finisher);
+        cheats::learn_skill(multi);
+        cheats::read_skill_levels();
+        auto levels = cheats::skill_levels_now();
+        CHECK(levels[stun] == 1 && levels[kick] == 1 && levels[finisher] == 1 && levels[multi] == 1 && fake_learned.size() == 4);
+        CHECK(cheats::spent_points(2, levels) == 4);
+        cheats::forget_skill(kick);
+        CHECK(fake_learned.size() == 2 && fake_learned.count(0) && fake_learned.count(2));
+        cheats::set_skill_level(legend, 7);
+        CHECK(fake_learned[4] == 7);
+        cheats::set_skill_level(legend, 3);
+        CHECK(fake_learned[4] == 3);
+        cheats::set_skill_level(legend, 99);
+        CHECK(fake_learned[4] == 25);
+        cheats::set_whole_tree(2, false);
+        CHECK(!fake_learned.count(0) && !fake_learned.count(2) && fake_learned.count(4));
+        int calls = fake_skill_calls;
+        cheats::set_skill_level(other, 1);
+        CHECK(fake_skill_calls == calls);
+        fake_learned.clear();
+        fake_store_learned(container);
+        cheats::skill_manager = saved_manager, cheats::add_skill_fn = saved_add, cheats::remove_skill_fn = saved_remove;
+        cheats::skill_slots.clear();
     }
     cheats::find("durability")->on = false;
     cheats::tick();

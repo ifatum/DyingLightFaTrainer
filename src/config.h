@@ -40,6 +40,7 @@ struct Config {
     float accent[3] = {0.910f, 0.592f, 0.227f};
     float dim = 0.6f;
     float scale = 1.0f;
+    float window[2] = {};
     int menu_key = VK_INSERT;
     bool remember_cheats = true;
     bool allow_older = false;
@@ -177,6 +178,7 @@ inline void load(const std::string& path) {
         if (k == "accent") sscanf(v.c_str(), "%f,%f,%f", &cfg.accent[0], &cfg.accent[1], &cfg.accent[2]);
         else if (k == "dim") cfg.dim = (float)atof(v.c_str());
         else if (k == "scale") cfg.scale = (float)atof(v.c_str());
+        else if (k == "window") sscanf(v.c_str(), "%f,%f", &cfg.window[0], &cfg.window[1]);
         else if (k == "menu_key") cfg.menu_key = atoi(v.c_str());
         else if (k == "spit_key") {
             int i = -1, vk = 0;
@@ -225,6 +227,7 @@ inline bool save(const std::string& path) {
     fprintf(f, "accent=%.3f,%.3f,%.3f\n", cfg.accent[0], cfg.accent[1], cfg.accent[2]);
     fprintf(f, "dim=%.2f\nscale=%.2f\nmenu_key=%d\nremember_cheats=%d\nallow_older=%d\n", cfg.dim, cfg.scale, cfg.menu_key, (int)cfg.remember_cheats,
             (int)cfg.allow_older);
+    if (cfg.window[0] > 0 && cfg.window[1] > 0) fprintf(f, "window=%.0f,%.0f\n", cfg.window[0], cfg.window[1]);
     for (auto& h : cfg.hidden_configs) fprintf(f, "hidden_config=%s\n", h.c_str());
     for (auto& p : cfg.pages) fprintf(f, "page=%s,%d\n", p.id.c_str(), (int)p.visible);
     if (cfg.remember_cheats)

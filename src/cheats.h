@@ -7,6 +7,7 @@
 #include "config.h"
 #include "game.h"
 #include "input.h"
+#include "skills.h"
 
 namespace cheats {
 
@@ -155,7 +156,8 @@ inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
 inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
-inline uintptr_t vt_param_float = 0, vt_param_bool = 0, var_root = 0, xp_award_site = 0;
+inline uintptr_t vt_param_float = 0, vt_player_float = 0, vt_param_bool = 0, var_root = 0, xp_award_site = 0;
+inline uintptr_t skill_manager = 0, add_skill_fn = 0, remove_skill_fn = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 using VarVec3Fn = float* (*)(uintptr_t, float*, uintptr_t, uintptr_t, uintptr_t);
 inline VarFloatFn original_var_float = nullptr;
@@ -262,6 +264,21 @@ inline void locate(uintptr_t base) {
         level_from_xp_fn = hits[0];
     if (auto hits = game::find_code(base, "8B ? C0 09 00 00 BA ? ? ? ? E8"); !hits.empty()) cache_get_fn = game::rip_target(hits[0] + 11, 1, 5);
     if (auto hits = game::find_code(base, "45 85 FF 0F 8E ? ? ? ? 48 8B 9E E8 13 00 00 0F 29 7C 24 60"); hits.size() == 1) xp_award_site = hits[0];
+    if (auto hits = game::find_code(base, "40 57 41 57 48 83 EC 28 48 89 6C 24 50 45 33 FF 48 89 74 24 58 0F B7 FA 4C 89 74 24 20 48 8B E9");
+        hits.size() == 1)
+        remove_skill_fn = hits[0];
+    if (auto hits = game::find_code(base, "40 53 55 56 41 55 41 57 48 83 EC 50 33 F6 45 8B E8 0F B7 EA 4C 8B F9 40 38 B4 24 A8 00 00 00");
+        hits.size() == 1)
+        add_skill_fn = hits[0];
+    const int MANAGER_CALL = 8;
+    if (auto hits = game::find_code(base, "4C 89 A4 24 88 00 00 00 E8 ? ? ? ? 66 83 FD FF 0F 8E"); hits.size() == 1) {
+        uintptr_t getter = game::rip_target(hits[0] + MANAGER_CALL, 1, 5);
+        for (uintptr_t p = getter; p < getter + 0x60; p++)
+            if (!memcmp((const void*)p, "\x48\x8D\x05", 3) && !memcmp((const void*)(p + 7), "\x48\x83\xC4\x28\xC3", 5)) {
+                skill_manager = game::rip_target(p, 3, 7);
+                break;
+            }
+    }
     const int CLAMP_AT = 0x2e;
     auto spot = game::find_code(base, "F3 0F 10 56 50 B1 01 F3 0F 5C 90 18 01 00 00 F3 0F 10 4E 54 F3 0F 59 0D ? ? ? ? 0F 54 15 ? ? ? ? 0F 54 0D ? ? ? ? F3 0F 5C D1");
     if (!spot.empty() && !memcmp((const void*)(spot[0] + CLAMP_AT), SPOT_DISTANCE_CLAMP, 4)) lockpick_patch = spot[0] + CLAMP_AT;
@@ -285,6 +302,7 @@ inline void locate(uintptr_t base) {
         throwable_control[i] = vt_throwable[i] ? game::base_offset(base, vt_throwable[i], "IControlObject") : -1;
     }
     vt_param_float = game::find_vtable(base, "?$Param@M");
+    vt_player_float = game::find_vtable(base, "FloatPlayerVariable");
     vt_param_bool = game::find_vtable(base, "?$Param@_N");
     read_param_names();
 }
@@ -610,6 +628,11 @@ inline bool tweak_applies(const Tweak& t) {
     return t.group != G_HUMAN || side != SIDE_HUNTER;
 }
 
+inline bool float_value(uintptr_t at) {
+    uintptr_t vt = at ? rdv<uintptr_t>(at - PARAM_VALUE) : 0;
+    return vt && (vt == vt_param_float || vt == vt_player_float);
+}
+
 inline void apply_overrides() {
     auto containers = param_containers();
     if (containers != saved_containers) saved_bytes.clear(), saved_containers = containers;
@@ -636,7 +659,7 @@ inline void apply_overrides() {
     for (int type = 0; type < 8 && !containers.empty(); type++) {
         int extra = extra_skill_points[type];
         uintptr_t at = param_value(containers[0], SKILL_POINT_PARAMS[type]);
-        if (!extra || !at || rdv<uintptr_t>(at - PARAM_VALUE) != vt_param_float) continue;
+        if (!extra || !float_value(at)) continue;
         float base = original_float(at);
         if (!std::isnan(base)) want[SKILL_POINT_PARAMS[type]] = {std::max(0.0f, base + extra), false};
     }
@@ -828,7 +851,7 @@ inline uintptr_t xp_seen_player = 0;
 inline float skill_points(int type) {
     std::vector<uintptr_t> containers = param_containers();
     uintptr_t at = containers.empty() || type < 0 || type > 7 ? 0 : param_value(containers[0], SKILL_POINT_PARAMS[type]);
-    return at && rdv<uintptr_t>(at - PARAM_VALUE) == vt_param_float ? rdv<float>(at, NAN) : NAN;
+    return float_value(at) ? rdv<float>(at, NAN) : NAN;
 }
 
 inline uint32_t tree_xp(int type) { return tree_record(type) ? rdv<uint32_t>(tree_record(type) + TREE_XP) : 0; }
@@ -840,6 +863,7 @@ inline void set_tree_progress(int type, float frac) {
     if (!r || tree_level(type) >= tree_max(type) || !tree_span(type)) return;
     uint32_t span = tree_span(type);
     uint32_t xp = tree_level_start(type) + std::min(span - 1, (uint32_t)(std::clamp(frac, 0.0f, 1.0f) * span));
+    logf_hook("skills: tree %d xp %u -> %u", type, rdv<uint32_t>(r + TREE_XP), xp);
     wr<uint32_t>(r + TREE_XP, xp);
     xp_seen.clear();
 }
@@ -956,8 +980,130 @@ inline void set_tree_level(int type, int level) {
     uintptr_t container = skill_container();
     if (!container || !set_level_fn || !tree_max(type)) return;
     level = std::clamp(level, 0, tree_max(type));
+    logf_hook("skills: tree %d level %d -> %d", type, tree_level(type), level);
     ((void(__fastcall*)(uintptr_t, int16_t, int))set_level_fn)(container, (int16_t)level, type);
     xp_seen.clear();
+}
+
+const int SKILL_NAME = 0x08, SKILL_MAX_LEVEL = 0x1c, SKILL_LIST = 0x30, SKILL_COUNT = 0x38, LEARNED_SKILLS = 0xd8;
+const int NODE_KEY = -0x10, NODE_LEVEL = -0xa, NODE_LEFT = 0, NODE_RIGHT = 0x10, MAX_GAME_SKILLS = 2048;
+inline std::vector<int> skill_slots;
+inline std::mutex skills_mx;
+inline std::vector<int> skill_levels;
+
+inline int game_skill_count() {
+    int n = skill_manager ? rdv<int>(skill_manager + SKILL_COUNT) : 0;
+    return n > 0 && n < MAX_GAME_SKILLS ? n : 0;
+}
+
+inline uintptr_t game_skill(int index) { return rdv<uintptr_t>(rdv<uintptr_t>(skill_manager + SKILL_LIST) + index * 8); }
+
+inline void map_skills() {
+    int n = game_skill_count();
+    if (!n || skill_slots.size() == std::size(SKILLS)) return;
+    std::map<std::string, int> by_name;
+    for (int i = 0; i < n; i++) {
+        char name[64] = {};
+        if (rd(rdv<uintptr_t>(game_skill(i) + SKILL_NAME), name, sizeof name - 1)) by_name[name] = i;
+    }
+    std::vector<int> slots;
+    for (auto& s : SKILLS) {
+        auto it = by_name.find(s.id);
+        slots.push_back(it == by_name.end() ? -1 : it->second);
+    }
+    skill_slots = slots;
+}
+
+inline std::map<int, int> learned_skills(uintptr_t container) {
+    std::map<int, int> out;
+    std::vector<uintptr_t> todo{rdv<uintptr_t>(container + LEARNED_SKILLS)};
+    while (!todo.empty() && out.size() < MAX_GAME_SKILLS) {
+        uintptr_t node = todo.back();
+        todo.pop_back();
+        if (node < 0x10000) continue;
+        int key = rdv<int16_t>(node + NODE_KEY, -1), level = rdv<int16_t>(node + NODE_LEVEL);
+        if (key < 0 || out.count(key)) continue;
+        out[key] = level;
+        todo.push_back(rdv<uintptr_t>(node + NODE_LEFT));
+        todo.push_back(rdv<uintptr_t>(node + NODE_RIGHT));
+    }
+    return out;
+}
+
+inline void read_skill_levels() {
+    map_skills();
+    uintptr_t container = skill_container();
+    std::vector<int> levels(std::size(SKILLS), -1);
+    if (container && skill_slots.size() == std::size(SKILLS)) {
+        auto learned = learned_skills(container);
+        for (size_t i = 0; i < levels.size(); i++)
+            if (skill_slots[i] >= 0) levels[i] = learned.count(skill_slots[i]) ? learned[skill_slots[i]] : 0;
+    }
+    std::lock_guard<std::mutex> l(skills_mx);
+    skill_levels.swap(levels);
+}
+
+inline std::vector<int> skill_levels_now() {
+    std::lock_guard<std::mutex> l(skills_mx);
+    return skill_levels;
+}
+
+inline int skill_index(const char* id) {
+    for (size_t i = 0; i < std::size(SKILLS); i++)
+        if (!strcmp(SKILLS[i].id, id)) return (int)i;
+    return -1;
+}
+
+inline int skill_level(int i) {
+    uintptr_t container = skill_container();
+    if (!container || i < 0 || (size_t)i >= skill_slots.size() || skill_slots[i] < 0) return -1;
+    auto learned = learned_skills(container);
+    auto it = learned.find(skill_slots[i]);
+    return it == learned.end() ? 0 : it->second;
+}
+
+inline void set_skill_level(int i, int level) {
+    uintptr_t container = skill_container();
+    int now = skill_level(i);
+    if (now < 0 || !add_skill_fn || !remove_skill_fn) return;
+    uint16_t slot = (uint16_t)skill_slots[i];
+    int max = rdv<uint16_t>(game_skill(slot) + SKILL_MAX_LEVEL);
+    level = std::clamp(level, 0, std::max(1, max));
+    if (level == now) return;
+    logf_hook("skills: %s level %d -> %d", SKILLS[i].id, now, level);
+    if (level < now) ((void(__fastcall*)(uintptr_t, uint16_t))remove_skill_fn)(container, slot), now = 0;
+    using AddSkill = int(__fastcall*)(uintptr_t, uint16_t, int, bool, bool);
+    for (; now < level; now++) ((AddSkill)add_skill_fn)(container, slot, 0, false, true);
+}
+
+inline void learn_skill(int i, int depth = 0) {
+    if (i < 0 || depth > 16) return;
+    for (const char* need : SKILLS[i].needs)
+        if (need && skill_level(skill_index(need)) == 0) learn_skill(skill_index(need), depth + 1);
+    if (skill_level(i) == 0) set_skill_level(i, 1);
+}
+
+inline void forget_skill(int i, int depth = 0) {
+    if (i < 0 || depth > 16) return;
+    for (size_t k = 0; k < std::size(SKILLS); k++)
+        for (const char* need : SKILLS[k].needs)
+            if (need && !strcmp(need, SKILLS[i].id) && skill_level((int)k) > 0) forget_skill((int)k, depth + 1);
+    set_skill_level(i, 0);
+}
+
+inline int spent_points(int tree, const std::vector<int>& levels) {
+    int spent = 0;
+    for (size_t i = 0; i < std::size(SKILLS) && i < levels.size(); i++)
+        if (SKILLS[i].tree == tree && levels[i] > 0) spent += SKILLS[i].cost * levels[i];
+    return spent;
+}
+
+inline void set_whole_tree(int tree, bool learned) {
+    for (size_t i = 0; i < std::size(SKILLS) && skill_slots.size() == std::size(SKILLS); i++)
+        if (SKILLS[i].tree == tree && skill_slots[i] >= 0) {
+            if (!learned) set_skill_level((int)i, 0);
+            else set_skill_level((int)i, std::max(1, (int)rdv<uint16_t>(game_skill(skill_slots[i]) + SKILL_MAX_LEVEL)));
+        }
 }
 
 inline bool is_health_module(uintptr_t m) {
@@ -1776,6 +1922,7 @@ inline void tick() {
     apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
     apply_overrides();
     if (!player) return;
+    read_skill_levels();
     set_xp_factor(find_tweak("xp")->factor);
     boost_xp(find_tweak("xp")->factor);
     hook_health(is_on("god"), std::clamp(find_tweak("damage_taken")->factor.load(), 1.0f, find_tweak("damage_taken")->max));

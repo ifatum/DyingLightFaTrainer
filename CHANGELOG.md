@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2 b3
+
+- New: a skill tree editor on the Skills page. Every tree (Survivor, Agility, Power, Driver, Legend, and Night Hunter while you play the hunter) is laid out like the game's own skill menu. Click a skill to learn it or remove it; learning a skill also learns the skills it needs, removing one also removes the skills that need it. Legend skills go up and down a level at a time. Learn all and Remove all do a whole tree. Changes are saved with your game like skills you buy.
+- Fixed: Free skill points - and + did nothing and their row never showed. The game keeps skill points in a different kind of value than the trainer looked for. The tiles now show the free points the game shows, and - and + change them.
+- The menu opens bigger, and it remembers the size you drag it to.
+- Fixed: a key or mouse button held while you opened the menu could press the switch under it.
+
 ## 2.2 b2
 
 - The trainer no longer touches your items, enemies or the Night Hunter until you are in a game, so nothing is written while the game loads from the main menu.

@@ -889,10 +889,11 @@ inline std::vector<TreeView> tree_views() {
                                (uint32_t)(progress[i] * 48000), 48000});
         return out;
     }
+    std::vector<int> learned = cheats::skill_levels_now();
     for (auto& t : cheats::TREES) {
         int max = cheats::tree_max(t.type), level = cheats::tree_level(t.type);
         if (max && level >= 0)
-            out.push_back({t.name, t.type, level, max, cheats::tree_progress(t.type), cheats::skill_points(t.type),
+            out.push_back({t.name, t.type, level, max, cheats::tree_progress(t.type), cheats::skill_points(t.type) - cheats::spent_points(t.type, learned),
                            cheats::tree_xp(t.type) - cheats::tree_level_start(t.type), cheats::tree_span(t.type)});
     }
     return out;
@@ -955,7 +956,7 @@ inline void tree_tile(const TreeView& t, float width) {
         ImGui::Dummy({0, S(8)});
         float right = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Skill points");
+        ImGui::TextUnformatted("Free skill points");
         ImGui::SameLine(0, S(8));
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(V(T.accent), "%.0f", t.points);
@@ -976,6 +977,212 @@ inline void tree_tile(const TreeView& t, float width) {
     ImGui::PopID();
 }
 
+struct SkillTab { int tree; const char* name; };
+inline const SkillTab SKILL_TABS[] = {{3, "Survivor"}, {1, "Agility"}, {2, "Power"}, {6, "Driver"}, {5, "Legend"}, {0, "Night Hunter"}};
+inline const char* SKILL_BANDS[] = {"NOVICE", "ADEPT", "EXPERT"};
+inline const float SKILL_BAND_EDGES[] = {0, 179.0f / 520, 340.0f / 520, 1};
+
+inline float skill_aspect(int tree) {
+    for (auto& c : SKILL_CANVASES)
+        if (c.tree == tree) return c.aspect;
+    return 4.0f / 3;
+}
+
+inline std::string skill_initials(const char* name) {
+    std::string first, out;
+    bool start = true;
+    for (const char* p = name; *p; p++) {
+        bool word = isalnum((unsigned char)*p);
+        if (word && start) out += (char)toupper((unsigned char)*p);
+        if (word && out.size() == 1) first += *p;
+        start = !word;
+    }
+    if (out.size() == 1 && first.size() > 1) out += (char)tolower((unsigned char)first[1]);
+    return out.substr(0, 2);
+}
+
+inline void skill_shape(ImDrawList* dl, ImVec2 c, float r, bool hexagon, ImU32 fill, ImU32 border, float thickness) {
+    if (!hexagon) {
+        float h = r * 0.86f;
+        dl->AddRectFilled({c.x - h, c.y - h}, {c.x + h, c.y + h}, fill, R(6));
+        dl->AddRect({c.x - h, c.y - h}, {c.x + h, c.y + h}, border, R(6), 0, thickness);
+        return;
+    }
+    ImVec2 pts[6];
+    for (int k = 0; k < 6; k++) {
+        float a = (k * 60.0f - 90.0f) * 3.14159265f / 180.0f;
+        pts[k] = {c.x + cosf(a) * r * 1.08f, c.y + sinf(a) * r * 1.08f};
+    }
+    dl->AddConvexPolyFilled(pts, 6, fill);
+    dl->AddPolyline(pts, 6, border, ImDrawFlags_Closed, thickness);
+}
+
+inline std::vector<int> sample_skill_levels() {
+    std::vector<int> out(std::size(SKILLS));
+    for (size_t i = 0; i < out.size(); i++) out[i] = SKILLS[i].max_level > 1 ? (int)(i * 7 % 26) : (i % 3 != 2 && SKILLS[i].level_req < 12);
+    return out;
+}
+
+inline void skill_tree_card() {
+    static const bool sample = getenv("DLT_SKILLS") != nullptr;
+    std::vector<int> levels = sample ? sample_skill_levels() : cheats::skill_levels_now();
+    if (levels.size() != std::size(SKILLS)) return;
+    std::vector<const SkillTab*> tabs;
+    for (auto& t : SKILL_TABS) {
+        bool shown = sample || (cheats::tree_max(t.tree) > 0 && (t.tree != 0 || cheats::side == cheats::SIDE_HUNTER));
+        for (size_t i = 0; shown && i < std::size(SKILLS); i++)
+            if (SKILLS[i].tree == t.tree && levels[i] >= 0) {
+                tabs.push_back(&t);
+                break;
+            }
+    }
+    if (tabs.empty() || !cheats::add_skill_fn && !sample) return;
+    begin_card("skilltree", "SKILL TREE");
+    note("Click a skill to learn it, click it again to remove it. Learning a skill also learns the skills it needs; removing one also removes the skills that need it. "
+         "Skills with levels: click adds a level, right click takes one away. Changes go into your save like skills you buy in the game.");
+    ImGui::Dummy({0, S(6)});
+    static int tab = 0;
+    tab = std::clamp(tab, 0, (int)tabs.size() - 1);
+    std::vector<const char*> names;
+    for (auto* t : tabs) names.push_back(t->name);
+    float width = ImGui::GetContentRegionAvail().x;
+    segmented("skilltabs", names.data(), (int)names.size(), tab, width);
+    int tree = tabs[tab]->tree;
+    ImGui::Dummy({0, S(10)});
+    float aspect = skill_aspect(tree);
+    float h = std::min(width / aspect, S(560)), w = h * aspect;
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+    origin.x += (width - w) / 2;
+    auto* dl = ImGui::GetWindowDrawList();
+    bool banded = tree == 1 || tree == 2 || tree == 3 || tree == 6;
+    if (banded)
+        for (int b = 0; b < 3; b++) {
+            ImVec2 a{origin.x, origin.y + SKILL_BAND_EDGES[b] * h}, z{origin.x + w, origin.y + SKILL_BAND_EDGES[b + 1] * h - S(2)};
+            dl->AddRectFilled(a, z, C(b % 2 ? T.frame : T.raised_hi, 0.55f), R(8));
+            brand::spaced_caps(dl, f_label, font_size(f_label), {a.x + S(10), a.y + S(8)}, SKILL_BANDS[b], C(T.muted), S(1.4f));
+        }
+    else
+        dl->AddRectFilled(origin, {origin.x + w, origin.y + h}, C(T.raised_hi, 0.45f), R(8));
+    float r = std::clamp(w / 692.0f * 23.0f, S(14), S(26));
+    auto center = [&](const SkillInfo& s) { return ImVec2{origin.x + s.x * w, origin.y + s.y * h}; };
+    for (size_t i = 0; i < std::size(SKILLS); i++) {
+        const SkillInfo& s = SKILLS[i];
+        if (s.tree != tree) continue;
+        for (const char* need : s.needs) {
+            int k = need ? cheats::skill_index(need) : -1;
+            if (k < 0 || SKILLS[k].tree != tree) continue;
+            bool lit = levels[i] > 0 && levels[k] > 0;
+            dl->AddLine(center(SKILLS[k]), center(s), C(lit ? T.accent : T.line, lit ? 0.9f : 0.8f), S(lit ? 3.0f : 2.0f));
+        }
+    }
+    static int focus = -1;
+    int hovered = -1;
+    for (size_t i = 0; i < std::size(SKILLS); i++) {
+        const SkillInfo& s = SKILLS[i];
+        if (s.tree != tree) continue;
+        ImVec2 c = center(s);
+        ImGui::SetCursorScreenPos({c.x - r, c.y - r});
+        ImGui::PushID((int)i);
+        ImGui::InvisibleButton("skill", {r * 2, r * 2}, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+        bool over = ImGui::IsItemHovered();
+        bool left = ImGui::IsItemClicked(ImGuiMouseButton_Left), right = ImGui::IsItemClicked(ImGuiMouseButton_Right);
+        ImGui::PopID();
+        if (over) hovered = (int)i, ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        int level = levels[i];
+        bool learned = level > 0, ready = true;
+        for (const char* need : s.needs) {
+            int k = need ? cheats::skill_index(need) : -1;
+            if (k >= 0 && levels[k] <= 0) ready = false;
+        }
+        float hover = animate(ImGui::GetID((int)i + 9000), over ? 1.0f : 0.0f, 18);
+        float lit = animate(ImGui::GetID((int)i + 19000), learned ? 1.0f : 0.0f, 12);
+        ImU32 fill = brand::mix(brand::mix(ready || learned ? T.frame : T.ground, T.raised_hi, hover), T.accent, lit);
+        ImU32 border = learned ? T.accent : ready ? brand::mix(T.line, T.accent, 0.35f + 0.65f * hover) : brand::mix(T.line, T.soft, 0.25f + 0.5f * hover);
+        float grow = r * (1 + 0.08f * hover * motion());
+        if (lit > 0.01f) skill_shape(dl, c, grow + S(5), s.node, C(T.accent, 0.10f * lit), C(T.accent, 0.0f), 1);
+        skill_shape(dl, c, grow, s.node, C(fill), C(border), S(learned ? 2.0f : 1.4f));
+        std::string mark = skill_initials(s.name);
+        float fs = font_size(f_strong) * std::clamp(r / S(22), 0.7f, 1.1f);
+        ImVec2 tsz = f_strong->CalcTextSizeA(fs, FLT_MAX, 0, mark.c_str());
+        ImU32 ink = learned ? T.accent_ink : ready ? T.text : T.muted;
+        dl->AddText(f_strong, fs, {c.x - tsz.x / 2, c.y - tsz.y / 2}, C(ink), mark.c_str());
+        if (s.max_level > 1) {
+            std::string count = std::to_string(std::max(0, level)) + "/" + std::to_string(s.max_level);
+            float ls = font_size(f_label);
+            ImVec2 csz = f_label->CalcTextSizeA(ls, FLT_MAX, 0, count.c_str());
+            dl->AddText(f_label, ls, {c.x - csz.x / 2, c.y + r + S(5)}, C(learned ? T.accent : T.soft), count.c_str());
+        }
+        if ((left || right) && !sample && level >= 0) {
+            int idx = (int)i, target = s.max_level > 1 ? level + (left ? 1 : -1) : learned ? 0 : 1;
+            bool multi = s.max_level > 1;
+            on_game_thread([idx, target, multi, learned] {
+                std::lock_guard<std::mutex> l(game::mx);
+                if (multi) cheats::set_skill_level(idx, target);
+                else if (learned) cheats::forget_skill(idx);
+                else cheats::learn_skill(idx);
+                cheats::read_skill_levels();
+            });
+        }
+    }
+    if (hovered >= 0) focus = hovered;
+    if (focus >= 0 && SKILLS[focus].tree != tree) focus = -1;
+    ImGui::SetCursorScreenPos({origin.x - (width - w) / 2, origin.y + h + S(14)});
+    ImGui::Dummy({width, 0});
+    int count = 0, have = 0;
+    for (size_t i = 0; i < std::size(SKILLS); i++)
+        if (SKILLS[i].tree == tree) count++, have += levels[i] > 0;
+    if (focus >= 0) {
+        const SkillInfo& s = SKILLS[focus];
+        ImGui::PushFont(f_strong);
+        ImGui::TextUnformatted(s.name);
+        ImGui::PopFont();
+        ImGui::SameLine(0, S(10));
+        ImGui::AlignTextToFramePadding();
+        int level = levels[focus];
+        if (s.max_level > 1) ImGui::TextColored(V(level > 0 ? T.accent : T.muted), "Level %d of %d", std::max(0, level), s.max_level);
+        else ImGui::TextColored(V(level > 0 ? T.accent : T.muted), level > 0 ? "Learned" : "Not learned");
+        note(s.desc);
+        std::string needs;
+        for (const char* need : s.needs) {
+            int k = need ? cheats::skill_index(need) : -1;
+            if (k >= 0) needs += std::string(needs.empty() ? "" : ", ") + SKILLS[k].name;
+        }
+        std::string info;
+        if (!needs.empty()) info += "Needs " + needs + ".  ";
+        if (s.level_req > 0) info += std::string(tabs[tab]->name) + " level " + std::to_string(s.level_req) + " in the game.  ";
+        if (s.prestige_req > 0) info += "Prestige " + std::to_string(s.prestige_req) + " in the game.  ";
+        if (s.cost > 0) info += std::to_string(s.cost) + (s.cost == 1 ? " skill point" : " skill points") + (s.max_level > 1 ? " per level." : ".");
+        ImGui::PushFont(f_small);
+        if (!info.empty()) ImGui::TextDisabled("%s", info.c_str());
+        ImGui::PopFont();
+    } else {
+        ImGui::PushFont(f_small);
+        ImGui::TextDisabled("Point at a skill to see what it does.");
+        ImGui::PopFont();
+    }
+    ImGui::Dummy({0, S(6)});
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%d of %d learned", have, count);
+    float points = sample ? 3.0f : cheats::skill_points(tree) - cheats::spent_points(tree, levels);
+    if (!std::isnan(points)) {
+        ImGui::SameLine(0, S(16));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(V(points > 0 ? T.accent : T.muted), "%.0f free skill points", points);
+    }
+    float bw = S(118), gap = S(8);
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - bw * 2 - gap);
+    ImGui::BeginDisabled(have == 0 || sample);
+    if (ImGui::Button("Remove all", {bw, 0}))
+        on_game_thread([tree] { std::lock_guard<std::mutex> l(game::mx); cheats::set_whole_tree(tree, false); cheats::read_skill_levels(); });
+    ImGui::EndDisabled();
+    ImGui::SameLine(0, gap);
+    ImGui::BeginDisabled(have == count || sample);
+    if (accent_button("Learn all", {bw, 0}))
+        on_game_thread([tree] { std::lock_guard<std::mutex> l(game::mx); cheats::set_whole_tree(tree, true); cheats::read_skill_levels(); });
+    ImGui::EndDisabled();
+    end_card();
+}
+
 inline void skills_page() {
     begin_card("xp", "EXPERIENCE");
     tweak_sliders(cheats::G_PROGRESS);
@@ -987,7 +1194,7 @@ inline void skills_page() {
     if (trees.empty()) return empty_state("Your skill trees could not be read yet. Wait until your save has fully loaded, then press Refresh.");
     begin_card("trees", "SKILL POINTS");
     note("Each level is one skill point to spend in the game's skill menu. +1 point gives you exactly the XP for the next level, like playing would. "
-         "Drag an XP bar to set the XP within a level. Skill points - and + add points without changing the level; they last until you close the game.");
+         "Drag an XP bar to set the XP within a level. Free skill points - and + add points without changing the level; they last until you close the game.");
     end_card();
     float tile = (ImGui::GetContentRegionAvail().x - S(12)) / 2;
     for (size_t i = 0; i < trees.size(); i++) {
@@ -995,6 +1202,7 @@ inline void skills_page() {
         tree_tile(trees[i], tile);
         if (i % 2 || i + 1 == trees.size()) ImGui::Dummy({0, S(4)});
     }
+    skill_tree_card();
     ranks_card();
 }
 
@@ -1820,6 +2028,17 @@ inline void sidebar_skyline(ImVec2 a, ImVec2 b) {
     dl->PopClipRect();
 }
 
+inline void remember_window_size(ImVec2 now) {
+    static ImVec2 last{-1, -1};
+    static bool resized = false;
+    if (last.x >= 0 && (now.x != last.x || now.y != last.y)) resized = true;
+    last = now;
+    if (!resized || ImGui::IsMouseDown(ImGuiMouseButton_Left)) return;
+    resized = false;
+    config::cfg.window[0] = roundf(now.x / config::cfg.scale), config::cfg.window[1] = roundf(now.y / config::cfg.scale);
+    save_config();
+}
+
 inline void sidebar() {
     float opacity = config::cfg.look.opacity;
     ImGui::PushStyleColor(ImGuiCol_ChildBg, V(T.side, opacity));
@@ -1985,13 +2204,18 @@ inline void draw(float shown_raw, bool open) {
     static ImVec2 rest{-1, -1};
     if (rest.x < 0) ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_FirstUseEver, {0.5f, 0.5f});
     else if (shown < 1) ImGui::SetNextWindowPos({rest.x, rest.y + (1 - shown) * S(22) * motion()});
-    ImGui::SetNextWindowSize({S(1060), S(760)}, ImGuiCond_FirstUseEver);
+    const ImVec2 DEFAULT_WINDOW{1200, 860};
+    const float FIT = 0.92f;
+    auto& saved = config::cfg.window;
+    ImVec2 size = saved[0] > 0 ? ImVec2{S(saved[0]), S(saved[1])} : ImVec2{S(DEFAULT_WINDOW.x), S(DEFAULT_WINDOW.y)};
+    ImGui::SetNextWindowSize({std::min(size.x, io.DisplaySize.x * FIT), std::min(size.y, io.DisplaySize.y * FIT)}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints({S(780), S(500)}, {FLT_MAX, FLT_MAX});
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, shown);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
     if (!open) flags |= ImGuiWindowFlags_NoInputs;
     ImGui::Begin(TITLE, nullptr, flags);
     if (shown >= 1 || rest.x < 0) rest = ImGui::GetWindowPos();
+    remember_window_size(ImGui::GetWindowSize());
     {
         std::lock_guard<std::mutex> l(game::mx);
         const Page* page = page_by_id(g_page);

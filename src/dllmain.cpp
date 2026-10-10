@@ -97,11 +97,14 @@ static LRESULT CALLBACK hkWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     return CallWindowProcW(oWndProc, h, m, w, l);
 }
 
+static bool g_just_opened = false;
+
 static void feed_mouse() {
     ImGuiIO& io = ImGui::GetIO();
     static float vx = -1, vy = -1;
     static POINT last_os{-1, -1};
     static bool btn[3];
+    static bool held_at_open[3];
     RECT cr;
     GetClientRect(g_hwnd, &cr);
     if (vx < 0) { vx = cr.right / 2.0f; vy = cr.bottom / 2.0f; }
@@ -124,6 +127,11 @@ static void feed_mouse() {
     const int vk[3] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON};
     for (int i = 0; i < 3; i++) {
         bool down = GetAsyncKeyState(vk[i]) & 0x8000;
+        if (g_just_opened) held_at_open[i] = down;
+        if (held_at_open[i]) {
+            held_at_open[i] = down;
+            continue;
+        }
         if (down != btn[i]) io.AddMouseButtonEvent(i, btn[i] = down);
     }
     long wh = g_wheel.exchange(0), direct = input::wheel.exchange(0);
@@ -146,6 +154,11 @@ static void feed_keyboard() {
     for (int vk = 8; vk < 256; vk++) {
         if (!typing_key(vk)) continue;
         bool d = GetAsyncKeyState(vk) & 0x8000;
+        if (g_just_opened) {
+            if (down[vk]) io.AddKeyEvent(ImGui_ImplWin32_KeyEventToImGuiKey(vk, (LPARAM)MapVirtualKeyW(vk, MAPVK_VK_TO_VSC) << 16), false);
+            down[vk] = d;
+            continue;
+        }
         if (d == down[vk]) continue;
         down[vk] = d;
         UINT scan = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
@@ -262,7 +275,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (trainer_off()) return present_update_notice(sc, sync, flags);
     static bool prev = false;
     bool key = (GetAsyncKeyState(config::cfg.menu_key) | GetAsyncKeyState(VK_F8)) & 0x8000;
-    if (key && !prev) g_open = !g_open;
+    if (key && !prev) g_open = !g_open, g_just_opened = g_open;
     prev = key;
     input::blocked = g_open.load();
     if (!g_ready) init_imgui(sc);
@@ -307,6 +320,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
             ImGui_ImplWin32_NewFrame();
             feed_mouse();
             feed_keyboard();
+            g_just_opened = false;
         } else {
             begin_passive_frame(sc);
         }

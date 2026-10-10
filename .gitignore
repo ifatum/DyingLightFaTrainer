@@ -3,6 +3,7 @@
 *.log
 *.bak
 src/items.h
+src/skills.h
 __pycache__/
 *.pyc
 graphify-out/
