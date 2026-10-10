@@ -64,6 +64,7 @@ struct ReleaseInfo { std::string version, sha256; unsigned long long size = 0; }
 
 inline ReleaseInfo parse_release_info(const std::string& text) {
     ReleaseInfo r;
+    std::string build;
     size_t at = 0;
     while (at < text.size()) {
         size_t end = text.find('\n', at);
@@ -72,7 +73,9 @@ inline ReleaseInfo parse_release_info(const std::string& text) {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         if (line.rfind("version ", 0) == 0) r.version = line.substr(8);
         else if (line.rfind("sha256 ", 0) == 0) r.sha256 = line.substr(7);
+        else if (line.rfind("build ", 0) == 0) build = line.substr(6);
         else if (line.rfind("size ", 0) == 0) r.size = strtoull(line.c_str() + 5, nullptr, 10);
     }
+    if (!build.empty()) r.version = build;
     return r;
 }

@@ -68,6 +68,7 @@ int main(int argc, char** argv) {
     CHECK(newer_version("2.2 b1", "2.2") && newer_version("2.2 b2", "2.2 b1") && newer_version("2.2 b10", "2.2 b9") && newer_version("2.3", "2.2 b9"));
     CHECK(!newer_version("2.2", "2.2 b1") && !newer_version("2.2 b1", "2.2 b1") && !newer_version("2.2 b0", "2.1") && !newer_version("2.2 bx", "2.1") && !newer_version("2.2b1", "2.1"));
     CHECK(version_slug("2.2 b1") == "2.2-b1" && parse_release_info("version 2.2 b3\nsha256 ab\n").version == "2.2 b3");
+    CHECK(parse_release_info("build 2.2 b3\nversion 2.2\n").version == "2.2 b3" && parse_release_info("version 2.2\nbuild 2.2 b3\n").version == "2.2 b3");
     CHECK(logic::trainer_version_in(std::string("xx\0FaTrainer-version:2.2 b3\0yy", 31)) == "2.2 b3");
     ReleaseInfo info = parse_release_info("version 2.1\r\nsha256 ab12\nsize 2598750\n");
     CHECK(info.version == "2.1" && info.sha256 == "ab12" && info.size == 2598750);
