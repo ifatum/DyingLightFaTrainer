@@ -832,11 +832,13 @@ int main(int argc, char** argv) {
         config::cfg.spit_keys[2] = 'G';
         config::cfg.esp.on = true, config::cfg.esp.box = false, config::cfg.esp.max_distance = 450, config::cfg.esp.hunter[1] = 0.5f;
         config::cfg.uv.on = true, config::cfg.uv.glow = 2.5f, config::cfg.uv.color[0] = 0.25f;
+        config::cfg.hidden_configs = {"hunter_rage", "survivor_legit"}, config::cfg.allow_older = true;
         std::string ini = config::profile_dir() + "_test.ini";
         CHECK(config::save(ini));
         config::cfg = config::Config();
         config::load(ini);
         CHECK(config::cfg.spit_keys[2] == 'G' && config::cfg.spit_keys[0] == 0);
+        CHECK(config::cfg.hidden_configs.size() == 2 && config::cfg.hidden_configs[1] == "survivor_legit" && config::cfg.allow_older);
         CHECK(config::cfg.esp.on && !config::cfg.esp.box && config::cfg.esp.max_distance == 450 && config::cfg.esp.hunter[1] == 0.5f);
         CHECK(config::cfg.uv.on && config::cfg.uv.glow == 2.5f && config::cfg.uv.color[0] == 0.25f);
         DeleteFileA(ini.c_str());

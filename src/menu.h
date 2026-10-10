@@ -1040,6 +1040,20 @@ inline void preset_tile(const cheats::Preset& p, float w, float h) {
     } else if (accent_button("Load", {S(96), 0})) {
         apply_preset(p);
     }
+    static std::string confirm_hide;
+    bool sure = confirm_hide == p.key;
+    ImGui::SameLine(0, 0);
+    ImGui::SetCursorScreenPos({b.x - pad - S(62), b.y - pad - bh});
+    if (ImGui::Button(sure ? "Sure?" : "Delete", {S(62), 0})) {
+        if (sure) {
+            config::cfg.hidden_configs.push_back(p.key);
+            confirm_hide.clear();
+            save_config();
+            toast(std::string("Deleted config ") + p.role + " " + p.style);
+        } else {
+            confirm_hide = p.key;
+        }
+    }
     ImGui::SetCursorScreenPos({a.x, b.y});
     ImGui::EndGroup();
     ImGui::PopID();
@@ -1226,12 +1240,18 @@ inline void configs_card() {
         else if (i) ImGui::Dummy({0, S(2)});
         i++;
     };
-    for (auto& p : cheats::PRESETS) place(), preset_tile(p, w, h);
+    auto& hidden = config::cfg.hidden_configs;
+    for (auto& p : cheats::PRESETS)
+        if (std::find(hidden.begin(), hidden.end(), p.key) == hidden.end()) place(), preset_tile(p, w, h);
     OwnConfigs& own = own_configs();
     std::vector<std::string> names = own.names;
     for (auto& n : names)
         if (own_configs().data.count(n)) place(), own_config_tile(n, own_configs().data[n], w, h);
     place(), new_config_tile(w, h);
+    if (!hidden.empty()) {
+        ImGui::Dummy({0, S(6)});
+        if (ImGui::Button(("Restore built-in configs (" + std::to_string(hidden.size()) + ")").c_str())) hidden.clear(), save_config();
+    }
     end_card();
 }
 

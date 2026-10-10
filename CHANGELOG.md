@@ -12,11 +12,14 @@
 - New: One hit kill on the Night Hunter, on the PvP page.
 - New: Sure-hit ground pound for the Night Hunter. The game only counts a survivor as hit when its blast trace reaches his body, so a step or uneven ground could make the ground pound miss even right next to him. Both Night Hunter presets turn it on.
 - Fixed: the Night Hunter presets made the tackle miss. They widen the pounce aim, which the game shares with the tackle, so the tackle locked onto survivors beside you while charging straight ahead. The tackle now always keeps its normal aim.
+- Fixed: Spit hit radius made a Night Hunter's spits hit you from anywhere while you played a survivor. The game that hosts the match decides spit hits, so the slider now only works while you play the Night Hunter, and only when you host.
+- Fixed: Claws made your melee miss survivors next to you. It widened the range the game uses to pick a melee target, so the swipe turned toward survivors far away. Claws now only lengthens the reach.
 - The Ground pound slider also raises how far above or below you a survivor can still be hit (normally 2 m).
 - Fixed: the Night Hunter rank showed a number like 44890 instead of its name. Ranks now show the title and change one title at a time. In a Be The Zombie match the side you are not playing is grayed out.
-- Versions now have build numbers, like 2.2 b1. Builds update the same way as versions.
+- Versions now have build numbers, like 2.2 b1. A newer build of your version downloads itself and starts the next time you open the game; until then the build you have keeps working. A newer version still needs the FaTrainer Installer, and an older version stays off unless you tick Use older versions.
+- The installer lists each version once and always installs its newest build.
 - New: the FaTrainer Installer lets you pick which version to install, and its Use older versions checkbox lets an older version keep working in game after a newer one is out. The update notice still shows; without the checkbox an older version stays turned off, as before.
-- Presets are now Configs, on the PvP page and in Settings: the four built-in ones plus your own. New config saves what is on now, and every config of yours can be loaded, saved over, renamed and deleted. Your old configs carry over.
+- Presets are now Configs, on the PvP page and in Settings. Built-in configs can be deleted too, and Restore built-in configs brings them back: the four built-in ones plus your own. New config saves what is on now, and every config of yours can be loaded, saved over, renamed and deleted. Your old configs carry over.
 - The Night Hunter page moved to Cheats, and the sidebar no longer shows a section twice after you reorder pages.
 
 ## 2.1
