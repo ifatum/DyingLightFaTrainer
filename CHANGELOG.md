@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2 b2
+
+- Fixed: as the Night Hunter your melee, tackle and ground pound often did nothing, especially after starting the game with the Pounce slider already on. Pounce also widened the pounce aim to all around you. The game uses the attack for a pounce whenever a survivor counts as a pounce target, so a survivor beside or behind you took over your swipes, and the pounce then failed. Pounce now only lengthens the range, and you pounce the survivor you aim at.
+- Fixed: the survivor sliders (Death from above, Dropkick, Melee and the other kicks) also changed the Night Hunter's attacks while you played the hunter, and the Night Hunter sliders changed a survivor's game. Each side's sliders now only work while you play that side.
+
 ## 2.2 b1
 
 - The FaTrainer Installer now has its own version (Installer 1.0) and keeps itself up to date.

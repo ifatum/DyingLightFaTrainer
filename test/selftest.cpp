@@ -220,7 +220,6 @@ int main(int argc, char** argv) {
     CHECK(cheats::profile_root > (uintptr_t)m && cheats::profile_root < (uintptr_t)m + 0x4000000);
     CHECK(cheats::forced_damage_jump == (uintptr_t)m + 0xbae6c3);
     CHECK(cheats::pound_exposure_check == (uintptr_t)m + 0xd654e7);
-    CHECK(cheats::tackle_aim_return == (uintptr_t)m + 0xd5fc90);
     uintptr_t pound_code = cheats::pound_exposure_check;
     {
         static uint8_t fake_jump[6] = {0x0F, 0x84, 1, 2, 3, 4};
@@ -473,13 +472,20 @@ int main(int argc, char** argv) {
     cheats::tick();
     CHECK(fake_var_object == (uintptr_t)&cheats::var_vtable[1]);
     CHECK(read_var("f_btz_zombie_grab_range") == 25 && read_var("f_btz_wrestling_kick_angle_max") == 180);
-    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -70 && read_var("f_btz_other") == 7 && read_var("i_other") == 7);
+    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -50 && read_var("f_btz_zombie_grab_angle_max") == 7);
+    CHECK(read_var("f_btz_other") == 7 && read_var("i_other") == 7);
     CHECK(cheats::active_count() == 2);
     cheats::find_tweak("h_dfa")->factor = 10.0f;
     CHECK(read_var("f_btz_jump_attack_range") == 12 && read_var("f_btz_jump_attack_angle_max") == 7);
     cheats::find_tweak("h_dfa_pull")->factor = 10.0f;
     CHECK(read_var("f_btz_jump_attack_angle_max") == 180 && read_var("f_btz_jump_attack_range") == 12);
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_zombie_grab_range") == 25);
+    int side = cheats::side;
+    cheats::side = cheats::SIDE_HUNTER;
+    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -50 && read_var("f_btz_jump_attack_angle_max") == 7 && read_var("f_btz_zombie_grab_range") == 25);
+    cheats::side = cheats::SIDE_SURVIVOR;
+    CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_jump_attack_angle_max") == 180);
+    cheats::side = side;
     cheats::all_off();
     CHECK(read_var("f_btz_jump_attack_range") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
