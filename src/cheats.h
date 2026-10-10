@@ -1756,11 +1756,13 @@ inline void tick() {
     route_tick();
     objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing;
     game::reapply_stats();
-    keep_stacks(is_on("ammo"), is_on("supplies"));
-    keep_durability(is_on("durability"));
-    if (is_on("one_hit")) weaken_enemies();
-    if (is_on("one_hit_hunter")) weaken_hunter();
     player = find_player();
+    if (alive(player)) {
+        keep_stacks(is_on("ammo"), is_on("supplies"));
+        keep_durability(is_on("durability"));
+        if (is_on("one_hit")) weaken_enemies();
+        if (is_on("one_hit_hunter")) weaken_hunter();
+    }
     uintptr_t lp = alive(player) ? logical_player(player) : 0;
     side = !lp ? SIDE_UNKNOWN : rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER ? SIDE_HUNTER : SIDE_SURVIVOR;
     uintptr_t provider = alive(player) ? rdv<uintptr_t>(player + PARAM_PROVIDER) : 0;

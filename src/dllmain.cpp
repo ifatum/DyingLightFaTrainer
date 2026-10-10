@@ -363,24 +363,54 @@ static bool hook_d3d() {
     return ok;
 }
 
-static LONG CALLBACK crash_logger(EXCEPTION_POINTERS* e) {
-    DWORD code = e->ExceptionRecord->ExceptionCode;
-    if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION && code != EXCEPTION_STACK_OVERFLOW &&
-        code != EXCEPTION_INT_DIVIDE_BY_ZERO && code != 0xC0000409)
-        return EXCEPTION_CONTINUE_SEARCH;
-    void* at = e->ExceptionRecord->ExceptionAddress;
+static std::string code_place(uintptr_t at) {
     HMODULE m = nullptr;
     GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)at, &m);
     char path[MAX_PATH] = "?";
     if (m) GetModuleFileNameA(m, path, MAX_PATH);
     const char* name = strrchr(path, '\\') ? strrchr(path, '\\') + 1 : path;
-    if (!_stricmp(name, "kernelbase.dll") || !_stricmp(name, "kernel32.dll")) return EXCEPTION_CONTINUE_SEARCH;
+    char out[MAX_PATH + 32];
+    snprintf(out, sizeof out, "%s+%llx", name, (unsigned long long)(at - (uintptr_t)m));
+    return out;
+}
+
+static std::string call_stack(const CONTEXT* fault) {
+    const int FRAMES = 12;
+    CONTEXT c = *fault;
+    std::string out;
+    for (int i = 0; i < FRAMES && c.Rip; i++) {
+        DWORD64 base = 0;
+        auto* fn = RtlLookupFunctionEntry(c.Rip, &base, nullptr);
+        if (i) out += " < ";
+        out += code_place(c.Rip);
+        if (fn) {
+            void* handler_data = nullptr;
+            DWORD64 frame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, c.Rip, fn, &c, &handler_data, &frame, nullptr);
+        } else {
+            if (IsBadReadPtr((void*)c.Rsp, 8)) break;
+            c.Rip = *(DWORD64*)c.Rsp, c.Rsp += 8;
+        }
+    }
+    return out;
+}
+
+static LONG CALLBACK crash_logger(EXCEPTION_POINTERS* e) {
+    DWORD code = e->ExceptionRecord->ExceptionCode;
+    const DWORD HEAP_CORRUPTION = 0xC0000374, STACK_BUFFER_OVERRUN = 0xC0000409, FAIL_FAST = 0xC0000602;
+    if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION && code != EXCEPTION_STACK_OVERFLOW &&
+        code != EXCEPTION_INT_DIVIDE_BY_ZERO && code != STACK_BUFFER_OVERRUN && code != HEAP_CORRUPTION && code != FAIL_FAST)
+        return EXCEPTION_CONTINUE_SEARCH;
+    std::string place = code_place((uintptr_t)e->ExceptionRecord->ExceptionAddress);
+    bool system = !_strnicmp(place.c_str(), "kernelbase.dll", 14) || !_strnicmp(place.c_str(), "kernel32.dll", 12);
+    if (system && code == EXCEPTION_ACCESS_VIOLATION) return EXCEPTION_CONTINUE_SEARCH;
     static std::atomic<int> n{0};
-    if (n++ < 30)
-        logf("exception %08lx in %s+%llx (data %llx) thread %lu menu_open=%d  [may be handled by the game]",
-             (unsigned long)code, name, (unsigned long long)((uintptr_t)at - (uintptr_t)m),
+    if (n++ < 30) {
+        logf("exception %08lx in %s (data %llx) thread %lu menu_open=%d  [may be handled by the game]", (unsigned long)code, place.c_str(),
              (unsigned long long)(e->ExceptionRecord->NumberParameters > 1 ? e->ExceptionRecord->ExceptionInformation[1] : 0),
              (unsigned long)GetCurrentThreadId(), (int)g_open.load());
+        logf("  stack: %s", call_stack(e->ContextRecord).c_str());
+    }
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
