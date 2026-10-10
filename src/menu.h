@@ -2014,7 +2014,9 @@ inline void draw(float shown_raw, bool open) {
     if (open && cursor) draw_cursor();
 }
 
-inline void draw_update_notice(const std::string& latest, float alpha, bool running) {
+enum Notice { NOTICE_UPDATE, NOTICE_OLDER, NOTICE_BUILD_DOWNLOADING, NOTICE_BUILD_READY, NOTICE_BUILD_FAILED };
+
+inline void draw_update_notice(const std::string& latest, float alpha, int kind) {
     ImGuiIO& io = ImGui::GetIO();
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(30), S(24)});
@@ -2025,21 +2027,24 @@ inline void draw_update_notice(const std::string& latest, float alpha, bool runn
     auto* dl = ImGui::GetWindowDrawList();
     dl->AddRectFilled({p.x, p.y + S(20)}, {p.x + S(4), p.y + sz.y - S(20)}, C(T.accent), S(2));
     brand::soft_glow(dl, {p.x + sz.x, p.y}, S(200), T.accent, 0.06f, 20);
-    caps("UPDATE");
+    bool build = kind >= NOTICE_BUILD_DOWNLOADING;
+    caps(build ? "NEW BUILD" : "UPDATE");
     ImGui::PushFont(f_head);
     ImGui::TextUnformatted(("FaTrainer " + latest + " is out").c_str());
     ImGui::PopFont();
     ImGui::Dummy({0, S(2)});
     ImGui::PushTextWrapPos(0);
-    if (running)
-        ImGui::TextUnformatted(("You are playing with an older version (" + std::string(VERSION) +
-                                ") because Use older versions is on. To update, close the game, open the FaTrainer Installer and press Update.").c_str());
-    else
-        ImGui::TextUnformatted(("This version (" + std::string(VERSION) +
-                                ") is turned off until you update. Close the game, open the FaTrainer Installer and press Update. "
-                                "The game itself works as usual. To keep playing with this version, turn on Use older versions in the installer.").c_str());
+    std::string mine = VERSION;
+    std::string text =
+        kind == NOTICE_OLDER ? "You are playing with an older version (" + mine + ") because Use older versions is on. To update, close the game, open the FaTrainer Installer and press Update."
+        : kind == NOTICE_BUILD_DOWNLOADING ? "Downloading the new build. This build (" + mine + ") keeps working until then."
+        : kind == NOTICE_BUILD_READY ? "The new build is downloaded and starts the next time you open the game. This build (" + mine + ") keeps working until then."
+        : kind == NOTICE_BUILD_FAILED ? "The new build could not be downloaded. This build (" + mine + ") keeps working; update it with the FaTrainer Installer when you can."
+        : "This version (" + mine + ") is turned off until you update. Close the game, open the FaTrainer Installer and press Update. "
+          "The game itself works as usual. To keep playing with this version, turn on Use older versions in the installer.";
+    ImGui::TextUnformatted(text.c_str());
     ImGui::PopTextWrapPos();
-    if (!running) {
+    if (kind == NOTICE_UPDATE) {
         ImGui::PushFont(f_small);
         ImGui::TextColored(V(T.muted), "Press your menu key or F8 to show this again.");
         ImGui::PopFont();

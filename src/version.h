@@ -50,6 +50,11 @@ inline bool newer_version(const std::string& candidate, const std::string& curre
     return !a.empty() && !b.empty() && a > b;
 }
 
+inline bool same_version(const std::string& a, const std::string& b) {
+    std::vector<long> x = version_parts(a), y = version_parts(b);
+    return !x.empty() && !y.empty() && std::equal(x.begin(), x.begin() + VERSION_NUMBERS, y.begin());
+}
+
 inline std::string version_slug(std::string v) {
     std::replace(v.begin(), v.end(), ' ', '-');
     return v;

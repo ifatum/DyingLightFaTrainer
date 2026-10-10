@@ -114,8 +114,8 @@ inline Tweak TWEAKS[] = {
     {"z_pound", "Ground pound", "Reach of the ground pound and the aerial ground pound, and how far above or below you a survivor can stand and still get hit (normally 2 m).",
      G_ZOMBIE, {"ZombieGroundPoundRange", "GroundPoundRangeMul"}, {{"f_btz_zombie_groundpound_damage_height", 8}}},
     {"z_tackle", "Tackle", "How far away the charge tackle still connects. Normally 5 m.", G_ZOMBIE, {"ZombieChargeAttackRange"}},
-    {"z_claws", "Claws", "Reach of your claw swipes.", G_ZOMBIE, {"RangeMeleeMul", "BestTargetMeleeRange"}},
-    {"z_spit", "Spit hit radius", "How far from a survivor a spit can land and still hit him. Normal is 5 m, x3 is 15 m. Toxic spit puddles grow too.",
+    {"z_claws", "Claws", "Reach of your claw swipes. The game still aims at the survivor nearest to you.", G_ZOMBIE, {"RangeMeleeMul"}},
+    {"z_spit", "Spit hit radius", "How far from a survivor your spit can land and still hit him (normally 5 m). The game that hosts the match decides spit hits, so this only works while you host, never when you invade, and it is off while you play a survivor.",
      G_ZOMBIE, {}, {}, 6.0f},
     {"h_dfa", "Death from above range", "How far away the hunter can be when you start it. At Max, 12 m. Also grows the landing shockwave.",
      G_HUMAN, {"JumpAttackRange", "JumpAttackShockwaveRadius"}, {{"f_btz_jump_attack_range", 12}, {"f_btz_jump_attack_range_velocity_factor", 0.5f}}},
@@ -1749,7 +1749,7 @@ inline void tick() {
     patch_lockpick(is_on("lockpick"));
     patch_pound(is_on("z_pound_hits"));
     block_forced_damage(is_on("god"));
-    apply_spit_radius(std::clamp(find_tweak("z_spit")->factor.load(), 1.0f, find_tweak("z_spit")->max));
+    apply_spit_radius(playing_hunter() ? std::clamp(find_tweak("z_spit")->factor.load(), 1.0f, find_tweak("z_spit")->max) : 1.0f);
     route_tick();
     objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing;
     game::reapply_stats();

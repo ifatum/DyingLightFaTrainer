@@ -93,6 +93,11 @@ int main(int argc, char** argv) {
                            "{\"tag_name\": \"v2.1\", \"assets\": [{\"browser_download_url\": \"https://x/v2.1/version.txt\"}, {\"browser_download_url\": \"https://x/v2.1/xinput1_3.dll\"}]}]";
         auto releases = logic::installable_releases(json);
         CHECK(releases.size() == 2 && releases[0].tag == "v2.2-b1" && releases[0].version == "2.2 b1" && releases[1].version == "2.1");
+        std::string builds = "[{\"tag_name\": \"v2.2-b1\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"},{\"tag_name\": \"v2.2-b3\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"},"
+                             "{\"tag_name\": \"v2.2\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"},{\"tag_name\": \"v2.3\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"}]";
+        auto newest = logic::installable_releases(builds);
+        CHECK(newest.size() == 2 && newest[0].version == "2.3" && newest[1].version == "2.2 b3" && newest[1].tag == "v2.2-b3");
+        CHECK(same_version("2.2 b1", "2.2 b3") && same_version("2.2", "2.2 b1") && !same_version("2.2 b1", "2.3") && !same_version("2.2.1", "2.2"));
         std::string ini = "accent=1,1,1\r\nallow_older=0\ncheat=god\n";
         CHECK(logic::ini_value(ini, "allow_older") == "0" && logic::ini_value(ini, "missing").empty());
         std::string changed = logic::with_ini_value(ini, "allow_older", "1");
@@ -848,7 +853,14 @@ int main(int argc, char** argv) {
         w.put<float>(toxic + cheats::TOXIC_SPLASH_MIN, 1.0f), w.put<float>(toxic + cheats::TOXIC_SPLASH_MAX, 4.0f);
         cheats::find_tweak("z_spit")->factor = 3.0f;
         cheats::tick();
-        CHECK(game::rdv<float>(camo + RANGE_OFF) == 15.0f && game::rdv<float>(grenade + RANGE_OFF) == 5.0f);
+        CHECK(game::rdv<float>(camo + RANGE_OFF) == 5.0f && !cheats::playing_hunter());
+        static uint8_t hunter_logical[0x800] = {};
+        *(uintptr_t*)hunter_logical = game::g.vt_logical_player;
+        *(int*)(hunter_logical + cheats::PLAYER_ROLE) = cheats::ROLE_HUNTER;
+        uintptr_t saved_logical = game::rdv<uintptr_t>(w.player + cheats::LOGICAL_PLAYER);
+        game::wr<uintptr_t>(w.player + cheats::LOGICAL_PLAYER, (uintptr_t)hunter_logical);
+        cheats::tick();
+        CHECK(cheats::playing_hunter() && game::rdv<float>(camo + RANGE_OFF) == 15.0f && game::rdv<float>(grenade + RANGE_OFF) == 5.0f);
         CHECK(game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MIN) == 3.0f && game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MAX) == 12.0f);
         cheats::tick();
         CHECK(game::rdv<float>(camo + RANGE_OFF) == 15.0f && game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MAX) == 12.0f);
@@ -859,6 +871,7 @@ int main(int argc, char** argv) {
         cheats::tick();
         CHECK(game::rdv<float>(camo + RANGE_OFF) == 5.0f && game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MIN) == 1.0f &&
               game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MAX) == 4.0f);
+        game::wr<uintptr_t>(w.player + cheats::LOGICAL_PLAYER, saved_logical);
         game::g.stats[ST_DamageRange] = saved_range;
         cheats::spit_radius_originals.clear();
     }

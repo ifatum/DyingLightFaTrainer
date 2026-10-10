@@ -12,6 +12,7 @@
 #include "menu.h"
 #ifndef FATRAINER_OFFLINE
 #include "net_win.h"
+#include "../installer/logic.h"
 #endif
 #include "imgui.h"
 #include "backends/imgui_impl_dx11.h"
@@ -62,6 +63,7 @@ static std::atomic<DWORD> g_wndproc_at{0};
 static std::atomic<long> g_dx{0}, g_dy{0}, g_wheel{0};
 static std::atomic<long> g_frames{0};
 static std::string g_outdated;
+static std::atomic<int> g_build = menu::NOTICE_UPDATE;
 
 static void on_raw_input(LPARAM l) {
     RAWINPUT ri;
@@ -238,7 +240,7 @@ static float update_notice_alpha() {
     return std::min({1.0f, age / (float)FADE_IN_MS, (NOTICE_MS - age) / (float)FADE_OUT_MS});
 }
 
-static bool trainer_off() { return !g_outdated.empty() && !config::cfg.allow_older; }
+static bool trainer_off() { return !g_outdated.empty() && g_build == menu::NOTICE_UPDATE && !config::cfg.allow_older; }
 
 static HRESULT present_update_notice(IDXGISwapChain* sc, UINT sync, UINT flags) {
     float alpha = update_notice_alpha();
@@ -248,7 +250,7 @@ static HRESULT present_update_notice(IDXGISwapChain* sc, UINT sync, UINT flags) 
             ImGui_ImplDX11_NewFrame();
             begin_passive_frame(sc);
             ImGui::NewFrame();
-            menu::draw_update_notice(g_outdated, alpha, false);
+            menu::draw_update_notice(g_outdated, alpha, menu::NOTICE_UPDATE);
             render_overlay(sc);
         }
     }
@@ -311,7 +313,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         ImGui::NewFrame();
         if (esp) menu::draw_esp();
         if (shown > 0) menu::draw(shown, g_open);
-        if (notice > 0) menu::draw_update_notice(g_outdated, notice, true);
+        if (notice > 0) menu::draw_update_notice(g_outdated, notice, g_build == menu::NOTICE_UPDATE ? menu::NOTICE_OLDER : g_build.load());
         render_overlay(sc);
     }
     return oPresent(sc, sync, flags);
@@ -421,38 +423,76 @@ static void watch_first_frame() {
     }
 }
 
-static std::string latest_release() {
+static ReleaseInfo latest_release() {
 #ifdef FATRAINER_OFFLINE
     logf("update: Nexus Version, no update check and no internet connection");
-    return "";
+    return {};
 #else
     std::string text, error;
     if (!net::get_text(std::string(RELEASE_DOWNLOADS) + "version.txt", text, error)) {
         logf("update: could not check for a new version (%s), the trainer stays on", error.c_str());
-        return "";
+        return {};
     }
-    std::string latest = parse_release_info(text).version;
-    logf("update: latest release %s, this is %s", latest.empty() ? "unknown" : latest.c_str(), VERSION);
+    ReleaseInfo latest = parse_release_info(text);
+    logf("update: latest release %s, this is %s", latest.version.empty() ? "unknown" : latest.version.c_str(), VERSION);
     return latest;
+#endif
+}
+
+static std::wstring own_path() {
+    HMODULE self = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&own_path, &self);
+    wchar_t path[MAX_PATH] = L"";
+    GetModuleFileNameW(self, path, MAX_PATH);
+    return path;
+}
+
+static void download_build(ReleaseInfo latest) {
+#ifndef FATRAINER_OFFLINE
+    const unsigned long long LIMIT = 64ull << 20;
+    std::string data, error;
+    bool ok = net::get(std::string(RELEASE_DOWNLOADS) + "xinput1_3.dll", [&](const char* d, size_t n, unsigned long long) {
+        data.append(d, n);
+        return data.size() <= LIMIT;
+    }, error);
+    if (ok && ((latest.size && data.size() != latest.size) || logic::sha256_hex(data) != latest.sha256)) ok = false, error = "the download did not match the release checksum";
+    std::wstring path = own_path(), old = path + L".old";
+    if (ok && !MoveFileExW(path.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING)) ok = false, error = "could not move the running DLL aside";
+    if (ok) {
+        FILE* f = _wfopen(path.c_str(), L"wb");
+        ok = f && fwrite(data.data(), 1, data.size(), f) == data.size();
+        if (f) fclose(f);
+        if (!ok) DeleteFileW(path.c_str()), MoveFileExW(old.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING), error = "could not write the new DLL";
+    }
+    if (ok) logf("update: build %s downloaded, it starts with the next game start", latest.version.c_str());
+    else logf("update: build %s could not be installed (%s), install it with the FaTrainer Installer", latest.version.c_str(), error.c_str());
+    g_build = ok ? menu::NOTICE_BUILD_READY : menu::NOTICE_BUILD_FAILED;
 #endif
 }
 
 static void main_thread() {
     logf("--- %s %s, %s loaded", TITLE, VERSION, FATRAINER_EDITION);
     log_environment();
-    std::string latest = latest_release();
+    DeleteFileW((own_path() + L".old").c_str());
+    ReleaseInfo release = latest_release();
+    const std::string& latest = release.version;
     HMODULE gamedll = nullptr;
     while (!(gamedll = GetModuleHandleA("gamedll_x64_rwdi.dll"))) Sleep(200);
     if (newer_version(latest, VERSION)) {
         config::load(config::default_path());
         g_outdated = latest;
-        if (!config::cfg.allow_older) {
+        if (same_version(latest, VERSION) && release.sha256.size() == 64) {
+            logf("update: build %s is out, downloading it, this build keeps running", latest.c_str());
+            g_build = menu::NOTICE_BUILD_DOWNLOADING;
+            std::thread(download_build, release).detach();
+        } else if (!config::cfg.allow_older) {
             logf("update: FaTrainer %s is out, this version stays off until you update with the installer", latest.c_str());
             Sleep(4000);
             hook_d3d();
             return;
+        } else {
+            logf("update: FaTrainer %s is out, this version keeps running because Use older versions is on", latest.c_str());
         }
-        logf("update: FaTrainer %s is out, this version keeps running because Use older versions is on", latest.c_str());
     }
     if (game::resolve_classes((uintptr_t)gamedll))
         logf("classes: money +%llx, inventory +%llx, item manager +%llx", (unsigned long long)(game::g.vt_money - game::g.base),

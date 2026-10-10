@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include "../src/version.h"
 
 namespace logic {
 
@@ -116,10 +118,13 @@ inline std::vector<Release> installable_releases(const std::string& json) {
             std::string version = tag.substr(1);
             for (char& c : version)
                 if (c == '-') c = ' ';
-            out.push_back({tag, version});
+            auto same = std::find_if(out.begin(), out.end(), [&](const Release& r) { return same_version(r.version, version); });
+            if (same == out.end()) out.push_back({tag, version});
+            else if (newer_version(version, same->version)) *same = {tag, version};
         }
         at = next;
     }
+    std::sort(out.begin(), out.end(), [](const Release& a, const Release& b) { return newer_version(a.version, b.version); });
     return out;
 }
 
