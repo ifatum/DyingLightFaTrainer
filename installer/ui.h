@@ -138,9 +138,11 @@ inline bool set_ini_flag(const char* key, bool on) {
     fs::path ini = M.game / "fatrainer.ini";
     std::error_code ec;
     std::string text = fs::exists(ini, ec) ? platform::read_file(ini) : "";
-    std::ofstream out(ini, std::ios::binary | std::ios::trunc);
-    out << logic::with_ini_value(text, key, on ? "1" : "0");
-    if (!out) return false;
+    {
+        std::ofstream out(ini, std::ios::binary | std::ios::trunc);
+        out << logic::with_ini_value(text, key, on ? "1" : "0");
+        if (!out.flush()) return false;
+    }
     refresh_installed();
     return true;
 }

@@ -1,5 +1,9 @@
 # FaTrainer Installer changelog
 
+## 1.2
+
+- Fixed: ticking Use older versions or Beta builds did not show the tick, so the boxes looked like they could not be checked.
+
 ## 1.1
 
 - When a newer installer is out, the installer now updates itself right away when it opens; it installs nothing else until it is up to date.
