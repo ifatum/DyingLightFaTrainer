@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en" data-game="dying-light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docs | FaTrainer for Dying Light</title>
+<meta name="description" content="How to install FaTrainer for Dying Light, what every page of the menu does, Be The Zombie, updates and what to do when something goes wrong.">
+<meta name="theme-color" content="#111113">
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/style.css?v=12">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap">
+    <a class="brand" href="../">FaTrainer <small>Dying Light</small></a>
+    <nav aria-label="Main">
+      <a href="./">Overview</a>
+      <a href="./#install">Install</a>
+      <a href="../">All games</a>
+    </nav>
+  </div>
+</header>
+
+<main class="doc" id="content">
+  <div class="wrap">
+    <aside aria-label="Contents">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#start">1. Getting started</a></li>
+        <li><a href="#menu">2. The menu</a></li>
+        <li><a href="#player">3. Player and Combat</a></li>
+        <li><a href="#skills">4. Skills</a></li>
+        <li><a href="#hunter">5. Night Hunter and PvP</a></li>
+        <li><a href="#configs">6. Configs</a></li>
+        <li><a href="#visuals">7. Visuals and Prison</a></li>
+        <li><a href="#items">8. Items</a></li>
+        <li><a href="#settings">9. Settings</a></li>
+        <li><a href="#updates">10. Updates and versions</a></li>
+        <li><a href="#trouble">11. When something goes wrong</a></li>
+      </ol>
+    </aside>
+
+    <article>
+      <h1>Docs</h1>
+      <p class="meta">For FaTrainer 2.2, Dying Light 1 on Windows and Linux.</p>
+
+      <h2 id="start">1. Getting started</h2>
+      <p>FaTrainer is one file, <code>xinput1_3.dll</code>, next to <code>DyingLightGame.exe</code>. The FaTrainer Installer puts it there, updates it and removes it again; you never copy files by hand.</p>
+      <ol>
+        <li>Download the installer from the <a href="./#install">install section</a> and run it. It finds the game in your Steam libraries, or you pick the folder yourself.</li>
+        <li>Press Install. On Linux, also add <code>WINEDLLOVERRIDES="xinput1_3=n,b" %command%</code> to the game's launch options in Steam, and run the game through Proton.</li>
+        <li>Start the game and press <kbd>Insert</kbd> or <kbd>F8</kbd>.</li>
+      </ol>
+      <p>Run the installer again to update, reinstall an older version or uninstall. Uninstall puts back any <code>xinput1_3.dll</code> that was there before.</p>
+
+      <h2 id="menu">2. The menu</h2>
+      <p><kbd>Insert</kbd> opens and closes the menu, and <kbd>F8</kbd> always works too; you can pick another key in Settings. While the menu is open the game does not get your mouse and keyboard, so clicking a switch never swings your weapon.</p>
+      <p>Drag the edges of the window to make it bigger; it remembers the size. The sidebar groups the pages into Cheats, Modes and Items. Refresh, at the bottom of the sidebar, looks for your character and inventories again after a loading screen, if a page says it cannot find them.</p>
+      <p>Switches take effect right away. Sliders start at Normal, the game's own value, and go up to Max. Everything you turn on is undone when you turn it off again.</p>
+
+      <h2 id="player">3. Player and Combat</h2>
+      <h3>Player</h3>
+      <p>Health and stamina bars you can drag to any value, Refill health and stamina, God mode, Infinite stamina, Take less damage, Infinite grappling hook, Infinite UV flashlight, Slow down UV flashlight, Instant lockpicking, No fall damage, Movement speed and Jump height.</p>
+      <h3>Combat</h3>
+      <p>One hit kill, Kill enemies (every zombie and human within 80 m, so quest objectives count them), Infinite ammo, No reload, Infinite consumables and Unbreakable weapons. One hit kill works when you host the game. To edit a single weapon, press Edit next to it on the Backpack or Stash page.</p>
+
+      <h2 id="skills">4. Skills</h2>
+      <h3>Experience</h3>
+      <p>XP gain multiplies the experience you earn in every skill tree, the Survivor and Night Hunter trees included. The game's XP popup shows the boosted amount.</p>
+      <h3>Levels and skill points</h3>
+      <p>Each tree has a tile with its level, an XP bar you can drag, and -10, -1, +1 point, +10 and Max. +1 point gives you exactly the XP for the next level, like playing would. Free skill points shows what the game shows in its skill menu; - and + add or take away points without changing the level, until you close the game.</p>
+      <h3>Skill tree</h3>
+      <p>The skill tree shows every tree laid out like the game's own skill menu: Survivor, Agility, Power, Driver, Legend, and the Night Hunter. Point at a skill to read what it does and what it needs.</p>
+      <ul>
+        <li>Click a skill to learn it. Skills it needs are learned too.</li>
+        <li>Click a learned skill to remove it. Skills that need it are removed too.</li>
+        <li>Legend skills have levels: click adds a level, right click takes one away.</li>
+        <li>Learn all and Remove all do the whole tree.</li>
+      </ul>
+      <p>Learned skills work like skills you buy in the game and are saved with your game. The Night Hunter tree is hidden while you play a survivor in Be The Zombie.</p>
+      <h3>Be The Zombie ranks</h3>
+      <p>Your PvP rank as a survivor and as the Night Hunter, one title at a time. In a match, the side you are not playing is grayed out.</p>
+
+      <h2 id="hunter">5. Night Hunter and PvP</h2>
+      <p>Be The Zombie is the mode where one player is the Night Hunter and invades the game of up to four survivors. The game that hosts a match is always a survivor's game, which decides some things for everyone.</p>
+      <h3>Night Hunter page</h3>
+      <p>Hunter god mode, Infinite hunter energy, Take less damage, Less UV damage, No ability cooldowns, Infinite spits, Sure-hit ground pound and Long camouflage. Spit keys let you throw each spit with a key of your own.</p>
+      <h3>PvP page</h3>
+      <p>Sliders for how far your attacks reach. As the Night Hunter: Pounce, Ground pound, Tackle, Claws and Spit hit radius. As a survivor: Death from above range, pull and height, Dropkick, Other kicks and ground pound, and Melee. Each side's sliders only work while you play that side.</p>
+      <ul>
+        <li>Pounce only lengthens the range: you pounce the survivor you aim at. In Be The Zombie your attack becomes a pounce whenever a survivor counts as a pounce target.</li>
+        <li>Spit hit radius only works when you host. The Night Hunter invades, so in a normal match his spits are decided by the survivor's game.</li>
+        <li>Dodge spit steps you aside from a spit that would hit you, after a human reaction time.</li>
+        <li>One hit kill on the Night Hunter drops him to 1 health. In a real match his own game decides his health.</li>
+      </ul>
+
+      <h2 id="configs">6. Configs</h2>
+      <p>A config is a set of switches and sliders you can load in one click. There are four built-in ones, Survivor Legit and Rage and Night Hunter Legit and Rage, on the PvP page and in Settings. New config saves what is on now under a name; your own configs can be loaded, saved over, renamed and deleted. Built-in configs can be deleted too, and Restore built-in configs brings them back. Configs are files in the <code>fatrainer_configs</code> folder next to the game.</p>
+
+      <h2 id="visuals">7. Visuals and Prison</h2>
+      <h3>Visuals</h3>
+      <p>Player ESP draws every player through walls: box, role, health bar, distance, PvP rank, hunter rage and lines, with a range limit and separate colors for the Night Hunter and survivors. It keeps drawing while the menu is closed. You can also give the UV light and the Night Hunter's glowing veins your own color.</p>
+      <h3>Prison</h3>
+      <p>For the Harran Prison run: pause the run timer and the reward room countdown, teleport to any split after Find sections, and record your route once to replay it, so every quest trigger along the way fires.</p>
+
+      <h2 id="items">8. Items</h2>
+      <p>Cash sets your money. Backpack, Stash, Materials and Tools list what you carry and store; change any stack count. Press Edit next to a weapon to change its damage, durability, crits, reach, magazine, reload, upgrades and rarity. Give items finds any weapon, upgrade, consumable or blueprint by name and puts it into the inventory the game accepts it in.</p>
+
+      <h2 id="settings">9. Settings</h2>
+      <dl>
+        <dt>Controls</dt><dd>The menu key, Remember cheats (turn your cheats back on at the next start) and, in the Fatum Version, Use older versions.</dd>
+        <dt>Appearance</dt><dd>Accent color, opacity, corner roundness, dimming, animations Full, Subtle or Off, the Harran skyline and glow.</dd>
+        <dt>Sidebar</dt><dd>Which pages show up and in what order.</dd>
+        <dt>Settings file</dt><dd>Everything is saved in <code>fatrainer.ini</code> next to the game. Reset to defaults starts over.</dd>
+      </dl>
+
+      <h2 id="updates">10. Updates and versions</h2>
+      <p>New features first come out as builds of the next version, like 2.2 b1, 2.2 b2 and 2.2 b3. The last build of a version is called just by the version, like 2.2.</p>
+      <ul>
+        <li>A newer build of your version downloads itself when the game starts, is checked against its checksum and starts the next time you open the game. Until then your build keeps working.</li>
+        <li>When a newer version is out, the trainer stays off and asks you to run the installer again. The game itself keeps working.</li>
+        <li>Tick Use older versions in the installer, or in Settings, to keep playing with an older version. The notice still shows.</li>
+        <li>The installer lists every version and always installs its last build.</li>
+      </ul>
+      <p>The Fatum Version only downloads files from GitHub and sends nothing else. The Nexus Version from Nexus Mods never connects to the internet and does not update itself.</p>
+
+      <h2 id="trouble">11. When something goes wrong</h2>
+      <h3>The menu does not open</h3>
+      <p>Check that the installer says FaTrainer is installed and that you pressed <kbd>Insert</kbd> or <kbd>F8</kbd> in the game, not on the desktop. On Linux, the launch option <code>WINEDLLOVERRIDES="xinput1_3=n,b" %command%</code> must be set and the game must run through Proton.</p>
+      <h3>A page says your character was not found</h3>
+      <p>Load into your save, wait until the loading screen is gone and press Refresh.</p>
+      <h3>The game closes or crashes</h3>
+      <p>The trainer writes <code>fatrainer.log</code> next to <code>DyingLightGame.exe</code>. It records what the trainer did and, when the game crashes, where. Attach it when you <a href="https://github.com/ifatum/DyingLightFaTrainer/issues">report a problem</a>, together with Windows or Linux and your Proton version. Some antivirus programs stop games that load extra DLLs; try once with yours paused or with the game folder added as an exception.</p>
+      <h3>Start from a clean slate</h3>
+      <p>Press Reset to defaults in Settings, or delete <code>fatrainer.ini</code> while the game is closed. To remove FaTrainer, press Uninstall in the installer.</p>
+      <h3>Before you change your saves</h3>
+      <p>Items, levels, skills and ranks are saved like any other progress. Keep a copy of your save folder before you try something big, and switch cheats off when you play with people who did not agree to them.</p>
+    </article>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div>
+      <p>Dying Light is a trademark of Techland S.A. FaTrainer is a free fan project and is not made, endorsed or supported by Techland.</p>
+    </div>
+    <div>
+      <h2>FaTrainer</h2>
+      <ul>
+        <li><a href="./">Dying Light</a></li>
+        <li><a href="../">All games</a></li>
+        <li><a href="https://github.com/ifatum/DyingLightFaTrainer">Source code</a></li>
+      </ul>
+    </div>
+    <div>
+      <h2>Legal</h2>
+      <ul>
+        <li><a href="../legal.html">Privacy and contact</a></li>
+        <li><a href="../prawne.html" hreflang="pl" lang="pl">Prywatność i kontakt</a></li>
+      </ul>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

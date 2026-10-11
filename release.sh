@@ -10,7 +10,13 @@ OUT=dist/release
 mkdir -p "$OUT"
 rm -f "$OUT/xinput1_3.dll" "$OUT/CHANGELOG.md" "$OUT/version.txt" "$OUT/notes.md"
 cp xinput1_3.dll CHANGELOG.md "$OUT/"
-printf 'version %s\nbuild %s\nsha256 %s\nsize %s\n' "${VER%% *}" "$VER" "$(sha256sum xinput1_3.dll | cut -d' ' -f1)" "$(stat -c%s xinput1_3.dll)" > "$OUT/version.txt"
+LEGACY_FINAL_BUILD=999
+if [[ "$VER" == *" b"* ]]; then
+  printf 'version %s\nbuild %s\n' "${VER%% *}" "$VER" > "$OUT/version.txt"
+else
+  printf 'version %s\nbuild %s b%s\nrelease %s\n' "$VER" "$VER" "$LEGACY_FINAL_BUILD" "$VER" > "$OUT/version.txt"
+fi
+printf 'sha256 %s\nsize %s\n' "$(sha256sum xinput1_3.dll | cut -d' ' -f1)" "$(stat -c%s xinput1_3.dll)" >> "$OUT/version.txt"
 awk -v v="## $VER" '$0 == v {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > "$OUT/notes.md"
 NEXUS=$(mktemp -d)
 mkdir -p "$NEXUS/manual"

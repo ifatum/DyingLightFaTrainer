@@ -1,11 +1,12 @@
 #pragma once
 #include <cstdlib>
 #include <algorithm>
+#include <climits>
 #include <string>
 #include <vector>
 
-#define FATRAINER_VERSION "2.2 b3"
-#define INSTALLER_VERSION "1.0"
+#define FATRAINER_VERSION "2.2"
+#define INSTALLER_VERSION "1.1"
 #ifdef FATRAINER_OFFLINE
 #define FATRAINER_EDITION "Nexus Version"
 #define FATRAINER_EDITION_CAPS "NEXUS VERSION"
@@ -21,6 +22,7 @@ inline const char* RELEASES_API = "https://api.github.com/repos/ifatum/DyingLigh
 inline const char* INSTALLER_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/";
 
 const size_t VERSION_NUMBERS = 4;
+const long FINAL_BUILD = LONG_MAX;
 
 inline std::vector<long> version_parts(const std::string& v) {
     size_t at = v.find(" b");
@@ -33,7 +35,7 @@ inline std::vector<long> version_parts(const std::string& v) {
         p = *end ? end + 1 : end;
     }
     if (parts.empty() || parts.size() > VERSION_NUMBERS) return {};
-    long build = 0;
+    long build = FINAL_BUILD;
     if (at != std::string::npos) {
         const char* p = v.c_str() + at + 2;
         char* end;
@@ -64,7 +66,7 @@ struct ReleaseInfo { std::string version, sha256; unsigned long long size = 0; }
 
 inline ReleaseInfo parse_release_info(const std::string& text) {
     ReleaseInfo r;
-    std::string build;
+    std::string build, release;
     size_t at = 0;
     while (at < text.size()) {
         size_t end = text.find('\n', at);
@@ -74,8 +76,10 @@ inline ReleaseInfo parse_release_info(const std::string& text) {
         if (line.rfind("version ", 0) == 0) r.version = line.substr(8);
         else if (line.rfind("sha256 ", 0) == 0) r.sha256 = line.substr(7);
         else if (line.rfind("build ", 0) == 0) build = line.substr(6);
+        else if (line.rfind("release ", 0) == 0) release = line.substr(8);
         else if (line.rfind("size ", 0) == 0) r.size = strtoull(line.c_str() + 5, nullptr, 10);
     }
     if (!build.empty()) r.version = build;
+    if (!release.empty()) r.version = release;
     return r;
 }

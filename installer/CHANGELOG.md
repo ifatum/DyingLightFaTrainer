@@ -1,5 +1,9 @@
 # FaTrainer Installer changelog
 
+## 1.1
+
+- The last build of a version is shown by its plain number, like 2.2 after 2.2 b3.
+
 ## 1.0
 
 - The installer now has its own version, separate from the trainer it installs.

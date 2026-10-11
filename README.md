@@ -41,7 +41,7 @@ The installer finds Dying Light in your Steam libraries (or lets you choose the 
 WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 ```
 
-The installer has its own version and updates itself: when a newer installer is out, its main button becomes Update the installer. When a newer trainer is released, the trainer stays off in game and asks you to run the installer again, unless you tick Use older versions in the installer. The installer also lets you pick an older version to install. Versions can have build numbers, like 2.2 b1. The game itself keeps working, and without internet the trainer works as usual.
+The installer has its own version and updates itself: when a newer installer is out, its main button becomes Update the installer. When a newer trainer is released, the trainer stays off in game and asks you to run the installer again, unless you tick Use older versions in the installer. The installer also lets you pick an older version to install. Versions can have build numbers, like 2.2 b1; a newer build of your version installs itself the next time you start the game, and the last build of a version is just the version, like 2.2. The game itself keeps working, and without internet the trainer works as usual.
 
 The **Nexus Version** on [Nexus Mods](https://www.nexusmods.com/dyinglight/mods/1724) (`FaTrainer-Nexus-Version-Installer`) is offline: its installer has the trainer inside, and neither connects to the internet, so there is no update check. Nexus Mods tells you about updates when you track the mod.
 
