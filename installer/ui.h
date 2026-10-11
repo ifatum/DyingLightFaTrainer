@@ -103,7 +103,7 @@ struct Model {
     std::mutex mx;
     Fetch fetch = Fetch::loading;
     std::string fetch_error;
-    fs::path private_dir;
+    bool on_beta = false, refetch = false;
     ReleaseInfo latest, installer_update;
     bool restart = false;
     std::vector<logic::ChangelogEntry> changelog;
@@ -119,7 +119,7 @@ struct Model {
     std::string picked;
     std::vector<logic::Release> releases;
     logic::Release chosen;
-    bool allow_older = false;
+    bool allow_older = false, beta = false;
 };
 inline Model M;
 
@@ -128,17 +128,20 @@ inline void refresh_installed() {
     fs::path dll = M.game / platform::DLL_NAME;
     M.installed = !M.game.empty() && fs::exists(dll, ec) ? logic::trainer_version_in(platform::read_file(dll)) : "";
     fs::path ini = M.game / "fatrainer.ini";
-    M.allow_older = !M.game.empty() && fs::exists(ini, ec) && logic::ini_value(platform::read_file(ini), "allow_older") == "1";
+    std::string text = !M.game.empty() && fs::exists(ini, ec) ? platform::read_file(ini) : "";
+    bool beta = logic::ini_value(text, "beta") == "1";
+    M.allow_older = logic::ini_value(text, "allow_older") == "1";
+    if (beta != M.beta) M.beta = beta, M.refetch = true;
 }
 
-inline bool set_allow_older(bool on) {
+inline bool set_ini_flag(const char* key, bool on) {
     fs::path ini = M.game / "fatrainer.ini";
     std::error_code ec;
     std::string text = fs::exists(ini, ec) ? platform::read_file(ini) : "";
     std::ofstream out(ini, std::ios::binary | std::ios::trunc);
-    out << logic::with_ini_value(text, "allow_older", on ? "1" : "0");
+    out << logic::with_ini_value(text, key, on ? "1" : "0");
     if (!out) return false;
-    M.allow_older = on;
+    refresh_installed();
     return true;
 }
 
@@ -152,19 +155,28 @@ inline void fetch_release() {
         std::lock_guard<std::mutex> l(M.mx);
         M.fetch = Fetch::loading;
     }
-    std::thread([] {
+    bool beta;
+    {
+        std::lock_guard<std::mutex> l(M.mx);
+        beta = M.beta, M.refetch = false;
+    }
+    std::thread([beta] {
         std::string text, error, changes, ignored;
-        fs::path private_dir = platform::private_release();
-        bool ok = private_dir.empty() ? platform::net::get_text(std::string(RELEASE_DOWNLOADS) + "version.txt", text, error)
-                                      : !(text = platform::read_file(private_dir / "version.txt")).empty();
+        bool ok = platform::net::get_text(std::string(RELEASE_DOWNLOADS) + "version.txt", text, error);
         ReleaseInfo info = parse_release_info(text);
         if (ok && (info.version.empty() || info.sha256.size() != 64)) ok = false, error = "the release has no valid version.txt";
-        bool have_changes = ok && (private_dir.empty() ? platform::net::get_text(std::string(RELEASE_DOWNLOADS) + "CHANGELOG.md", changes, ignored)
-                                                       : !(changes = platform::read_file(private_dir / "CHANGELOG.md")).empty());
+        bool have_changes = ok && platform::net::get_text(std::string(RELEASE_DOWNLOADS) + "CHANGELOG.md", changes, ignored);
+        bool on_beta = false;
+        std::string beta_text, beta_changes;
+        if (beta && platform::net::get_text(std::string(BETA_DOWNLOADS) + "version.txt", beta_text, ignored)) {
+            ReleaseInfo build = parse_release_info(beta_text);
+            if (build.sha256.size() == 64 && !build.version.empty() && (!ok || newer_version(build.version, info.version))) {
+                info = build, ok = on_beta = true, error.clear();
+                if (platform::net::get_text(std::string(BETA_DOWNLOADS) + "CHANGELOG.md", beta_changes, ignored)) changes = beta_changes, have_changes = true;
+            }
+        }
         std::string installer_text;
-        std::error_code ec;
-        if (!private_dir.empty() && fs::exists(private_dir / platform::INSTALLER_INFO, ec)) installer_text = platform::read_file(private_dir / platform::INSTALLER_INFO);
-        else platform::net::get_text(std::string(INSTALLER_DOWNLOADS) + platform::INSTALLER_INFO, installer_text, ignored);
+        platform::net::get_text(std::string(INSTALLER_DOWNLOADS) + platform::INSTALLER_INFO, installer_text, ignored);
         ReleaseInfo installer = parse_release_info(installer_text);
         std::string listing;
         std::vector<logic::Release> releases;
@@ -173,7 +185,7 @@ inline void fetch_release() {
         std::lock_guard<std::mutex> l(M.mx);
         M.installer_update = installer_newer ? installer : ReleaseInfo{};
         if (!releases.empty()) M.releases = releases;
-        M.private_dir = private_dir;
+        M.on_beta = on_beta;
         M.fetch = ok ? Fetch::ready : Fetch::failed;
         M.fetch_error = error;
         if (ok) M.latest = info;
@@ -200,30 +212,30 @@ inline std::string replace_hint() {
 }
 
 inline void start_install() {
-    fs::path game, private_dir;
+    fs::path game;
+    bool on_beta;
     ReleaseInfo latest;
     logic::Release chosen;
     {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working) return;
-        game = M.game, latest = M.latest, private_dir = M.private_dir, chosen = M.chosen;
+        game = M.game, latest = M.latest, on_beta = M.on_beta, chosen = M.chosen;
         M.job = Job::working, M.step = OFFLINE ? "Installing" : "Downloading", M.progress = 0, M.message.clear();
     }
-    std::thread([game, latest, private_dir, chosen]() mutable {
+    std::thread([game, latest, on_beta, chosen]() mutable {
 #ifdef FATRAINER_OFFLINE
         std::string data((const char*)trainer_dll, (size_t)(trainer_dll_end - trainer_dll));
 #else
         const unsigned long long LIMIT = 64ull << 20;
-        std::string data, error, base = RELEASE_DOWNLOADS;
+        std::string data, error, base = on_beta ? BETA_DOWNLOADS : RELEASE_DOWNLOADS;
         if (!chosen.tag.empty()) {
             base = std::string(RELEASE_TAG_DOWNLOADS) + chosen.tag + "/";
             std::string text;
             if (!platform::net::get_text(base + "version.txt", text, error)) return finish(Job::failed, "Download failed: " + error + ". Nothing was changed.");
-            latest = parse_release_info(text), private_dir.clear();
+            latest = parse_release_info(text);
             if (latest.version.empty() || latest.sha256.size() != 64) return finish(Job::failed, "FaTrainer " + chosen.version + " has no valid version.txt. Nothing was changed.");
         }
-        bool ok = !private_dir.empty() ? !(data = platform::read_file(private_dir / platform::DLL_NAME)).empty() || (error = "the private build has no " + std::string(platform::DLL_NAME), false)
-                                       : platform::net::get(base + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
+        bool ok = platform::net::get(base + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
             data.append(d, n);
             unsigned long long expected = latest.size ? latest.size : total;
             std::lock_guard<std::mutex> l(M.mx);
@@ -273,20 +285,17 @@ inline void start_install() {
 
 inline void start_self_update() {
 #ifndef FATRAINER_OFFLINE
-    fs::path private_dir;
     ReleaseInfo update;
     {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working || M.installer_update.version.empty()) return;
-        private_dir = M.private_dir, update = M.installer_update;
+        update = M.installer_update;
         M.job = Job::working, M.step = "Downloading the installer", M.progress = 0, M.message.clear();
     }
-    std::thread([private_dir, update] {
+    std::thread([update] {
         std::error_code ec;
         std::string data, error;
-        fs::path local = private_dir.empty() ? fs::path() : private_dir / platform::INSTALLER_ASSET;
-        bool ok = !local.empty() && fs::exists(local, ec) ? !(data = platform::read_file(local)).empty()
-                                                          : platform::net::get(std::string(INSTALLER_DOWNLOADS) + platform::INSTALLER_ASSET, [&](const char* d, size_t n, unsigned long long total) {
+        bool ok = platform::net::get(std::string(INSTALLER_DOWNLOADS) + platform::INSTALLER_ASSET, [&](const char* d, size_t n, unsigned long long total) {
                                                                 data.append(d, n);
                                                                 unsigned long long expected = update.size ? update.size : total;
                                                                 std::lock_guard<std::mutex> l(M.mx);
@@ -445,7 +454,7 @@ inline void status_pill(ImVec2 right_top) {
     {
         std::lock_guard<std::mutex> l(M.mx);
         fetch = M.fetch;
-        if (fetch == Fetch::ready && !M.private_dir.empty()) text = "Private build " + M.latest.version, dot = ACCENT;
+        if (fetch == Fetch::ready && M.on_beta) text = "Beta build " + M.latest.version, dot = ACCENT;
         else if (fetch == Fetch::ready) text = OFFLINE ? FATRAINER_EDITION " " + M.latest.version : FATRAINER_EDITION ", latest " + M.latest.version, dot = GOOD;
         else if (fetch == Fetch::failed) text = "GitHub not reachable", dot = BAD;
         else text = "Checking GitHub";
@@ -568,9 +577,52 @@ inline void check_mark(ImDrawList* dl, ImVec2 c, float size, float t, ImU32 colo
     if (second > 0) dl->AddLine(p1, lerp(p1, p2, second), color, S(2.5f));
 }
 
+inline bool check_box(ImDrawList* dl, const char* id, const char* text, ImVec2 box, bool value, bool enabled) {
+    ImGui::BeginDisabled(!enabled);
+    ImGui::SetCursorScreenPos({box.x, box.y - S(6)});
+    bool clicked = ImGui::InvisibleButton(id, {S(220), S(32)});
+    bool hovered = ImGui::IsItemHovered();
+    ImGui::EndDisabled();
+    if (hovered && enabled) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    float on = follow(anim(id), value ? 1.0f : 0.0f, 16);
+    ImVec2 b0{box.x, box.y}, b1{box.x + S(20), box.y + S(20)};
+    dl->AddRectFilled(b0, b1, C(mix(RAISED, ACCENT, on)), S(5));
+    dl->AddRect(b0, b1, C(mix(hovered ? MUTED : LINE, ACCENT, on)), S(5));
+    if (on > 0.01f) check_mark(dl, {box.x + S(10), box.y + S(10)}, S(9), on, C(ACCENT_INK));
+    dl->AddText(F.strong, F.strong->FontSize, {box.x + S(30), box.y + (S(20) - F.strong->FontSize) / 2}, C(enabled ? TEXT : MUTED), text);
+    return clicked && enabled;
+}
+
+inline void toggle_ini_flag(const char* key, bool on) {
+    std::lock_guard<std::mutex> l(M.mx);
+    if (!set_ini_flag(key, on)) M.message = "Could not write fatrainer.ini. " + replace_hint(), M.message_bad = true;
+}
+
+inline void muted_note(float width, const char* text) {
+    ImGui::PushFont(F.small);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(MUTED), "%s", text);
+    ImGui::PopTextWrapPos();
+    ImGui::PopFont();
+}
+
+
 inline void detail(float width) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     Model view;
+    bool refetch;
+    {
+        std::lock_guard<std::mutex> l(M.mx);
+        refetch = M.refetch && M.fetch != Fetch::loading;
+    }
+    if (refetch) fetch_release();
+    static bool self_update_started = false;
+    bool must_update;
+    {
+        std::lock_guard<std::mutex> l(M.mx);
+        must_update = !M.installer_update.version.empty() && M.job == Job::idle && !self_update_started;
+    }
+    if (must_update) self_update_started = true, start_self_update();
     {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.picked_ready) {
@@ -582,7 +634,7 @@ inline void detail(float width) {
         view.job = M.job, view.step = M.step, view.progress = M.progress, view.finished_at = M.finished_at, view.message = M.message;
         view.message_bad = M.message_bad, view.picking = M.picking, view.picker_missing = M.picker_missing;
         view.installer_update = M.installer_update;
-        view.releases = M.releases, view.chosen = M.chosen, view.allow_older = M.allow_older, view.private_dir = M.private_dir;
+        view.releases = M.releases, view.chosen = M.chosen, view.allow_older = M.allow_older, view.beta = M.beta, view.on_beta = M.on_beta;
     }
     bool found = platform::is_game_dir(view.game);
     bool ready = view.fetch == Fetch::ready;
@@ -692,7 +744,7 @@ inline void detail(float width) {
         ImVec2 a = ImGui::GetCursorScreenPos();
         label_caps(dl, a, "VERSION", MUTED);
         ImGui::Dummy({0, S(14)});
-        std::string latest_label = !ready ? "Latest" : (view.private_dir.empty() ? "Latest, " : "Private build, ") + view.latest.version;
+        std::string latest_label = !ready ? "Latest" : (view.on_beta ? "Beta, " : "Latest, ") + view.latest.version;
         std::string current = view.chosen.tag.empty() ? latest_label : view.chosen.version;
         ImGui::SetNextItemWidth(S(300));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {S(14), S(13)});
@@ -703,7 +755,7 @@ inline void detail(float width) {
                 M.chosen = {};
             }
             for (const logic::Release& release : view.releases) {
-                if (ready && release.version == view.latest.version && view.private_dir.empty()) continue;
+                if (ready && release.version == view.latest.version && !view.on_beta) continue;
                 if (ImGui::Selectable(release.version.c_str(), release.tag == view.chosen.tag)) {
                     std::lock_guard<std::mutex> l(M.mx);
                     M.chosen = release;
@@ -717,30 +769,17 @@ inline void detail(float width) {
         ImVec2 box = ImGui::GetCursorScreenPos();
         box.y += (S(44) - S(20)) / 2;
         bool older = view.allow_older;
-        ImGui::BeginDisabled(!found);
-        ImGui::SetCursorScreenPos({box.x, box.y - S(6)});
-        bool clicked = ImGui::InvisibleButton("older", {S(220), S(32)});
-        bool hovered = ImGui::IsItemHovered();
-        ImGui::EndDisabled();
-        if (hovered && found) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        float on = follow(anim("older"), older ? 1.0f : 0.0f, 16);
-        ImVec2 b0{box.x, box.y}, b1{box.x + S(20), box.y + S(20)};
-        dl->AddRectFilled(b0, b1, C(mix(RAISED, ACCENT, on)), S(5));
-        dl->AddRect(b0, b1, C(mix(hovered ? MUTED : LINE, ACCENT, on)), S(5));
-        if (on > 0.01f) check_mark(dl, {box.x + S(10), box.y + S(10)}, S(9), on, C(ACCENT_INK));
-        dl->AddText(F.strong, F.strong->FontSize, {box.x + S(30), box.y + (S(20) - F.strong->FontSize) / 2}, C(found ? TEXT : MUTED), "Use older versions");
-        if (clicked && found) {
-            std::lock_guard<std::mutex> l(M.mx);
-            if (!set_allow_older(!older)) M.message = "Could not write fatrainer.ini. " + replace_hint(), M.message_bad = true;
-        }
+        if (check_box(dl, "older", "Use older versions", box, older, found)) toggle_ini_flag("allow_older", !older);
         ImGui::SetCursorScreenPos({a.x, a.y + S(14) + S(44) + S(10)});
-        ImGui::PushFont(F.small);
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
-        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(MUTED), "%s",
-                           older ? "An older version keeps working in game after a newer one is out. The update notice still shows."
-                                 : "An older version stays turned off in game once a newer one is out, and only shows the update notice. Tick Use older versions to play with it anyway.");
-        ImGui::PopTextWrapPos();
-        ImGui::PopFont();
+        muted_note(width, older ? "An older version keeps working in game after a newer one is out. The update notice still shows."
+                                : "An older version stays turned off in game once a newer one is out, and only shows the update notice. Tick Use older versions to play with it anyway.");
+        ImGui::Dummy({0, S(10)});
+        ImVec2 beta_box = ImGui::GetCursorScreenPos();
+        bool beta = view.beta;
+        if (check_box(dl, "beta", "Beta builds", beta_box, beta, found)) toggle_ini_flag("beta", !beta);
+        ImGui::SetCursorScreenPos({beta_box.x, beta_box.y + S(20) + S(8)});
+        muted_note(width, beta ? "Installs and updates to the beta build when it is newer than the latest release. Beta builds are what is being worked on right now and may have bugs."
+                               : "Optional. Beta builds are the version being worked on right now, open to everyone. They may have bugs, so only the published releases are used unless you tick this.");
         ImGui::Dummy({0, S(8)});
     }
 
@@ -766,7 +805,7 @@ inline void detail(float width) {
         if (button("install", text, {S(300), S(52)}, Kind::primary, enabled, progress >= 0 ? shown_progress : -1))
             view.installer_update.version.empty() ? start_install() : start_self_update();
         if (celebrate) check_mark(dl, {at.x + S(300) / 2 - text_w(F.strong, "Installed") / 2 - S(22), at.y + S(26)}, S(14), (float)(ImGui::GetTime() - view.finished_at) * 2.2f, C(ACCENT_INK));
-        if (!view.installed.empty() && view.job != Job::working) {
+        if (!view.installed.empty() && view.job != Job::working && view.installer_update.version.empty()) {
             ImGui::SameLine(0, S(18));
             if (button("uninstall", "Uninstall", {S(110), S(52)}, Kind::quiet)) uninstall();
         }

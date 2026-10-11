@@ -311,14 +311,6 @@ inline std::string read_file(const fs::path& p) {
     return std::string(std::istreambuf_iterator<char>(f), {});
 }
 
-inline fs::path private_release() {
-    std::string text = read_file(config_dir() / "private-release.txt");
-    while (!text.empty() && isspace((unsigned char)text.back())) text.pop_back();
-    std::error_code ec;
-    fs::path dir = fs::u8path(text);
-    return !text.empty() && !config_dir().empty() && fs::is_regular_file(dir / "version.txt", ec) ? dir : fs::path();
-}
-
 inline bool is_game_dir(const fs::path& dir) {
     std::error_code ec;
     return !dir.empty() && fs::is_regular_file(dir / GAME_EXE, ec);

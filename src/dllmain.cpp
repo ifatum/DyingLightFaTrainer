@@ -467,6 +467,8 @@ static void watch_first_frame() {
     }
 }
 
+static std::string g_release_base = RELEASE_DOWNLOADS;
+
 static ReleaseInfo latest_release() {
 #ifdef FATRAINER_OFFLINE
     logf("update: Nexus Version, no update check and no internet connection");
@@ -479,6 +481,13 @@ static ReleaseInfo latest_release() {
     }
     ReleaseInfo latest = parse_release_info(text);
     logf("update: latest release %s, this is %s", latest.version.empty() ? "unknown" : latest.version.c_str(), VERSION);
+    config::load(config::default_path());
+    std::string beta_text;
+    if (config::cfg.beta && net::get_text(std::string(BETA_DOWNLOADS) + "version.txt", beta_text, error)) {
+        ReleaseInfo beta = parse_release_info(beta_text);
+        logf("update: beta builds are on, beta build %s", beta.version.empty() ? "unknown" : beta.version.c_str());
+        if (beta.sha256.size() == 64 && newer_version(beta.version, latest.version)) latest = beta, g_release_base = BETA_DOWNLOADS;
+    }
     return latest;
 #endif
 }
@@ -495,7 +504,7 @@ static void download_build(ReleaseInfo latest) {
 #ifndef FATRAINER_OFFLINE
     const unsigned long long LIMIT = 64ull << 20;
     std::string data, error;
-    bool ok = net::get(std::string(RELEASE_DOWNLOADS) + "xinput1_3.dll", [&](const char* d, size_t n, unsigned long long) {
+    bool ok = net::get(g_release_base + "xinput1_3.dll", [&](const char* d, size_t n, unsigned long long) {
         data.append(d, n);
         return data.size() <= LIMIT;
     }, error);

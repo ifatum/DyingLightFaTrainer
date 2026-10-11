@@ -27,6 +27,12 @@ rm -f "dist/nexus/FaTrainer-$SLUG-Nexus-Version.zip"
 ZIP="$(pwd)/dist/nexus/FaTrainer-$SLUG-Nexus-Version.zip"
 (cd "$NEXUS" && nix-shell -p zip --run "zip -qX -r '$ZIP' .")
 rm -rf "$NEXUS"
+if [ "${1:-}" = "--beta" ]; then
+  nix-shell -p gh --run "
+    gh release view beta >/dev/null 2>&1 || gh release create beta --title 'FaTrainer beta $VER' --notes-file $OUT/notes.md --prerelease --latest=false
+    gh release upload beta $OUT/xinput1_3.dll $OUT/version.txt $OUT/CHANGELOG.md --clobber
+    gh release edit beta --title 'FaTrainer beta $VER' --notes-file $OUT/notes.md --prerelease --latest=false"
+fi
 if [ "${1:-}" = "--publish" ]; then
   nix-shell -p gh --run "gh release create v$SLUG $OUT/xinput1_3.dll $OUT/version.txt $OUT/CHANGELOG.md --title 'FaTrainer $VER' --notes-file $OUT/notes.md --latest"
 fi

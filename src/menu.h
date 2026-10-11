@@ -1817,7 +1817,8 @@ inline const char* edition_story() {
            "New versions are posted on the Nexus Mods page; install them with the FaTrainer Installer that comes with them.";
 #else
     return "You have the Fatum Version, downloaded from the FaTrainer website or GitHub. When the game starts it asks GitHub once which version is the newest. "
-           "If a newer one is out, the trainer turns itself off until you update with the FaTrainer Installer, unless Use older versions is on. Nothing else is sent anywhere.";
+           "If a newer one is out, the trainer turns itself off until you update with the FaTrainer Installer, unless Use older versions is on. "
+           "With Beta builds on it also asks for the beta build. Nothing else is sent anywhere.";
 #endif
 }
 
@@ -1925,6 +1926,9 @@ inline void settings_page() {
 #ifndef FATRAINER_OFFLINE
     bool older = c.allow_older;
     if (switch_row("Use older versions", "Keep this version working after a newer one is out. The update notice still shows.", older)) c.allow_older = older, changed = true;
+    bool beta = c.beta;
+    if (switch_row("Beta builds", "Optional. Also update to the beta build, the version being worked on right now, when it is newer than the latest release. It may have bugs. Takes effect the next time the game starts.", beta))
+        c.beta = beta, changed = true;
 #endif
     end_card();
 

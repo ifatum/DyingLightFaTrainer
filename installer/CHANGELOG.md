@@ -2,6 +2,8 @@
 
 ## 1.1
 
+- When a newer installer is out, the installer now updates itself right away when it opens; it installs nothing else until it is up to date.
+- New: Beta builds. Tick it to also get the beta build, the version being worked on right now, open to everyone. It may have bugs, so it is off unless you turn it on.
 - The last build of a version is shown by its plain number, like 2.2 after 2.2 b3.
 
 ## 1.0
