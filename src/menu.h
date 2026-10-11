@@ -1029,7 +1029,7 @@ inline void skill_tree_card() {
     if (levels.size() != std::size(SKILLS)) return;
     std::vector<const SkillTab*> tabs;
     for (auto& t : SKILL_TABS) {
-        bool shown = sample || (cheats::tree_max(t.tree) > 0 && (t.tree != 0 || cheats::side == cheats::SIDE_HUNTER));
+        bool shown = sample || (cheats::tree_max(t.tree) > 0 && (t.tree != 0 || cheats::side != cheats::SIDE_SURVIVOR));
         for (size_t i = 0; shown && i < std::size(SKILLS); i++)
             if (SKILLS[i].tree == t.tree && levels[i] >= 0) {
                 tabs.push_back(&t);
